@@ -17,64 +17,61 @@ def init_db():
                 has_received_reward BOOLEAN NOT NULL DEFAULT 0,
                 reward_date DATETIME
             )
-        ''')
+        [cite_start]''') # [cite: 7]
         conn.commit()
         conn.close()
-        logging.info("База данных 'guests.db' успешно инициализирована.")
+        [cite_start]logging.info("База данных 'guests.db' успешно инициализирована.") # [cite: 7]
     except Exception as e:
-        logging.error(f"Ошибка при инициализации БД: {e}")
+        [cite_start]logging.error(f"Ошибка при инициализации БД: {e}") # [cite: 7]
 
 def user_exists(user_id: int) -> bool:
-    """Проверяет, есть ли пользователь в базе."""
+    [cite_start]"""Проверяет, есть ли пользователь в базе.""" # [cite: 7]
     try:
         conn = sqlite3.connect('guests.db')
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-        result = cursor.fetchone()
+        [cite_start]cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) # [cite: 7]
+        [cite_start]result = cursor.fetchone() # [cite: 7]
         conn.close()
         return result is not None
     except Exception as e:
-        logging.error(f"Ошибка при проверке пользователя {user_id}: {e}")
+        [cite_start]logging.error(f"Ошибка при проверке пользователя {user_id}: {e}") # [cite: 7]
         return False
 
 def add_user(user_id: int, username: str, first_name: str):
-    """Добавляет нового пользователя в базу, если его там нет."""
+    [cite_start]"""Добавляет нового пользователя в базу, если его там нет.""" # [cite: 7]
     if user_exists(user_id):
         return
     try:
         conn = sqlite3.connect('guests.db')
         cursor = conn.cursor()
         cursor.execute("INSERT INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
-                       (user_id, username, first_name))
+                       [cite_start](user_id, username, first_name)) # [cite: 7]
         conn.commit()
         conn.close()
     except Exception as e:
-        logging.error(f"Ошибка при добавлении пользователя {user_id}: {e}")
+        [cite_start]logging.error(f"Ошибка при добавлении пользователя {user_id}: {e}") # [cite: 7]
 
 def check_reward_status(user_id: int) -> bool:
-    """Проверяет, получал ли пользователь уже награду."""
+    [cite_start]"""Проверяет, получал ли пользователь уже награду.""" # [cite: 7]
     try:
         conn = sqlite3.connect('guests.db')
         cursor = conn.cursor()
-        cursor.execute("SELECT has_received_reward FROM users WHERE user_id = ?", (user_id,))
-        result = cursor.fetchone()
+        [cite_start]cursor.execute("SELECT has_received_reward FROM users WHERE user_id = ?", (user_id,)) # [cite: 7]
+        [cite_start]result = cursor.fetchone() # [cite: 7]
         conn.close()
-        # Если result не None и первый элемент (has_received_reward) равен 1, то True
         return result[0] == 1 if result else False
     except Exception as e:
-        logging.error(f"Ошибка при проверке награды у {user_id}: {e}")
-        # В случае ошибки лучше считать, что награду уже получали, чтобы избежать злоупотреблений
+        [cite_start]logging.error(f"Ошибка при проверке награды у {user_id}: {e}") # [cite: 7]
         return True
 
 def grant_reward(user_id: int):
-    """Отмечает в базе, что пользователь получил награду."""
+    [cite_start]"""Отмечает в базе, что пользователь получил награду.""" # [cite: 7]
     try:
         conn = sqlite3.connect('guests.db')
         cursor = conn.cursor()
-        # Устанавливаем флаг и текущую дату/время
         cursor.execute("UPDATE users SET has_received_reward = 1, reward_date = ? WHERE user_id = ?",
-                       (datetime.now(), user_id))
+                       [cite_start](datetime.now(), user_id)) # [cite: 7]
         conn.commit()
         conn.close()
     except Exception as e:
-        logging.error(f"Ошибка при выдаче награды пользователю {user_id}: {e}")
+        [cite_start]logging.error(f"Ошибка при выдаче награды пользователю {user_id}: {e}") # [cite: 7]
