@@ -9,13 +9,25 @@ def register_handlers(bot):
 
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
-        """Отправляет приветствие и постоянную кнопку 'Получить настойку'."""
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        get_gift_button = types.KeyboardButton("🎁 ПОЛУЧИТЬ НАСТОЙКУ")
-        keyboard.add(get_gift_button)
-        bot.send_message(message.chat.id, 
-                         "Привет! 👋 Нажми на кнопку ниже, чтобы получить свой подарок.", 
-                         reply_markup=keyboard)
+        """
+        Отправляет приветствие. 
+        Для новых пользователей - с одноразовой кнопкой.
+        Для старых - просто приветствие.
+        """
+        user_id = message.from_user.id
+        status = get_reward_status(user_id)
+
+        # УЛУЧШЕНИЕ 2: Проверяем статус пользователя
+        if status in ['issued', 'redeemed']:
+            bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉")
+        else:
+            # УЛУЧШЕНИЕ 1: Добавляем one_time_keyboard=True
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+            get_gift_button = types.KeyboardButton("🎁 ПОЛУЧИТЬ НАСТОЙКУ")
+            keyboard.add(get_gift_button)
+            bot.send_message(message.chat.id, 
+                             "Привет! 👋 Нажми на кнопку ниже, чтобы получить свой подарок.", 
+                             reply_markup=keyboard)
 
     @bot.message_handler(func=lambda message: message.text == "🎁 ПОЛУЧИТЬ НАСТОЙКУ")
     def handle_get_gift_press(message: types.Message):
