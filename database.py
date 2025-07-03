@@ -1,77 +1,63 @@
-# database.py
 import sqlite3
 import logging
 from datetime import datetime
 
 def init_db():
     """Создает базу данных и таблицу, если их нет."""
-    try:
-        conn = sqlite3.connect('guests.db')
-        cursor = conn.cursor()
-        # Создаем таблицу users
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                first_name TEXT,
-                has_received_reward BOOLEAN NOT NULL DEFAULT 0,
-                reward_date DATETIME
-            )
-        ''')
-        conn.commit()
-        conn.close()
-        logging.info("База данных 'guests.db' успешно инициализирована.")
-    except Exception as e:
-        logging.error(f"Ошибка при инициализации БД: {e}")
-
-def user_exists(user_id: int) -> bool:
-    """Проверяет, есть ли пользователь в базе."""
-    try:
-        conn = sqlite3.connect('guests.db')
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-        result = cursor.fetchone()
-        conn.close()
-        return result is not None
-    except Exception as e:
-        logging.error(f"Ошибка при проверке пользователя {user_id}: {e}")
-        return False
+    conn = sqlite3.connect('guests.db')
+    cursor = conn.cursor()
+    # Добавляем колонку status ('issued', 'redeemed')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            first_name TEXT,
+            reward_status TEXT DEFAULT 'none',
+            reward_date DATETIME
+        )
+    ''')
+    conn.commit()
+    conn.close()
+    logging.info("База данных 'guests.db' успешно инициализирована.")
 
 def add_user(user_id: int, username: str, first_name: str):
-    """Добавляет нового пользователя в базу, если его там нет."""
-    if user_exists(user_id):
-        return
-    try:
-        conn = sqlite3.connect('guests.db')
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
-                       (user_id, username, first_name))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logging.error(f"Ошибка при добавлении пользователя {user_id}: {e}")
+    """Добавляет нового пользователя в базу, если его там еще нет."""
+    conn = sqlite3.connect('guests.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
+                   (user_id, username, first_name))
+    conn.commit()
+    conn.close()
 
-def check_reward_status(user_id: int) -> bool:
-    """Проверяет, получал ли пользователь уже награду."""
-    try:
-        conn = sqlite3.connect('guests.db')
-        cursor = conn.cursor()
-        cursor.execute("SELECT has_received_reward FROM users WHERE user_id = ?", (user_id,))
-        result = cursor.fetchone()
-        conn.close()
-        return result[0] == 1 if result else False
-    except Exception as e:
-        logging.error(f"Ошибка при проверке награды у {user_id}: {e}")
-        return True
+def get_reward_status(user_id: int) -> str:
+    """Проверяет статус награды пользователя."""
+    conn = sqlite3.connect('guests.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT reward_status FROM users WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else 'none'
 
 def grant_reward(user_id: int):
-    """Отмечает в базе, что пользователь получил награду."""
-    try:
-        conn = sqlite3.connect('guests.db')
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET has_received_reward = 1, reward_date = ? WHERE user_id = ?",
-                       (datetime.now(), user_id))
+    """Отмечает в базе, что пользователю 'выдана' награда (но еще не погашена)."""
+    conn = sqlite3.connect('guests.db')
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET reward_status = 'issued', reward_date = ? WHERE user_id = ?",
+                   (datetime.now(), user_id))
+    conn.commit()
+    conn.close()
+
+def redeem_reward(user_id: int) -> bool:
+    """Погашает награду. Возвращает True если успешно, иначе False."""
+    conn = sqlite3.connect('guests.db')
+    cursor = conn.cursor()
+    # Убедимся, что погашаем только 'выданную' награду
+    cursor.execute("SELECT reward_status FROM users WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
+    if result and result[0] == 'issued':
+        cursor.execute("UPDATE users SET reward_status = 'redeemed' WHERE user_id = ?", (user_id,))
         conn.commit()
         conn.close()
-    except Exception as e:
-        logging.error(f"Ошибка при выдаче награды пользователю {user_id}: {e}")
+        return True
+    conn.close()
+    return False
