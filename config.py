@@ -1,14 +1,14 @@
 # config.py
 import os
 
-# Токен вашего бота из переменных окружения
+# --- Telegram ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-# ID вашего телеграм-канала из переменных окружения
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 
-# Проверки, что переменные загружены
-if not BOT_TOKEN:
-    raise ValueError("Не найдена переменная окружения BOT_TOKEN!")
-if not CHANNEL_ID:
-    raise ValueError("Не найдена переменная окружения CHANNEL_ID!")
+# --- Google Sheets ---
+GOOGLE_SHEET_KEY = os.getenv("GOOGLE_SHEET_KEY")
+GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
+
+# --- Проверки ---
+if not all([BOT_TOKEN, CHANNEL_ID, GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON]):
+    raise ValueError("Одна или несколько переменных окружения не установлены!")
