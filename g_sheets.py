@@ -34,11 +34,12 @@ def get_sheet() -> Optional[gspread.Worksheet]:
         logging.error(f"Ошибка подключения к Google Sheets: {e}")
         return None
 
-def find_user_by_id(user_id: int) -> Optional[gspread.models.Cell]:
+def find_user_by_id(user_id: int) -> Optional[gspread.Cell]:
     """Находит пользователя в таблице по ID и возвращает ячейку."""
     try:
         worksheet = get_sheet()
         if not worksheet: return None
+        # ИЗМЕНЕНИЕ БЫЛО ЗДЕСЬ (в gspread.Cell)
         return worksheet.find(str(user_id), in_column=COL_USER_ID)
     except gspread.exceptions.CellNotFound:
         return None
@@ -65,6 +66,13 @@ def add_new_user(user_id: int, username: str, first_name: str):
         if not worksheet: return
 
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Проверяем, есть ли заголовки, если лист пустой
+        if not worksheet.get_all_values():
+             headers = ['Дата подписки', 'ID Пользователя', 'Username', 'Имя', 'Статус награды']
+             worksheet.insert_row(headers, 1)
+             worksheet.format('A1:E1', {'textFormat': {'bold': True}})
+
         row_to_add = [current_time, user_id, username, first_name, 'issued']
         worksheet.append_row(row_to_add)
         logging.info(f"Пользователь {user_id} (@{username}) успешно добавлен в Google Таблицу.")
