@@ -13,15 +13,15 @@ logging.basicConfig(
         logging.FileHandler("bot.log", encoding="utf-8"),
         logging.StreamHandler()
     ]
-) #
+)
 
 # Инициализация бота
-bot = telebot.TeleBot(BOT_TOKEN) #
+bot = telebot.TeleBot(BOT_TOKEN)
 
 # === Точка входа ===
 if __name__ == "__main__":
     logging.info("Инициализация базы данных...")
-    init_db() #
+    init_db()
     
     logging.info("🚀 Бот запущен. Ожидание команд...")
-    bot.infinity_polling() #
+    bot.infinity_polling()
