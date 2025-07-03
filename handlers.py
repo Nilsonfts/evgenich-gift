@@ -40,10 +40,10 @@ def register_handlers(bot):
         inline_keyboard.add(check_button)
         
         try:
-            with open('welcome.jpg', 'rb') as photo:
+            with open('hello.png', 'rb') as photo:
                 bot.send_photo(message.chat.id, photo, caption=welcome_text, reply_markup=inline_keyboard, parse_mode="Markdown")
         except FileNotFoundError:
-            logging.warning("Файл welcome.jpg не найден. Отправляю текстовое приветствие.")
+            logging.warning("Файл hello.png не найден. Отправляю текстовое приветствие.")
             bot.send_message(message.chat.id, welcome_text, reply_markup=inline_keyboard, parse_mode="Markdown")
 
     @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
@@ -77,7 +77,7 @@ def register_handlers(bot):
                 
                 bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id)
                 try:
-                    with open('tincture.jpg', 'rb') as photo:
+                    with open('nastoyka.png', 'rb') as photo:
                         bot.send_photo(user_id, photo, caption=coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
                 except FileNotFoundError:
                     bot.send_message(user_id, coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
