@@ -1,10 +1,8 @@
 # main.py
 import telebot
 import logging
-
 from config import BOT_TOKEN
 from handlers import register_handlers
-from database import init_db
 
 # Настройка логирования
 logging.basicConfig(
@@ -21,9 +19,6 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 
 # === Точка входа ===
 if __name__ == "__main__":
-    logging.info("Инициализация базы данных...")
-    init_db()
-    
     logging.info("Регистрация обработчиков...")
     register_handlers(bot)
     
