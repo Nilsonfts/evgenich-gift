@@ -3,7 +3,6 @@ import logging
 from telebot import types
 from config import CHANNEL_ID
 from database import user_exists, add_user, check_reward_status, grant_reward
-from g_sheets import add_subscription_to_sheet
 
 def register_handlers(bot):
     """Регистрирует все обработчики сообщений и кнопок."""
@@ -38,24 +37,17 @@ def register_handlers(bot):
         check_button = types.InlineKeyboardButton(text="✅ Я подписался, проверить!", callback_data="check_subscription")
         keyboard.add(subscribe_button)
         keyboard.add(check_button)
-
-        try:
-            # Отправляем фото с приветствием
-            with open('welcome.jpg', 'rb') as photo:
-                bot.send_photo(message.chat.id, photo, caption=welcome_text, reply_markup=keyboard, parse_mode="Markdown")
-        except FileNotFoundError:
-            # Если фото нет, отправляем просто текст
-            logging.warning("Файл welcome.jpg не найден. Отправляю текстовое приветствие.")
-            bot.send_message(message.chat.id, welcome_text, reply_markup=keyboard, parse_mode="Markdown")
+        
+        # Просто отправляем текст с кнопками
+        bot.send_message(message.chat.id, welcome_text, reply_markup=keyboard, parse_mode="Markdown")
 
     @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
     def handle_check_subscription(call: types.CallbackQuery):
         user_id = call.from_user.id
 
-        # Еще раз проверяем, не получил ли он награду, пока думал
         if check_reward_status(user_id):
             bot.answer_callback_query(call.id)
-            bot.edit_message_caption("Вы уже получали свой подарок. Спасибо, что вы с нами! 😉",
+            bot.edit_message_text("Вы уже получали свой подарок. Спасибо, что вы с нами! 😉",
                                      call.message.chat.id, call.message.message_id)
             return
 
@@ -64,29 +56,16 @@ def register_handlers(bot):
             chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
 
             if chat_member.status in ['member', 'administrator', 'creator']:
-                # Пользователь подписан!
+                # Пользователь подписан
                 bot.answer_callback_query(call.id, "Отлично, подписка есть! ✅")
-
-                # Обновляем локальную базу данных
                 grant_reward(user_id)
 
-                # Отправляем данные в Google Таблицу
-                add_subscription_to_sheet(user_id, call.from_user.username or "N/A", call.from_user.first_name)
-
-                # Отправляем "купон" на настойку
                 coupon_text = (
                     "🎉 Поздравляем! 🎉\n\n"
                     "Ваш подарок - **фирменная настойка**.\n"
                     "Покажите это сообщение бармену, чтобы получить свой приз. Награда выдается один раз."
                 )
-                try:
-                    with open('tincture.jpg', 'rb') as photo:
-                        bot.send_photo(user_id, photo, caption=coupon_text, parse_mode="Markdown")
-                except FileNotFoundError:
-                    logging.warning("Файл tincture.jpg не найден. Отправляю текстовый купон.")
-                    bot.send_message(user_id, coupon_text, parse_mode="Markdown")
-
-                # Убираем кнопки из первоначального сообщения
+                bot.send_message(user_id, coupon_text, parse_mode="Markdown")
                 bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id)
 
             else:
@@ -94,8 +73,5 @@ def register_handlers(bot):
                 bot.answer_callback_query(call.id, "Похоже, вы еще не подписались. Попробуйте снова.", show_alert=True)
 
         except Exception as e:
-            logging.error(f"Ошибка при проверке подписки для {user_id} на канал {CHANNEL_ID}: {e}")
-            if 'user not found' in str(e):
-                bot.answer_callback_query(call.id, "Не могу вас найти. Возможно, вы не подписались. Попробуйте еще раз.", show_alert=True)
-            else:
-                bot.answer_callback_query(call.id, "Не удалось проверить подписку. Убедитесь, что вы начали диалог с ботом.", show_alert=True)
+            logging.error(f"Ошибка при проверке подписки для {user_id}: {e}")
+            bot.answer_callback_query(call.id, "Не удалось проверить подписку. Попробуйте позже.", show_alert=True)
