@@ -4,13 +4,13 @@ from telebot import types
 import pytz
 from config import (
     CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID,
-    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID, GOOGLE_SHEET_KEY,
-    MENU_URL
+    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID, GOOGLE_SHEET_KEY
 )
 from g_sheets import (
-    get_reward_status, add_new_user, redeem_reward, delete_user,
+    get_reward_status, add_new_user, update_status, delete_user,
     get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed,
-    get_report_data_for_period, get_sheet
+    get_report_data_for_period, get_stats_by_source, get_weekly_cohort_data, get_top_referrers,
+    get_sheet
 )
 
 def register_handlers(bot):
@@ -35,7 +35,6 @@ def register_handlers(bot):
             return
 
         # Сценарий для пользователя, который еще НЕ получал настойку (not_found, registered, issued)
-        # Если пользователь совсем новый, регистрируем его
         if status == 'not_found':
             referrer_id = None
             source = 'direct'
@@ -56,7 +55,6 @@ def register_handlers(bot):
             if referrer_id:
                 bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся.")
 
-        # Показываем приветствие и кнопку для начала квеста
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
         keyboard.add(gift_button)
@@ -67,7 +65,7 @@ def register_handlers(bot):
     def handle_friend_command(message: types.Message):
         user_id = message.from_user.id
         bot_username = bot.get_me().username
-        ref_link = f"[https://t.me/](https://t.me/){bot_username}?start=ref_{user_id}"
+        ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
         text = (
             "💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
             "Вот твоя персональная директива на привлечение нового бойца. Нажми на ссылку ниже, чтобы скопировать:\n"
@@ -80,7 +78,7 @@ def register_handlers(bot):
     @bot.message_handler(commands=['channel'])
     def handle_channel_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
-        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
         url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
@@ -89,9 +87,7 @@ def register_handlers(bot):
     @bot.message_handler(func=lambda message: message.text == "📖 Меню")
     def handle_menu_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
-        # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
-        # Ссылка теперь берется из конфига
-        url_button = types.InlineKeyboardButton(text="📖 Открыть меню бара", url=MENU_URL)
+        url_button = types.InlineKeyboardButton(text="📖 Открыть меню бара", url="https://spb.evgenich.bar/menu")
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Наше меню всегда доступно по кнопке ниже:", reply_markup=keyboard)
     
@@ -136,7 +132,7 @@ def register_handlers(bot):
                         "Чтобы получить настойку, подпишись на наш телеграм-канал. Это займет всего секунду.\n\n"
                         "Когда подпишешься — нажимай на кнопку «Я подписался» здесь же.")
         inline_keyboard = types.InlineKeyboardMarkup(row_width=1)
-        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
         subscribe_button = types.InlineKeyboardButton(text="➡️ Перейти к каналу", url=channel_url)
         check_button = types.InlineKeyboardButton(text="✅ Я подписался, проверить!", callback_data="check_subscription")
         inline_keyboard.add(subscribe_button, check_button)
@@ -175,7 +171,6 @@ def register_handlers(bot):
             except Exception as e:
                 logging.error(f"Не удалось отправить прощальный стикер: {e}")
             
-            # Показываем финальную клавиатуру после получения подарка
             final_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
@@ -225,14 +220,14 @@ def register_handlers(bot):
         action = call.data
         main_menu_text = "👑 **Главное меню админ-панели**"
         
-        # Навигация по меню
         if action == 'admin_menu_main':
             keyboard = types.InlineKeyboardMarkup(row_width=1)
             reports_button = types.InlineKeyboardButton("📊 Стандартные отчеты", callback_data="admin_menu_reports")
             analytics_button = types.InlineKeyboardButton("📈 Глубокая аналитика", callback_data="admin_menu_analytics")
             leaderboard_button = types.InlineKeyboardButton("🏆 Доска почета вербовщиков", callback_data="admin_action_leaderboard")
             keyboard.add(reports_button, analytics_button, leaderboard_button)
-            bot.edit_message_text(main_menu_text, call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
+            try: bot.edit_message_text(main_menu_text, call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
+            except: pass
             return
         elif action == 'admin_menu_reports':
             keyboard = types.InlineKeyboardMarkup(row_width=1)
@@ -252,7 +247,6 @@ def register_handlers(bot):
             bot.edit_message_text("**Меню аналитики**", call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
             return
 
-        # Выполнение действий
         if action == 'admin_action_leaderboard':
             bot.answer_callback_query(call.id, "Составляю рейтинг...")
             top_list = get_top_referrers(5)
@@ -289,7 +283,6 @@ def register_handlers(bot):
                 response += f"**Неделя ({cohort['week']}):**\n  Новых: {cohort['issued']}, Погашено: {cohort['redeemed']} (Конверсия: {conversion}%)\n\n"
             bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
         
-        # Обработка стандартных отчетов
         elif call.data.startswith('admin_report'):
             period = call.data.split('_')[-1]
             tz_moscow = pytz.timezone('Europe/Moscow')
@@ -336,13 +329,9 @@ def register_handlers(bot):
         except Exception as e:
             logging.error(f"Ошибка при выполнении отложенной задачи по рефералам: {e}")
 
-# === Вспомогательные функции (вынесены за пределы register_handlers) ===
+# === Вспомогательные функции ===
 def issue_coupon(bot, user_id, username, first_name, chat_id):
-    status = get_reward_status(user_id)
-    if status in ['issued', 'redeemed']: return
-    if status == 'not_found':
-        add_new_user(user_id, username or "N/A", first_name, 'direct', None)
-    
+    update_status(user_id, 'issued')
     coupon_text = ("🎉 Гражданин-товарищ, поздравляем!\n\n"
                    "Тебе досталась фирменная настойка «Евгенич» — почти как путёвка в пионерлагерь, только повеселее.\n\n"
                    "Что делать — коротко и ясно:\n"
@@ -366,7 +355,7 @@ def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users,
         minutes, _ = divmod(remainder, 60)
         avg_redeem_time_str = f"{hours} ч {minutes} мин"
     report_date = end_time.strftime('%d.%m.%Y')
-    header = f"**#Настойка_за_Подписку ({report_date})**\n\n"
+    header = f"**#Настойка_за_Подписку (Аналитика за {report_date})**\n\n"
     period_str = f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
     stats = (f"✅ **Выдано купонов:** {issued}\n"
              f"🥃 **Погашено настоек:** {redeemed}\n"
