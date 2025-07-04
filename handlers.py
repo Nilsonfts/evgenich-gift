@@ -20,7 +20,7 @@ def register_handlers(bot):
     def handle_start(message: types.Message):
         user_id = message.from_user.id
         referrer_id = None
-        source = 'direct'  # Источник по умолчанию
+        source = 'direct'
 
         args = message.text.split()
         if len(args) > 1:
@@ -72,7 +72,7 @@ def register_handlers(bot):
     @bot.message_handler(commands=['channel'])
     def handle_channel_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
-        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
         url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
@@ -104,7 +104,7 @@ def register_handlers(bot):
                         "Чтобы получить настойку, подпишись на наш телеграм-канал. Это займет всего секунду.\n\n"
                         "Когда подпишешься — нажимай на кнопку «Я подписался» здесь же.")
         inline_keyboard = types.InlineKeyboardMarkup(row_width=1)
-        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
         subscribe_button = types.InlineKeyboardButton(text="➡️ Перейти к каналу", url=channel_url)
         check_button = types.InlineKeyboardButton(text="✅ Я подписался, проверить!", callback_data="check_subscription")
         inline_keyboard.add(subscribe_button, check_button)
@@ -164,10 +164,8 @@ def register_handlers(bot):
 
     @bot.message_handler(commands=['restart'])
     def handle_restart_command(message: types.Message):
-        """Сбрасывает профиль администратора для тестирования."""
         if message.from_user.id not in ADMIN_IDS:
-            return # Игнорируем команду от не-админов
-        
+            return
         user_id = message.from_user.id
         if delete_user(user_id):
             bot.reply_to(message, "✅ Ваш профиль в боте сброшен. Можете начинать тестирование заново, отправив команду /start.")
@@ -301,15 +299,15 @@ def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users,
 def send_report(bot, chat_id, start_time, end_time):
     """Универсальная функция для отправки отчета."""
     try:
+        # ИСПРАВЛЕНИЕ ЗДЕСЬ: вызываем правильную функцию и правильно распаковываем данные
         issued, redeemed, redeemed_users, sources, total_redeem_time = get_report_data_for_period(start_time, end_time)
-        report_data = {
-            "issued": issued, "redeemed": redeemed, "redeemed_users": redeemed_users,
-            "sources": sources, "total_redeem_time_seconds": total_redeem_time
-        }
-        if not report_data or report_data.get("issued", 0) == 0:
+
+        if issued == 0:
             bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
             return
-        report_text = generate_report_text(start_time, end_time, **report_data)
+
+        # ИСПРАВЛЕНИЕ ЗДЕСЬ: передаем правильные аргументы
+        report_text = generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time)
         bot.send_message(chat_id, report_text, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
