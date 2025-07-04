@@ -59,15 +59,11 @@ def register_handlers(bot):
         Логика разделяется в зависимости от того, новый это пользователь или уже "старый".
         """
         logging.info(f"Пользователь {message.from_user.id} нажал /start")
-        # Получаем ID пользователя, чтобы работать с ним
         user_id = message.from_user.id
-        # Проверяем статус пользователя в нашей "базе данных" (Google Таблице)
         status = get_reward_status(user_id)
         
-        # СЦЕНАРИЙ 1: Пользователь уже получил свою настойку (статус 'redeemed')
         if status == 'redeemed':
             logging.info(f"Пользователь {user_id} уже получал награду. Показываем основное меню.")
-            # Создаем клавиатуру с основными кнопками для постоянного пользователя
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
@@ -77,26 +73,22 @@ def register_handlers(bot):
             keyboard.row(menu_button, friend_button)
             keyboard.row(ai_help_button, book_button)
 
-            # Если пользователь - админ, добавляем ему кнопку для сброса своего профиля
             if user_id in ADMIN_IDS:
                 restart_button = types.KeyboardButton("/restart")
                 keyboard.row(restart_button)
             
-            # Приветственное сообщение для вернувшегося пользователя с подсказкой про ИИ
             info_text = (
                 "С возвращением, товарищ! Рады видеть снова. 😉\n\n"
                 "Нажимай «📖 Меню» для просмотра или **просто напиши мне в чат, чего бы тебе хотелось** "
                 "(например: _«хочу что-нибудь кислое и ягодное»_), и я помогу с выбором!"
             )
             bot.send_message(user_id, info_text, reply_markup=keyboard, parse_mode="Markdown")
-            return # Завершаем выполнение функции здесь
+            return
 
-        # СЦЕНАРИЙ 2: Пользователь новый или еще не получил настойку
         if status == 'not_found':
             logging.info(f"Новый пользователь {user_id}. Регистрируем...")
-            # Логика для отслеживания источника перехода (реферал, QR-код)
             referrer_id = None
-            source = 'direct' # Источник по умолчанию
+            source = 'direct'
             args = message.text.split()
             if len(args) > 1:
                 payload = args[1]
@@ -112,12 +104,10 @@ def register_handlers(bot):
                     if payload in allowed_sources:
                         source = allowed_sources[payload]
             
-            # Добавляем нового пользователя в Google Таблицу
             add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
             if referrer_id:
                 bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся.")
 
-        # Стартовая клавиатура для нового пользователя
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
         keyboard.add(gift_button)
@@ -129,11 +119,9 @@ def register_handlers(bot):
         """
         Запускает интерактивный сценарий бронирования стола.
         """
-        # --- ИСПРАВЛЕНИЕ ---
         if user_booking_data.get(message.from_user.id):
-            bot.reply_to(message, "Ты уже находишься в процессе бронирования. Пожалуйста, введи запрошенные данные.")
+            bot.reply_to(message, "Ты уже находишься в процессе бронирования. Пожалуйста, введи запрошенные данные или отмени командой /cancel.")
             return
-        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
         logging.info(f"Пользователь {message.from_user.id} нажал кнопку 'Забронировать стол', запускаем интерактивный сценарий.")
         _show_booking_options(message)
 
@@ -143,23 +131,29 @@ def register_handlers(bot):
         """
         Генерирует и отправляет пользователю его персональную реферальную ссылку.
         """
-        # --- ИСПРАВЛЕНИЕ ---
         if user_booking_data.get(message.from_user.id):
-            bot.reply_to(message, "Товарищ, давай сначала закончим с бронью. Пожалуйста, введи запрошенные данные.")
+            bot.reply_to(message, "Товарищ, давай сначала закончим с бронью. Пожалуйста, введи запрошенные данные или отмени командой /cancel.")
             return
-        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+
         logging.info(f"Пользователь {message.from_user.id} запросил реферальную ссылку.")
         user_id = message.from_user.id
         bot_username = bot.get_me().username
         ref_link = f"https.me/{bot_username}?start=ref_{user_id}"
-        text = (
+
+        text_before = (
             "💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
-            "Вот твоя персональная директива на привлечение нового бойца. Нажми на ссылку ниже, чтобы скопировать:\n"
-            f"`{ref_link}`\n\n"
-            "Отправь ее другу. Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит **еще одной дефицитной настойкой**! 🥃\n\n"
+            "Вот твоя персональная директива на привлечение нового бойца. Отправь эту ссылку другу:"
+        )
+        bot.send_message(user_id, text_before, parse_mode="Markdown")
+
+        bot.send_message(user_id, ref_link)
+
+        text_after = (
+            "Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит **еще одной дефицитной настойкой**! 🥃\n\n"
             "*Помни, план — не более 5 товарищей.*"
         )
-        bot.send_message(user_id, text, parse_mode="Markdown")
+        bot.send_message(user_id, text_after, parse_mode="Markdown")
+
 
     @bot.message_handler(commands=['channel'])
     def handle_channel_command(message: types.Message):
@@ -179,11 +173,9 @@ def register_handlers(bot):
         """
         Показывает пользователю кнопки для выбора меню (настойки, кухня или полный сайт).
         """
-        # --- ИСПРАВЛЕНИЕ ---
         if user_booking_data.get(message.from_user.id):
-            bot.reply_to(message, "Товарищ, давай сначала закончим с бронью. Пожалуйста, введи запрошенные данные.")
+            bot.reply_to(message, "Товарищ, давай сначала закончим с бронью. Пожалуйста, введи запрошенные данные или отмени командой /cancel.")
             return
-        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
         logging.info(f"Пользователь {message.from_user.id} открыл меню.")
         keyboard = types.InlineKeyboardMarkup(row_width=1)
         nastoiki_button = types.InlineKeyboardButton(text="🥃 Меню настоек", callback_data="menu_nastoiki_main")
@@ -205,6 +197,8 @@ def register_handlers(bot):
             "**Основные команды:**\n"
             "• `/start` - Начать диалог и получить талон на настойку.\n"
             "• `/menu` - Посмотреть меню нашего заведения.\n"
+            "• `/book` - Забронировать стол.\n"
+            "• `/cancel` - Отменить текущее действие (например, бронирование).\n"
             "• `/channel` - Получить ссылку на наш основной Telegram-канал.\n"
             "• `/friend` - Получить персональную ссылку, чтобы пригласить друга и получить за это бонус.\n"
             "• `/help` - Показать это сообщение."
@@ -217,20 +211,41 @@ def register_handlers(bot):
             )
             help_text += admin_help_text
         bot.send_message(user_id, help_text, parse_mode="Markdown")
+        
+    @bot.message_handler(commands=['cancel'])
+    def handle_cancel(message: types.Message):
+        """
+        Отменяет текущий пошаговый процесс, например, бронирование.
+        """
+        user_id = message.from_user.id
+        if user_id in user_booking_data:
+            del user_booking_data[user_id]
+            
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            menu_button = types.KeyboardButton("📖 Меню")
+            friend_button = types.KeyboardButton("🤝 Привести товарища")
+            book_button = types.KeyboardButton("📍 Забронировать стол")
+            ai_help_button = types.KeyboardButton("🗣 Спроси у Евгенича")
+            keyboard.row(menu_button, friend_button)
+            keyboard.row(ai_help_button, book_button)
+            if user_id in ADMIN_IDS:
+                restart_button = types.KeyboardButton("/restart")
+                keyboard.row(restart_button)
+            
+            bot.send_message(user_id, "Действие отменено. Вы возвращены в главное меню.", reply_markup=keyboard)
+        else:
+            bot.reply_to(message, "Нет активного действия для отмены.")
 
     @bot.message_handler(func=lambda message: message.text == "🗣 Спроси у Евгенича")
     def handle_ai_prompt_button(message: types.Message):
         """
         Обрабатывает нажатие на кнопку-подсказку для ИИ и дает пример запроса.
         """
-        # --- ИСПРАВЛЕНИЕ ---
         if user_booking_data.get(message.from_user.id):
-            bot.reply_to(message, "Товарищ, давай сначала закончим с бронью. Пожалуйста, введи запрошенные данные.")
+            bot.reply_to(message, "Товарищ, давай сначала закончим с бронью. Пожалуйста, введи запрошенные данные или отмени командой /cancel.")
             return
-        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
         bot.reply_to(message, "Смело пиши мне свои пожелания! Например: «посоветуй что-нибудь сладкое и сливочное» или «ищу самую ядрёную настойку».")
 
-    # Этот обработчик запускает основной сценарий для новых пользователей
     @bot.message_handler(func=lambda message: message.text == "🥃 Получить настойку по талону")
     def handle_get_gift_press(message: types.Message):
         """
@@ -238,11 +253,9 @@ def register_handlers(bot):
         """
         user_id = message.from_user.id
         status = get_reward_status(user_id)
-        # Дополнительная проверка, чтобы уже получившие не могли запустить воронку снова
         if status in ['issued', 'redeemed']:
             bot.send_message(user_id, "Вы уже получали свой подарок. Спасибо, что вы с нами! 😉")
             return
-        # Проверка, вдруг пользователь уже подписан
         try:
             chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
             if chat_member.status in ['member', 'administrator', 'creator']:
@@ -252,7 +265,6 @@ def register_handlers(bot):
         except Exception as e:
             logging.error(f"Ошибка при предварительной проверке подписки для {user_id}: {e}")
         
-        # Если не подписан, показываем стандартное приглашение
         welcome_text = ("Отлично! 👍\n\n"
                         "Чтобы получить настойку, подпишись на наш телеграм-канал. Это займет всего секунду.\n\n"
                         "Когда подпишешься — нажимай на кнопку «Я подписался» здесь же.")
@@ -332,7 +344,6 @@ def register_handlers(bot):
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
 
-    # --- ОБРАБОТЧИКИ ИНТЕРАКТИВНОГО МЕНЮ НАСТОЕК ---
     @bot.callback_query_handler(func=lambda call: call.data == "menu_nastoiki_main")
     def callback_menu_nastoiki_main(call: types.CallbackQuery):
         """Показывает главное меню с категориями настоек."""
@@ -364,7 +375,6 @@ def register_handlers(bot):
         )
         bot.answer_callback_query(call.id)
 
-    # --- ОБРАБОТЧИКИ ИНТЕРАКТИВНОГО МЕНЮ КУХНИ ---
     @bot.callback_query_handler(func=lambda call: call.data == "menu_food_main")
     def callback_menu_food_main(call: types.CallbackQuery):
         """Показывает главное меню с категориями кухни."""
@@ -397,7 +407,6 @@ def register_handlers(bot):
     # === ЛОГИКА ПОШАГОВОГО БРОНИРОВАНИЯ (FINITE STATE MACHINE) ===
     # =======================================================================
     
-    # Эта функция вызывается, когда ИИ распознает намерение бронировать ИЛИ когда нажата кнопка "Забронировать стол"
     def _show_booking_options(message):
         """Шаг 1: Показывает пользователю кнопки с вариантами бронирования."""
         markup = types.InlineKeyboardMarkup(row_width=1)
@@ -413,7 +422,7 @@ def register_handlers(bot):
     def handle_booking_option(call: types.CallbackQuery):
         """Шаг 2: Обрабатывает выбор пользователя и либо дает информацию, либо запускает сбор данных."""
         bot.answer_callback_query(call.id)
-        bot.delete_message(call.message.chat.id, call.message.message_id) # Удаляем сообщение с кнопками
+        bot.delete_message(call.message.chat.id, call.message.message_id)
 
         if call.data == "booking_phone":
             bot.send_message(call.message.chat.id, "📞 Звони по номеру: `8 (812) 317-23-53`", parse_mode="Markdown")
@@ -421,13 +430,9 @@ def register_handlers(bot):
             bot.send_message(call.message.chat.id, "🌐 Вот ссылка для самостоятельной брони: https://evgenichspb.restoplace.ws/")
         
         elif call.data == "booking_secret":
-            # Создаем новую клавиатуру с кнопкой-ссылкой на чат
             keyboard = types.InlineKeyboardMarkup()
-            # Убедитесь, что 'stolik_evgenicha' - это правильный username вашего чата
             url_button = types.InlineKeyboardButton(text="👉 Перейти в секретный чат", url="https://t.me/stolik_evgenicha")
             keyboard.add(url_button)
-
-            # Формируем новый, более душевный текст
             text = (
                 "От сердца отрываю, товарищ! 🤫\n\n"
                 "Это наш секретный чат для броней, только для своих. А ты теперь свой. "
@@ -436,56 +441,49 @@ def register_handlers(bot):
             bot.send_message(call.message.chat.id, text, reply_markup=keyboard)
         
         elif call.data == "booking_bot":
-            # Запускаем пошаговый сбор данных (Finite State Machine)
-            msg = bot.send_message(call.message.chat.id, "Отлично! Как тебя звать, товарищ?")
+            prompt_text = (
+                "Отлично! Как тебя звать, товарищ?\n\n"
+                "*Чтобы отменить, в любой момент напиши /cancel*"
+            )
+            msg = bot.send_message(call.message.chat.id, prompt_text, parse_mode="Markdown")
             bot.register_next_step_handler(msg, process_name_step)
 
-
-    # --- Шаг 3: Цепочка функций для сбора данных о брони ---
     def process_name_step(message):
-        """Получает имя, сохраняет его и спрашивает о дате."""
         user_id = message.from_user.id
         user_booking_data[user_id] = {'name': message.text}
         msg = bot.send_message(message.chat.id, "Записал. Когда хочешь заглянуть в рюмочную? (Дата)")
         bot.register_next_step_handler(msg, process_date_step)
 
     def process_date_step(message):
-        """Получает дату, сохраняет ее и спрашивает о времени."""
         user_id = message.from_user.id
         user_booking_data[user_id]['date'] = message.text
         msg = bot.send_message(message.chat.id, "Принято. Во сколько подходишь? (Время)")
         bot.register_next_step_handler(msg, process_time_step)
 
     def process_time_step(message):
-        """Получает время, сохраняет его и спрашивает о количестве гостей."""
         user_id = message.from_user.id
         user_booking_data[user_id]['time'] = message.text
         msg = bot.send_message(message.chat.id, "Сколько вас будет — чтобы чебуреков хватило на всех! (Кол-во гостей)")
         bot.register_next_step_handler(msg, process_guests_step)
 
     def process_guests_step(message):
-        """Получает кол-во гостей, сохраняет и спрашивает телефон."""
         user_id = message.from_user.id
         user_booking_data[user_id]['guests'] = message.text
         msg = bot.send_message(message.chat.id, "Телефончик оставь, а то в 80-х без номерка даже кассеты не выдавали.")
         bot.register_next_step_handler(msg, process_phone_step)
 
     def process_phone_step(message):
-        """Получает телефон, сохраняет и спрашивает о поводе."""
         user_id = message.from_user.id
         user_booking_data[user_id]['phone'] = message.text
         msg = bot.send_message(message.chat.id, "И последнее: повод душевный или торжественный?")
         bot.register_next_step_handler(msg, process_reason_step)
 
-    # Последний шаг сбора данных, после которого отправляется заявка
     def process_reason_step(message):
-        """Получает повод, собирает все данные и отправляет на подтверждение."""
         user_id = message.from_user.id
         user_booking_data[user_id]['reason'] = message.text
         
         data = user_booking_data.get(user_id, {})
         
-        # Показываем пользователю собранные данные для подтверждения
         confirmation_text = (
             "Всё верно, товарищ?\n\n"
             f"📌 Имя: {data.get('name', 'не указано')}\n"
@@ -502,10 +500,8 @@ def register_handlers(bot):
         
         bot.send_message(message.chat.id, confirmation_text, reply_markup=markup)
 
-    # Шаг 4: Обработка кнопок подтверждения брони ("Да" / "Нет")
     @bot.callback_query_handler(func=lambda call: call.data in ["confirm_booking", "cancel_booking"])
     def handle_booking_confirmation(call: types.CallbackQuery):
-        """Обрабатывает финальное подтверждение или отмену брони."""
         user_id = call.from_user.id
         bot.answer_callback_query(call.id)
         bot.delete_message(call.message.chat.id, call.message.message_id)
@@ -522,18 +518,16 @@ def register_handlers(bot):
                 f"Телефон: {data.get('phone', 'не указано')}\n"
                 f"Повод: {data.get('reason', 'не указано')}"
             )
-            # Отправляем заявку в чат админов
             bot.send_message(REPORT_CHAT_ID, final_text)
             bot.send_message(user_id, "Я всё записал в блокнот. Передам лично. Ну ты даёшь!")
 
         elif call.data == "cancel_booking":
-            # Если пользователь нажал "Начать заново", запускаем сбор данных с первого шага
-            msg = bot.send_message(user_id, "Без проблем, товарищ. Начнем сначала. Как тебя звать?")
+            msg = bot.send_message(user_id, "Без проблем, товарищ. Начнем сначала. Как тебя звать?\n\n*Чтобы отменить, в любой момент напиши /cancel*", parse_mode="Markdown")
             bot.register_next_step_handler(msg, process_name_step)
 
-        # В любом случае очищаем временные данные после завершения
-        if user_id in user_booking_data:
-            del user_booking_data[user_id]
+        if user_id in user_booking_data and call.data == "confirm_booking":
+             del user_booking_data[user_id]
+
 
     # =======================================================================
     # === АДМИН-ПАНЕЛЬ И ПРОЧИЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
@@ -647,7 +641,6 @@ def register_handlers(bot):
             else: return
             send_report(bot, call.message.chat.id, start_time, end_time)
 
-    # === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
     def issue_coupon(bot, user_id, username, first_name, chat_id):
         update_status(user_id, 'issued')
         coupon_text = ("🎉 Гражданин-товарищ, поздравляем!\n\n"
@@ -713,29 +706,23 @@ def register_handlers(bot):
         user_id = message.from_user.id
         user_text = message.text
 
-        # Если пользователь находится в процессе бронирования, не прерываем его
         if user_booking_data.get(user_id):
             return
         
-        # Игнорируем нажатия на известные кнопки
         known_buttons = ['📖 Меню', '🤝 Привести товарища', '🗣 Спроси у Евгенича', '🥃 Получить настойку по талону', '📍 Забронировать стол']
         if user_text in known_buttons or user_text.startswith('/'):
             return 
         
-        # --- Логика вызова ИИ ---
         log_conversation_turn(user_id, "user", user_text)
         history = get_conversation_history(user_id, limit=6)
         
         bot.send_chat_action(message.chat.id, 'typing')
 
-        # Вызываем ИИ. Он либо вернет совет, либо тег для начала бронирования
         ai_response = get_ai_recommendation(user_text, history)
         
         if "[START_BOOKING_FLOW]" in ai_response:
-            # Если ИИ распознал намерение бронировать, показываем кнопки
             _show_booking_options(message)
             log_conversation_turn(user_id, "assistant", "Предложил варианты бронирования.")
         else:
-            # Иначе это обычный ответ, который мы просто отправляем
             log_conversation_turn(user_id, "assistant", ai_response)
             bot.reply_to(message, ai_response, parse_mode="Markdown")
