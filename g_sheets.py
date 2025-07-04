@@ -39,7 +39,6 @@ def find_user_by_id(user_id: int) -> Optional[gspread.Cell]:
     try:
         worksheet = get_sheet()
         if not worksheet: return None
-        # ИЗМЕНЕНИЕ БЫЛО ЗДЕСЬ (в gspread.Cell)
         return worksheet.find(str(user_id), in_column=COL_USER_ID)
     except gspread.exceptions.CellNotFound:
         return None
@@ -67,7 +66,6 @@ def add_new_user(user_id: int, username: str, first_name: str):
 
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Проверяем, есть ли заголовки, если лист пустой
         if not worksheet.get_all_values():
              headers = ['Дата подписки', 'ID Пользователя', 'Username', 'Имя', 'Статус награды']
              worksheet.insert_row(headers, 1)
