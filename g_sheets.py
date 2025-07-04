@@ -87,7 +87,6 @@ def redeem_reward(user_id: int) -> bool:
         return True
     return False
 
-# --- НОВАЯ ФУНКЦИЯ ---
 def delete_user(user_id: int) -> bool:
     """Удаляет пользователя из таблицы по ID."""
     try:
