@@ -48,13 +48,16 @@ def register_handlers(bot):
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
-            keyboard.row(menu_button, friend_button) # Кнопки в одном ряду
+            keyboard.row(menu_button, friend_button)
+            if user_id in ADMIN_IDS:
+                restart_button = types.KeyboardButton("/restart")
+                keyboard.row(restart_button)
             bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉", reply_markup=keyboard)
         else:
             # Клавиатура для НОВОГО пользователя
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
             gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
-            keyboard.add(gift_button) # Только одна кнопка
+            keyboard.add(gift_button)
             bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
 
     @bot.message_handler(commands=['friend'])
@@ -165,6 +168,7 @@ def register_handlers(bot):
         bot.send_message(message.chat.id, "👑 Админ-панель", reply_markup=keyboard)
 
     @bot.message_handler(commands=['restart'])
+    @bot.message_handler(func=lambda message: message.text == "/restart")
     def handle_restart_command(message: types.Message):
         if message.from_user.id not in ADMIN_IDS:
             return
@@ -257,7 +261,6 @@ def issue_coupon(bot, user_id, username, first_name, chat_id):
     bot.send_message(chat_id, coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
 
 def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds):
-    """Генерирует текст 'супер-отчета' на основе данных."""
     conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
     avg_redeem_time_str = "н/д"
     if redeemed > 0:
@@ -288,7 +291,6 @@ def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users,
     return header + period_str + stats + sources_str + users_str
 
 def send_report(bot, chat_id, start_time, end_time):
-    """Универсальная функция для отправки отчета."""
     try:
         issued, redeemed, redeemed_users, sources, total_redeem_time = get_report_data_for_period(start_time, end_time)
         if issued == 0:
