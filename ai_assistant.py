@@ -4,19 +4,23 @@ from config import OPENAI_API_KEY
 
 openai.api_key = OPENAI_API_KEY
 
-def get_ai_recommendation(user_query: str, menu_data: list, conversation_history: list) -> str:
+# Эта версия функции НЕ использует историю диалога, как вы и хотели.
+def get_ai_recommendation(user_query: str, menu_data: list) -> str:
     """
-    Отправляет запрос, меню и ИСТОРИЮ ДИАЛОГА в нейросеть для получения рекомендации.
+    Отправляет запрос и меню в нейросеть для получения рекомендации.
     """
+    # 1. Форматирование меню в текст
     menu_string = ""
     for category in menu_data:
         menu_string += f"\n## Категория: {category['title']}\n"
+        menu_string += f"Описание категории: {category.get('category_narrative', '')}\n"
         for item in category['items']:
             menu_string += f"\n### Настойка: {item['name']} ({item['price']})\n"
-            menu_string += f"История и атмосфера: {item.get('narrative_desc', '')}\n"
+            menu_string += f"История и атмосфера: {item.get('narrative_desc', 'Нет описания.')}\n"
             details_str = ", ".join([f"{k}: {v}" for k, v in item.get('details', {}).items()])
-            menu_string += f"Технические детали: {details_str}\n"
+            menu_string += f"Технические детали (вкус, формула): {details_str}\n"
 
+    # 2. ВАШ НОВЫЙ, ДЕТАЛЬНЫЙ SYSTEM_PROMPT (синтаксис исправлен)
     system_prompt = (
         "Ты — «Евгенич», он же Сергей Жуков, хозяин хаты и главный по настроению в советской рюмочной-караоке на Невском 53. "
         "По совместительству — харизматичный, чуть подвыпивший ИИ-сомелье-советчик.\n\n"
@@ -26,8 +30,8 @@ def get_ai_recommendation(user_query: str, menu_data: list, conversation_history
         "Мата не злоупотребляй — лишь лёгкий «перчик» для задора.\n\n"
 
         "У тебя в памяти меню настоек. Для каждой позиции есть:\n"
-        "• «История и атмосфера» — романтичные, смешные или ламповые байки.\n"
-        "• «Технические детали» — вкус, ингредиенты, ощущения.\n\n"
+        "«История и атмосфера» — романтичные, смешные или ламповые байки.\n"
+        "«Технические детали» — вкус, ингредиенты, ощущения.\n\n"
 
         "Алгоритм работы:\n"
         "1. Внимательно прочитай, чего хочет товарищ.\n"
@@ -35,27 +39,23 @@ def get_ai_recommendation(user_query: str, menu_data: list, conversation_history
         "3. Объясни выбор: сначала по вкусу, потом живо через «Историю и атмосферу» — как настоящий Жуков-рассказчик.\n\n"
 
         "Стиль ответа:\n"
-        "• Душевный, остроумный, чуть ироничный, как тост за праздничным столом.\n"
-        "• Не перечисляй всё меню, дай максимум две рекомендации.\n"
-        "• Вставляй колоритные обороты («бахнем», «лампово», «как очередь за сервелатом»), но не перебарщивай.\n"
+        "Душевный, остроумный, чуть ироничный, как тост за праздничным столом.\n"
+        "Не перечисляй всё меню, дай максимум две рекомендации.\n"
+        "Вставляй колоритные обороты («бахнем», «лампово», «как очередь за сервелатом»), но не перебарщивай.\n"
         "Заверши лёгким приглашением к бару или фирменным тостом-подмигиванием.\n\n"
 
         "Если запрос размытый — предложи универсальную настойку.\n"
         "Если конкретный — будь максимально точен.\n"
         "И помни, товарищ: тут не ресторан — тут душа поёт, а Евгенич наливает!"
     )
-    
-    messages_to_send = []
-    messages_to_send.append({"role": "system", "content": system_prompt})
-    
-    messages_to_send.extend(conversation_history)
-    
-    messages_to_send.append({"role": "user", "content": f"Мой новый вопрос: '{user_query}'. Напомню меню, если нужно:\n{menu_string}"})
 
     try:
         completion = openai.chat.completions.create(
             model="gpt-4o",
-            messages=messages_to_send,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Вот полное меню, которое нужно использовать для ответа:\n{menu_string}\n\nА вот мой запрос: {user_query}"}
+            ],
             temperature=0.8,
             max_tokens=350
         )
