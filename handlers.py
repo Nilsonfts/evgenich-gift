@@ -2,9 +2,11 @@ import logging
 import datetime
 from telebot import types
 import pytz
+
+# --- ИЗМЕНЕННЫЙ КОД: Добавлены новые импорты ---
 from config import (
     CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID,
-    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID, GOOGLE_SHEET_KEY
+    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID, GOOGLE_SHEET_KEY, MENU_URL
 )
 from g_sheets import (
     get_reward_status, add_new_user, update_status, delete_user,
@@ -12,6 +14,10 @@ from g_sheets import (
     get_report_data_for_period, get_stats_by_source, get_weekly_cohort_data, get_top_referrers,
     get_sheet
 )
+# --- НОВЫЙ КОД: Импорты для меню и ИИ ---
+from menu_nastoiki import MENU_DATA
+from ai_assistant import get_ai_recommendation
+
 
 def register_handlers(bot):
     """Регистрирует все обработчики сообщений и кнопок."""
@@ -27,11 +33,21 @@ def register_handlers(bot):
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
+            ai_help_button = types.KeyboardButton("🤖 Что мне выпить?")
+            
             keyboard.row(menu_button, friend_button)
+            keyboard.row(ai_help_button)
+
             if user_id in ADMIN_IDS:
                 restart_button = types.KeyboardButton("/restart")
                 keyboard.row(restart_button)
-            bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉", reply_markup=keyboard)
+            
+            info_text = (
+                "С возвращением, товарищ! Рады видеть снова. 😉\n\n"
+                "Нажимай «📖 Меню» для просмотра или **просто напиши мне в чат, чего бы тебе хотелось** "
+                "(например: _«хочу что-нибудь кислое и ягодное»_), и я помогу с выбором!"
+            )
+            bot.send_message(user_id, info_text, reply_markup=keyboard, parse_mode="Markdown")
             return
 
         # Сценарий для пользователя, который еще НЕ получал настойку (not_found, registered, issued)
@@ -83,14 +99,16 @@ def register_handlers(bot):
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
 
+    # --- ИЗМЕНЕННЫЙ КОД: Обработчик меню теперь предлагает выбор ---
     @bot.message_handler(commands=['menu'])
     @bot.message_handler(func=lambda message: message.text == "📖 Меню")
     def handle_menu_command(message: types.Message):
-        keyboard = types.InlineKeyboardMarkup()
-        url_button = types.InlineKeyboardButton(text="📖 Открыть меню бара", url="https://spb.evgenich.bar/menu")
-        keyboard.add(url_button)
-        bot.send_message(message.chat.id, "Наше меню всегда доступно по кнопке ниже:", reply_markup=keyboard)
-    
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+        nastoiki_button = types.InlineKeyboardButton(text="🥃 Меню настоек (Интерактивное)", callback_data="menu_nastoiki_main")
+        full_menu_button = types.InlineKeyboardButton(text="📖 Полное меню бара (Сайт)", url=MENU_URL)
+        keyboard.add(nastoiki_button, full_menu_button)
+        bot.send_message(message.chat.id, "Выберите раздел меню, товарищ:", reply_markup=keyboard)
+
     @bot.message_handler(commands=['help'])
     def handle_help_command(message: types.Message):
         user_id = message.from_user.id
@@ -112,6 +130,11 @@ def register_handlers(bot):
             )
             help_text += admin_help_text
         bot.send_message(user_id, help_text, parse_mode="Markdown")
+
+    # --- НОВЫЙ КОД: Обработчик кнопки-подсказки для ИИ ---
+    @bot.message_handler(func=lambda message: message.text == "🤖 Что мне выпить?")
+    def handle_ai_prompt_button(message: types.Message):
+        bot.reply_to(message, "Смело пиши мне свои пожелания! Например: «посоветуй что-нибудь сладкое и сливочное» или «ищу самую ядрёную настойку».")
 
     @bot.message_handler(func=lambda message: message.text == "🥃 Получить настойку по талону")
     def handle_get_gift_press(message: types.Message):
@@ -157,6 +180,7 @@ def register_handlers(bot):
             logging.error(f"Ошибка при проверке подписки для {user_id}: {e}")
             bot.answer_callback_query(call.id, "Не удалось проверить подписку. Попробуйте позже.", show_alert=True)
 
+    # --- ИЗМЕНЕННЫЙ КОД: Обработчик для погашения награды теперь выдает новую клавиатуру и текст ---
     @bot.callback_query_handler(func=lambda call: call.data == "redeem_reward")
     def handle_redeem_reward(call: types.CallbackQuery):
         user_id = call.from_user.id
@@ -174,17 +198,78 @@ def register_handlers(bot):
             final_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
+            ai_help_button = types.KeyboardButton("🤖 Что мне выпить?")
+            
             final_keyboard.row(menu_button, friend_button)
+            final_keyboard.row(ai_help_button)
+
             if user_id in ADMIN_IDS:
                 restart_button = types.KeyboardButton("/restart")
                 final_keyboard.row(restart_button)
-            bot.send_message(user_id, "Теперь в главном меню тебе доступны новые команды!", reply_markup=final_keyboard)
+            
+            info_text = (
+                "Отлично! Теперь тебе доступны все возможности, товарищ.\n\n"
+                "Нажимай «📖 Меню» для просмотра или **просто напиши мне в чат, чего бы тебе хотелось** "
+                "(например: _«хочу что-нибудь кислое и ягодное»_), и я помогу с выбором!"
+            )
+            bot.send_message(user_id, info_text, reply_markup=final_keyboard, parse_mode="Markdown")
 
             referrer_id = get_referrer_id_from_user(user_id)
             if referrer_id:
                 logging.info(f"Пользователь {user_id} погасил награду. Внешний планировщик должен будет его проверить для реферера {referrer_id} через 24ч.")
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
+
+    # --- НОВЫЙ КОД: ОБРАБОТЧИКИ МЕНЮ НАСТОЕК ---
+    @bot.callback_query_handler(func=lambda call: call.data == "menu_nastoiki_main")
+    def callback_menu_nastoiki_main(call: types.CallbackQuery):
+        """Показывает главное меню с категориями настоек."""
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        buttons = []
+        for index, category in enumerate(MENU_DATA):
+            buttons.append(
+                types.InlineKeyboardButton(
+                    text=category['title'],
+                    callback_data=f"menu_category_{index}"
+                )
+            )
+        keyboard.add(*buttons)
+        try:
+            bot.edit_message_text(
+                "**Меню настоек «Евгенич»**\n\nВыберите категорию:",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        except Exception: # Сообщение не изменилось, отправим новое
+            bot.send_message(call.message.chat.id, "**Меню настоек «Еенич»**\n\nВыберите категорию:", reply_markup=keyboard, parse_mode="Markdown")
+        bot.answer_callback_query(call.id)
+
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("menu_category_"))
+    def callback_menu_category(call: types.CallbackQuery):
+        """Показывает список настоек в выбранной категории."""
+        category_index = int(call.data.split("_")[2])
+        category = MENU_DATA[category_index]
+
+        text = f"**{category['title']}**\n_{category.get('category_narrative', '')}_\n\n"
+        for item in category['items']:
+            text += f"• **{item['name']}** — {item['price']}\n_{item['narrative_desc']}_\n\n"
+
+        keyboard = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="menu_nastoiki_main")
+        keyboard.add(back_button)
+
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        bot.answer_callback_query(call.id)
+
 
     # === АДМИН-ПАНЕЛЬ ===
     @bot.message_handler(commands=['admin'])
@@ -200,7 +285,6 @@ def register_handlers(bot):
         bot.send_message(message.chat.id, "👑 **Главное меню админ-панели**", reply_markup=keyboard, parse_mode="Markdown")
 
     @bot.message_handler(commands=['restart'])
-    @bot.message_handler(func=lambda message: message.text == "/restart")
     def handle_restart_command(message: types.Message):
         if message.from_user.id not in ADMIN_IDS:
             return
@@ -329,60 +413,67 @@ def register_handlers(bot):
         except Exception as e:
             logging.error(f"Ошибка при выполнении отложенной задачи по рефералам: {e}")
 
-# === Вспомогательные функции ===
-def issue_coupon(bot, user_id, username, first_name, chat_id):
-    update_status(user_id, 'issued')
-    coupon_text = ("🎉 Гражданин-товарищ, поздравляем!\n\n"
-                   "Тебе досталась фирменная настойка «Евгенич» — почти как путёвка в пионерлагерь, только повеселее.\n\n"
-                   "Что делать — коротко и ясно:\n"
-                   "1. Покажи этот экран бармену-дежурному.\n"
-                   "2. По его сигналу жми кнопку внизу — и сразу получаешь стопку!")
-    redeem_keyboard = types.InlineKeyboardMarkup()
-    redeem_button = types.InlineKeyboardButton(text="🔒 НАЛИТЬ ПРИ БАРМЕНЕ", callback_data="redeem_reward")
-    redeem_keyboard.add(redeem_button)
-    try:
-        bot.send_sticker(chat_id, NASTOYKA_STICKER_ID)
-    except Exception as e:
-        logging.error(f"Не удалось отправить стикер-купон: {e}")
-    bot.send_message(chat_id, coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
+    # === Вспомогательные функции ===
+    def issue_coupon(bot, user_id, username, first_name, chat_id):
+        update_status(user_id, 'issued')
+        coupon_text = ("🎉 Гражданин-товарищ, поздравляем!\n\n"
+                       "Тебе досталась фирменная настойка «Евгенич» — почти как путёвка в пионерлагерь, только повеселее.\n\n"
+                       "Что делать — коротко и ясно:\n"
+                       "1. Покажи этот экран бармену-дежурному.\n"
+                       "2. По его сигналу жми кнопку внизу — и сразу получаешь стопку!")
+        redeem_keyboard = types.InlineKeyboardMarkup()
+        redeem_button = types.InlineKeyboardButton(text="🔒 НАЛИТЬ ПРИ БАРМЕНЕ", callback_data="redeem_reward")
+        redeem_keyboard.add(redeem_button)
+        try:
+            bot.send_sticker(chat_id, NASTOYKA_STICKER_ID)
+        except Exception as e:
+            logging.error(f"Не удалось отправить стикер-купон: {e}")
+        bot.send_message(chat_id, coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
 
-def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds):
-    conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
-    avg_redeem_time_str = "н/д"
-    if redeemed > 0:
-        avg_seconds = total_redeem_time_seconds / redeemed
-        hours, remainder = divmod(int(avg_seconds), 3600)
-        minutes, _ = divmod(remainder, 60)
-        avg_redeem_time_str = f"{hours} ч {minutes} мин"
-    report_date = end_time.strftime('%d.%m.%Y')
-    header = f"**#Настойка_за_Подписку (Аналитика за {report_date})**\n\n"
-    period_str = f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
-    stats = (f"✅ **Выдано купонов:** {issued}\n"
-             f"🥃 **Погашено настоек:** {redeemed}\n"
-             f"📈 **Конверсия:** {conversion_rate}%\n"
-             f"⏱️ **Среднее время до погашения:** {avg_redeem_time_str}\n")
-    sources_str = ""
-    if sources:
-        sources_str += "\n**Источники подписчиков:**\n"
-        sorted_sources = sorted(sources.items(), key=lambda item: item[1], reverse=True)
-        for source, count in sorted_sources:
-            sources_str += f"• {source}: {count}\n"
-    users_str = ""
-    if redeemed_users:
-        users_str += "\n**Настойку получили:**\n"
-        for user in redeemed_users[:10]:
-            users_str += f"• {user}\n"
-        if len(redeemed_users) > 10:
-            users_str += f"...и еще {len(redeemed_users) - 10}."
-    return header + period_str + stats + sources_str + users_str
+    def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds):
+        conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
+        avg_redeem_time_str = "н/д"
+        if redeemed > 0:
+            avg_seconds = total_redeem_time_seconds / redeemed
+            hours, remainder = divmod(int(avg_seconds), 3600)
+            minutes, _ = divmod(remainder, 60)
+            avg_redeem_time_str = f"{hours} ч {minutes} мин"
+        report_date = end_time.strftime('%d.%m.%Y')
+        header = f"**#Настойка_за_Подписку (Аналитика за {report_date})**\n\n"
+        period_str = f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
+        stats = (f"✅ **Выдано купонов:** {issued}\n"
+                 f"🥃 **Погашено настоек:** {redeemed}\n"
+                 f"📈 **Конверсия:** {conversion_rate}%\n"
+                 f"⏱️ **Среднее время до погашения:** {avg_redeem_time_str}\n")
+        sources_str = ""
+        if sources:
+            sources_str += "\n**Источники подписчиков:**\n"
+            sorted_sources = sorted(sources.items(), key=lambda item: item[1], reverse=True)
+            for source, count in sorted_sources:
+                sources_str += f"• {source}: {count}\n"
+        users_str = ""
+        if redeemed_users:
+            users_str += "\n**Настойку получили:**\n"
+            for user in redeemed_users[:10]:
+                users_str += f"• {user}\n"
+            if len(redeemed_users) > 10:
+                users_str += f"...и еще {len(redeemed_users) - 10}."
+        return header + period_str + stats + sources_str + users_str
 
-def send_report(bot, chat_id, start_time, end_time):
-    try:
-        issued, redeemed, redeemed_users, sources, total_redeem_time = get_report_data_for_period(start_time, end_time)
-        if issued == 0:
-            bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
-            return
-        report_text = generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time)
-        bot.send_message(chat_id, report_text, parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
+    def send_report(bot, chat_id, start_time, end_time):
+        try:
+            issued, redeemed, redeemed_users, sources, total_redeem_time = get_report_data_for_period(start_time, end_time)
+            if issued == 0:
+                bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
+                return
+            report_text = generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time)
+            bot.send_message(chat_id, report_text, parse_mode="Markdown")
+        except Exception as e:
+            logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
+
+    # --- НОВЫЙ КОД: ОБРАБОТЧИК ЗАПРОСОВ К НЕЙРОСЕТИ (ДОЛЖЕН БЫТЬ В САМОМ КОНЦЕ) ---
+    @bot.message_handler(func=lambda message: True, content_types=['text'])
+    def handle_ai_query(message: types.Message):
+        bot.send_chat_action(message.chat.id, 'typing')
+        recommendation = get_ai_recommendation(message.text, MENU_DATA)
+        bot.reply_to(message, recommendation, parse_mode="Markdown")
