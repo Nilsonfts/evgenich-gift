@@ -12,7 +12,7 @@ except ImportError:
 
 from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
 
-# Номера колонок для удобства
+# Номера колонок
 COL_USER_ID = 2
 COL_STATUS = 5
 COL_REFERRED_BY = 6
@@ -58,12 +58,10 @@ def get_reward_status(user_id: int) -> str:
     return status or 'not_found'
 
 def add_new_user(user_id: int, username: str, first_name: str, source: str, referrer_id: Optional[int] = None):
-    """Добавляет нового пользователя с источником и реферером."""
     try:
         worksheet = get_sheet()
         if not worksheet: return
         current_time_utc = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-        
         if not worksheet.get_all_values():
              headers = ['Дата подписки (UTC)', 'ID Пользователя', 'Username', 'Имя', 'Статус награды', 'Пригласил (ID)', 'Бонус за друга', 'Источник', 'Дата погашения (UTC)']
              worksheet.insert_row(headers, 1)
@@ -76,7 +74,6 @@ def add_new_user(user_id: int, username: str, first_name: str, source: str, refe
         logging.error(f"Не удалось добавить пользователя {user_id} в Google Таблицу: {e}")
 
 def redeem_reward(user_id: int) -> bool:
-    """Погашает награду и записывает дату погашения."""
     cell = find_user_by_id(user_id)
     if not cell: return False
     worksheet = get_sheet()
@@ -116,20 +113,18 @@ def mark_referral_bonus_claimed(referred_user_id: int):
     if not worksheet: return
     worksheet.update_cell(cell.row, COL_FRIEND_BONUS, 'claimed')
 
-def get_super_report_data(start_time: datetime.datetime, end_time: datetime.datetime) -> dict:
-    """Собирает все данные для нового 'супер-отчета'."""
+def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime.datetime) -> Tuple[int, int, List[str], dict]:
+    """Собирает данные за период: выдано, погашено, список username'ов и источники."""
     try:
         worksheet = get_sheet()
-        if not worksheet: return {}
+        if not worksheet: return 0, 0, [], {}
         all_records = worksheet.get_all_records()
         
-        report_data = {
-            "issued": 0,
-            "redeemed": 0,
-            "redeemed_users": [],
-            "sources": {},
-            "total_redeem_time_seconds": 0,
-        }
+        issued_count = 0
+        redeemed_count = 0
+        redeemed_users = []
+        sources = {}
+        total_redeem_time_seconds = 0
 
         for record in all_records:
             try:
@@ -137,25 +132,25 @@ def get_super_report_data(start_time: datetime.datetime, end_time: datetime.date
                 signup_time_utc = pytz.utc.localize(signup_time_naive)
 
                 if start_time <= signup_time_utc < end_time:
-                    report_data["issued"] += 1
+                    issued_count += 1
                     source = record.get('Источник', 'неизвестно')
-                    report_data["sources"][source] = report_data["sources"].get(source, 0) + 1
+                    sources[source] = sources.get(source, 0) + 1
 
                     if record['Статус награды'] == 'redeemed' and record.get('Дата погашения (UTC)'):
-                        report_data["redeemed"] += 1
+                        redeemed_count += 1
                         username = record.get('Username')
                         if username and username != "N/A":
-                            report_data["redeemed_users"].append(f"@{username}")
+                            redeemed_users.append(f"@{username}")
                         else:
-                            report_data["redeemed_users"].append(record.get('Имя', str(record.get('ID Пользователя'))))
+                            redeemed_users.append(record.get('Имя', str(record.get('ID Пользователя'))))
                         
                         redeem_time_naive = datetime.datetime.strptime(record['Дата погашения (UTC)'], "%Y-%m-%d %H:%M:%S")
                         time_diff = redeem_time_naive - signup_time_naive
-                        report_data["total_redeem_time_seconds"] += time_diff.total_seconds()
+                        total_redeem_time_seconds += time_diff.total_seconds()
 
             except (ValueError, TypeError, KeyError):
                 continue
-        return report_data
+        return issued_count, redeemed_count, redeemed_users, sources, total_redeem_time_seconds
     except Exception as e:
-        logging.error(f"Ошибка при сборе данных для супер-отчета: {e}")
-        return {}
+        logging.error(f"Ошибка при сборе данных для отчета: {e}")
+        return 0, 0, [], {}, 0
