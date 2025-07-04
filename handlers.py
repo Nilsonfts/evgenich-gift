@@ -20,10 +20,8 @@ def register_handlers(bot):
             bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉\n\nЕсли ищешь ссылку на наш канал, просто отправь команду /channel.")
         else:
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            # --- НОВЫЙ ТЕКСТ КНОПКИ ---
             get_gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
             keyboard.add(get_gift_button)
-            # --- НОВОЕ ПРИВЕТСТВЕННОЕ СООБЩЕНИЕ ---
             bot.send_message(message.chat.id,
                              "Привет, товарищ! Готов обменять подписку на вкус детства?",
                              reply_markup=keyboard)
@@ -36,7 +34,6 @@ def register_handlers(bot):
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
 
-    # --- НОВЫЙ ТЕКСТ КНОПКИ В ОБРАБОТЧИКЕ ---
     @bot.message_handler(func=lambda message: message.text == "🥃 Получить настойку по талону")
     def handle_get_gift_press(message: types.Message):
         user_id = message.from_user.id
@@ -47,13 +44,11 @@ def register_handlers(bot):
         try:
             chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
             if chat_member.status in ['member', 'administrator', 'creator']:
-                # --- НОВЫЙ ТЕКСТ ДЛЯ ТЕХ, КТО УЖЕ ПОДПИСАН ---
                 bot.send_message(user_id, "Уважаю — подписался! Получай гостинец.")
                 issue_coupon(bot, user_id, message.from_user.username, message.from_user.first_name, message.chat.id)
                 return
         except Exception as e:
             logging.error(f"Ошибка при предварительной проверке подписки для {user_id}: {e}")
-            
         welcome_text = ("Отлично! 👍\n\n"
                         "Чтобы получить настойку, подпишись на наш телеграм-канал. Это займет всего секунду.\n\n"
                         "Когда подпишешься — нажимай на кнопку «Я подписался» здесь же.")
@@ -78,7 +73,6 @@ def register_handlers(bot):
                 bot.delete_message(call.message.chat.id, call.message.message_id)
                 issue_coupon(bot, user_id, call.from_user.username, call.from_user.first_name, call.message.chat.id)
             else:
-                # --- НОВЫЙ ТЕКСТ, ЕСЛИ НЕ ПОДПИСАН ---
                 bot.answer_callback_query(call.id, "Ну куда без подписки, родной? Там всё по-честному.", show_alert=True)
         except Exception as e:
             logging.error(f"Ошибка при проверке подписки для {user_id}: {e}")
@@ -126,31 +120,42 @@ def register_handlers(bot):
 
 # === Вспомогательные функции ===
 def issue_coupon(bot, user_id, username, first_name, chat_id):
+    """Выдает купон пользователю."""
     status = get_reward_status(user_id)
     if status in ['issued', 'redeemed']: return
     add_new_user(user_id, username or "N/A", first_name)
-    coupon_text = ("🎉 Поздравляем! 🎉\n\n"
-                   "Вы получили фирменную настойку!\n\n"
-                   "**ВАЖНО:** Не нажимайте кнопку самостоятельно!\n"
-                   "1. Покажите этот экран бармену.\n"
-                   "2. Нажмите кнопку **только** по его просьбе.")
+    
+    # --- ИЗМЕНЕНИЯ ЗДЕСЬ ---
+    coupon_text = (
+        "🎉 Гражданин-товарищ, поздравляем!\n\n"
+        "Тебе досталась фирменная настойка «Евгенич» — почти как путёвка в пионерлагерь, только повеселее.\n\n"
+        "Что делать — коротко и ясно:\n"
+        "1. Покажи этот экран бармену-дежурному.\n"
+        "2. По его сигналу жми кнопку внизу — и сразу получаешь стопку!"
+    )
     redeem_keyboard = types.InlineKeyboardMarkup()
-    # --- НОВЫЙ ТЕКСТ КНОПКИ ---
-    redeem_button = types.InlineKeyboardButton(text="🔒 Нажимай только с барменом! Без него — нельзя", callback_data="redeem_reward")
+    redeem_button = types.InlineKeyboardButton(
+        text="🔒 НАЛИТЬ ПРИ БАРМЕНЕ", # <-- ИЗМЕНЕННАЯ КНОПКА
+        callback_data="redeem_reward"
+    )
     redeem_keyboard.add(redeem_button)
+    
     try:
         bot.send_sticker(chat_id, NASTOYKA_STICKER_ID)
     except Exception as e:
         logging.error(f"Не удалось отправить стикер-купон: {e}")
+        
     bot.send_message(chat_id, coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
 
 def generate_report_text(start_time, end_time, issued, redeemed):
+    """Генерирует текст отчета на основе данных."""
     return (f"**#Отчет_ТГ_Настойка_за_Подписку**\n\n"
             f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
             f"✅ **Выдано купонов (подписалось):** {issued}\n"
             f"🥃 **Погашено (выпито настоек):** {redeemed}")
 
 def send_scheduled_report(bot):
+    """Формирует и отправляет отчет за прошедшую смену по расписанию."""
     tz_moscow = pytz.timezone('Europe/Moscow')
     now_moscow = datetime.datetime.now(tz_moscow)
     end_time = now_moscow.replace(hour=6, minute=0, second=0, microsecond=0)
@@ -163,6 +168,7 @@ def send_scheduled_report(bot):
         logging.error(f"Не удалось отправить плановый отчет в чат {REPORT_CHAT_ID}: {e}")
 
 def send_manual_report(bot, chat_id):
+    """Формирует и отправляет отчет за текущую смену вручную."""
     tz_moscow = pytz.timezone('Europe/Moscow')
     now_moscow = datetime.datetime.now(tz_moscow)
     end_time = now_moscow
