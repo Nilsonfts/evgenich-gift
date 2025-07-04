@@ -4,23 +4,23 @@ from telebot import types
 import pytz
 from config import (
     CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID,
-    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID
+    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID, GOOGLE_SHEET_KEY
 )
 from g_sheets import (
     get_reward_status, add_new_user, redeem_reward, delete_user,
     get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed,
-    get_report_data_for_period
+    get_report_data_for_period, get_sheet
 )
 
 def register_handlers(bot):
     """Регистрирует все обработчики сообщений и кнопок."""
 
+    # === ПОЛЬЗОВАТЕЛЬСКИЕ КОМАНДЫ ===
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
         user_id = message.from_user.id
         referrer_id = None
         source = 'direct'
-
         args = message.text.split()
         if len(args) > 1:
             payload = args[1]
@@ -28,8 +28,7 @@ def register_handlers(bot):
                 try:
                     referrer_id = int(payload.replace('ref_', ''))
                     source = 'Реферал'
-                except (ValueError, IndexError):
-                    pass
+                except (ValueError, IndexError): pass
             else:
                 allowed_sources = {'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 'qr_toilet': 'QR в туалете', 'vk': 'VK', 'inst': 'Instagram', 'flyer': 'Листовки', 'site': 'Сайт'}
                 if payload in allowed_sources:
@@ -63,12 +62,10 @@ def register_handlers(bot):
         user_id = message.from_user.id
         bot_username = bot.get_me().username
         ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
-        text = (
-            "💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
-            f"Вот твоя персональная директива на привлечение нового бойца:\n`{ref_link}`\n\n"
-            "Отправь ее другу. Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит дефицитной закуской! 🥖\n\n"
-            "*Помни, план — не более 5 товарищей.*"
-        )
+        text = ("💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
+                f"Вот твоя персональная директива на привлечение нового бойца:\n`{ref_link}`\n\n"
+                "Отправь ее другу. Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит дефицитной закуской! 🥖\n\n"
+                "*Помни, план — не более 5 товарищей.*")
         bot.send_message(user_id, text, parse_mode="Markdown")
 
     @bot.message_handler(commands=['channel'])
@@ -161,7 +158,8 @@ def register_handlers(bot):
         today_report_button = types.InlineKeyboardButton("📊 Отчет за текущую смену", callback_data="admin_report_today")
         week_report_button = types.InlineKeyboardButton("📅 Отчет за неделю", callback_data="admin_report_week")
         month_report_button = types.InlineKeyboardButton("🗓️ Отчет за месяц", callback_data="admin_report_month")
-        keyboard.add(today_report_button, week_report_button, month_report_button)
+        diag_button = types.InlineKeyboardButton("⚙️ Диагностика таблицы", callback_data="admin_diag")
+        keyboard.add(today_report_button, week_report_button, month_report_button, diag_button)
         bot.send_message(message.chat.id, "👑 Админ-панель", reply_markup=keyboard)
 
     @bot.message_handler(commands=['restart'])
@@ -175,31 +173,60 @@ def register_handlers(bot):
         else:
             bot.reply_to(message, f"❌ Ошибка при сбросе профиля: {response_message}")
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_report'))
-    def handle_admin_report_callbacks(call: types.CallbackQuery):
+    @bot.message_handler(commands=['diag'])
+    def handle_diag_command(message: types.Message):
+        if message.from_user.id not in ADMIN_IDS:
+            return
+        bot.reply_to(message, "⚙️ Запускаю диагностику подключения к Google Таблице...")
+        try:
+            worksheet = get_sheet()
+            if not worksheet:
+                bot.send_message(message.chat.id, "❌ Не удалось подключиться к таблице. Проверьте креды и ключ.")
+                return
+            
+            cell_a1 = worksheet.cell(1, 1).value
+            bot.send_message(message.chat.id, 
+                             f"✅ Успешно подключился к таблице!\n\n"
+                             f"🔑 **Ключ таблицы (последние 5 симв.):** `...{GOOGLE_SHEET_KEY[-5:]}`\n"
+                             f"📄 **Содержимое ячейки A1:** `{cell_a1}`",
+                             parse_mode="Markdown")
+        except Exception as e:
+            bot.send_message(message.chat.id, f"❌ Произошла ошибка при чтении таблицы: {e}")
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
+    def handle_admin_callbacks(call: types.CallbackQuery):
         if call.from_user.id not in ADMIN_IDS:
             bot.answer_callback_query(call.id, "⛔️ Доступ запрещен.")
             return
         
-        period = call.data.split('_')[-1]
-        bot.answer_callback_query(call.id, f"Формирую отчет...")
-        
-        tz_moscow = pytz.timezone('Europe/Moscow')
-        now_moscow = datetime.datetime.now(tz_moscow)
-        end_time = now_moscow
-
-        if period == 'today':
-            if now_moscow.hour < 12:
-                start_time = (now_moscow - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
-            else:
-                start_time = now_moscow.replace(hour=12, minute=0, second=0, microsecond=0)
-        elif period == 'week':
-            start_time = now_moscow - datetime.timedelta(days=7)
-        elif period == 'month':
-            start_time = now_moscow - datetime.timedelta(days=30)
-        else:
+        # Переиспользуем код из обработчика команды /diag
+        if call.data == 'admin_diag':
+            bot.answer_callback_query(call.id, "Запускаю диагностику...")
+            diag_message = types.Message(message_id=call.message.message_id, from_user=call.from_user, date=call.message.date, chat=call.message.chat, content_type='text', options={}, json_string='')
+            diag_message.text = '/diag'
+            handle_diag_command(diag_message)
             return
-        send_report(bot, call.message.chat.id, start_time, end_time)
+
+        if call.data.startswith('admin_report'):
+            period = call.data.split('_')[-1]
+            bot.answer_callback_query(call.id, f"Формирую отчет...")
+            
+            tz_moscow = pytz.timezone('Europe/Moscow')
+            now_moscow = datetime.datetime.now(tz_moscow)
+            end_time = now_moscow
+
+            if period == 'today':
+                if now_moscow.hour < 12:
+                    start_time = (now_moscow - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+                else:
+                    start_time = now_moscow.replace(hour=12, minute=0, second=0, microsecond=0)
+            elif period == 'week':
+                start_time = now_moscow - datetime.timedelta(days=7)
+            elif period == 'month':
+                start_time = now_moscow - datetime.timedelta(days=30)
+            else:
+                return
+            send_report(bot, call.message.chat.id, start_time, end_time)
 
     # === СКРЫТЫЕ КОМАНДЫ ДЛЯ ПЛАНИРОВЩИКА ===
     @bot.message_handler(commands=['send_daily_report'])
@@ -236,13 +263,12 @@ def register_handlers(bot):
         except Exception as e:
             logging.error(f"Ошибка при выполнении отложенной задачи по рефералам: {e}")
 
-
 # === Вспомогательные функции (вынесены за пределы register_handlers) ===
 def issue_coupon(bot, user_id, username, first_name, chat_id):
     status = get_reward_status(user_id)
     if status in ['issued', 'redeemed']: return
     if status == 'not_found':
-        add_new_user(user_id, username or "N/A", first_name, 'direct')
+        add_new_user(user_id, username or "N/A", first_name, 'direct', None)
     
     coupon_text = ("🎉 Гражданин-товарищ, поздравляем!\n\n"
                    "Тебе досталась фирменная настойка «Евгенич» — почти как путёвка в пионерлагерь, только повеселее.\n\n"
