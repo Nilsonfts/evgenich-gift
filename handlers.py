@@ -3,12 +3,14 @@ import datetime
 from telebot import types
 import pytz
 from config import (
-    CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID, 
+    CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID,
     ADMIN_IDS, REPORT_CHAT_ID
 )
 from g_sheets import get_reward_status, add_new_user, redeem_reward, get_report_data_for_period
 
 def register_handlers(bot):
+    """Регистрирует все обработчики сообщений и кнопок."""
+
     # === ПОЛЬЗОВАТЕЛЬСКИЕ КОМАНДЫ ===
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
@@ -20,8 +22,8 @@ def register_handlers(bot):
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
             get_gift_button = types.KeyboardButton("🎁 ПОЛУЧИТЬ НАСТОЙКУ")
             keyboard.add(get_gift_button)
-            bot.send_message(message.chat.id, 
-                             "Привет! 👋 Нажми на кнопку ниже, чтобы получить свой подарок.", 
+            bot.send_message(message.chat.id,
+                             "Привет! 👋 Нажми на кнопку ниже, чтобы получить свой подарок.",
                              reply_markup=keyboard)
 
     @bot.message_handler(commands=['channel'])
@@ -136,8 +138,8 @@ def issue_coupon(bot, user_id, username, first_name, chat_id):
     bot.send_message(chat_id, coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
 
 def generate_report_text(start_time, end_time, issued, redeemed):
-    report_date = end_time.strftime('%d.%m.%Y')
-    return (f"**#Отчет_ТГ_Настойка_за_Подписку ({report_date})**\n\n"
+    # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+    return (f"**#Отчет_ТГ_Настойка_за_Подписку**\n\n"
             f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
             f"✅ **Выдано купонов (подписалось):** {issued}\n"
             f"🥃 **Погашено (выпито настоек):** {redeemed}")
