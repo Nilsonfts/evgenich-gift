@@ -13,18 +13,15 @@ except ImportError:
 
 from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
 
-# Номера колонок для удобства
+# Номера колонок
 COL_USER_ID = 2
 COL_STATUS = 5
-COL_USERNAME = 3
-COL_NAME = 4
 COL_REFERRED_BY = 6
 COL_FRIEND_BONUS = 7
 COL_SOURCE = 8
 COL_REDEEM_DATE = 9
 
 def get_sheet() -> Optional[gspread.Worksheet]:
-    """Аутентифицируется и возвращает рабочий лист Google Таблицы."""
     if not gspread:
         logging.error("Библиотека gspread не установлена.")
         return None
@@ -42,7 +39,6 @@ def get_sheet() -> Optional[gspread.Worksheet]:
         return None
 
 def find_user_by_id(user_id: int) -> Optional[gspread.Cell]:
-    """Находит пользователя в таблице по ID и возвращает ячейку."""
     try:
         worksheet = get_sheet()
         if not worksheet: return None
@@ -54,7 +50,6 @@ def find_user_by_id(user_id: int) -> Optional[gspread.Cell]:
         return None
 
 def get_reward_status(user_id: int) -> str:
-    """Проверяет статус награды пользователя в таблице."""
     cell = find_user_by_id(user_id)
     if not cell:
         return 'not_found'
@@ -64,12 +59,12 @@ def get_reward_status(user_id: int) -> str:
     return status or 'not_found'
 
 def add_new_user(user_id: int, username: str, first_name: str, source: str, referrer_id: Optional[int] = None):
-    """Добавляет нового пользователя с источником и реферером."""
+    """Добавляет нового пользователя со статусом 'registered'."""
     try:
         if find_user_by_id(user_id):
             logging.info(f"Попытка добавить существующего пользователя {user_id}. Операция пропущена.")
             return
-            
+
         worksheet = get_sheet()
         if not worksheet: return
         current_time_utc = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
@@ -78,26 +73,31 @@ def add_new_user(user_id: int, username: str, first_name: str, source: str, refe
              worksheet.insert_row(headers, 1)
              worksheet.format('A1:I1', {'textFormat': {'bold': True}})
         
-        row_to_add = [current_time_utc, user_id, username, first_name, 'issued', referrer_id if referrer_id else '', '', source, '']
+        row_to_add = [current_time_utc, user_id, username, first_name, 'registered', referrer_id if referrer_id else '', '', source, '']
         worksheet.append_row(row_to_add)
-        logging.info(f"Пользователь {user_id} добавлен. Источник: {source}, Пригласил: {referrer_id}")
+        logging.info(f"Пользователь {user_id} добавлен со статусом 'registered'. Источник: {source}, Пригласил: {referrer_id}")
     except Exception as e:
         logging.error(f"Не удалось добавить пользователя {user_id} в Google Таблицу: {e}")
 
-def redeem_reward(user_id: int) -> bool:
-    """Погашает награду и записывает дату погашения."""
-    cell = find_user_by_id(user_id)
-    if not cell: return False
-    worksheet = get_sheet()
-    if not worksheet: return False
-    
-    current_status = worksheet.cell(cell.row, COL_STATUS).value
-    if current_status == 'issued':
-        current_time_utc = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-        worksheet.update_cell(cell.row, COL_STATUS, 'redeemed')
-        worksheet.update_cell(cell.row, COL_REDEEM_DATE, current_time_utc)
+def update_status(user_id: int, new_status: str) -> bool:
+    """Обновляет статус награды пользователя и дату погашения, если нужно."""
+    try:
+        cell = find_user_by_id(user_id)
+        if not cell: return False
+        worksheet = get_sheet()
+        if not worksheet: return False
+        
+        worksheet.update_cell(cell.row, COL_STATUS, new_status)
+        
+        if new_status == 'redeemed':
+             current_time_utc = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+             worksheet.update_cell(cell.row, COL_REDEEM_DATE, current_time_utc)
+        
+        logging.info(f"Статус пользователя {user_id} обновлен на {new_status}")
         return True
-    return False
+    except Exception as e:
+        logging.error(f"Не удалось обновить статус для пользователя {user_id}: {e}")
+        return False
 
 def delete_user(user_id: int) -> Tuple[bool, str]:
     """Удаляет пользователя и проверяет, что он действительно удален."""
@@ -167,7 +167,9 @@ def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime
                 signup_time_naive = datetime.datetime.strptime(record['Дата подписки (UTC)'], "%Y-%m-%d %H:%M:%S")
                 signup_time_utc = pytz.utc.localize(signup_time_naive)
                 if start_time <= signup_time_utc < end_time:
-                    issued_count += 1
+                    # Считаем выданными тех, кто прошел регистрацию
+                    if record.get('Статус награды') in ['issued', 'redeemed']:
+                        issued_count += 1
                     source = record.get('Источник', 'неизвестно')
                     sources[source] = sources.get(source, 0) + 1
                     if record['Статус награды'] == 'redeemed' and record.get('Дата погашения (UTC)'):
@@ -198,7 +200,8 @@ def get_stats_by_source() -> Dict[str, Dict[str, int]]:
             if not source: source = 'неизвестно'
             if source not in source_stats:
                 source_stats[source] = {'issued': 0, 'redeemed': 0}
-            source_stats[source]['issued'] += 1
+            if record.get('Статус награды') in ['issued', 'redeemed']:
+                 source_stats[source]['issued'] += 1
             if record.get('Статус награды') == 'redeemed':
                 source_stats[source]['redeemed'] += 1
         return source_stats
@@ -225,7 +228,8 @@ def get_weekly_cohort_data() -> List[Dict]:
                 signup_time_utc = pytz.utc.localize(signup_time_naive)
                 for week_key, dates in cohorts.items():
                     if dates['start'] <= signup_time_utc <= dates['end']:
-                        cohorts[week_key]['issued'] += 1
+                        if record.get('Статус награды') in ['issued', 'redeemed']:
+                            cohorts[week_key]['issued'] += 1
                         if record.get('Статус награды') == 'redeemed':
                             cohorts[week_key]['redeemed'] += 1
                         break
