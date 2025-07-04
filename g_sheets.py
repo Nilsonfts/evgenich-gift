@@ -13,7 +13,7 @@ except ImportError:
 
 from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
 
-# Номера колонок
+# Column numbers
 COL_USER_ID = 2
 COL_STATUS = 5
 COL_REFERRED_BY = 6
@@ -23,7 +23,7 @@ COL_REDEEM_DATE = 9
 
 def get_sheet() -> Optional[gspread.Worksheet]:
     if not gspread:
-        logging.error("Библиотека gspread не установлена.")
+        logging.error("The gspread library is not installed.")
         return None
     try:
         creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
@@ -35,7 +35,7 @@ def get_sheet() -> Optional[gspread.Worksheet]:
         spreadsheet = gc.open_by_key(GOOGLE_SHEET_KEY)
         return spreadsheet.sheet1
     except Exception as e:
-        logging.error(f"Ошибка подключения к Google Sheets: {e}")
+        logging.error(f"Error connecting to Google Sheets: {e}")
         return None
 
 def find_user_by_id(user_id: int) -> Optional[gspread.Cell]:
@@ -46,7 +46,7 @@ def find_user_by_id(user_id: int) -> Optional[gspread.Cell]:
     except gspread.exceptions.CellNotFound:
         return None
     except Exception as e:
-        logging.error(f"Ошибка при поиске пользователя {user_id} в Google Sheets: {e}")
+        logging.error(f"Error finding user {user_id} in Google Sheets: {e}")
         return None
 
 def get_reward_status(user_id: int) -> str:
@@ -59,10 +59,10 @@ def get_reward_status(user_id: int) -> str:
     return status or 'not_found'
 
 def add_new_user(user_id: int, username: str, first_name: str, source: str, referrer_id: Optional[int] = None):
-    """Добавляет нового пользователя со статусом 'registered'."""
+    """Adds a new user with the 'registered' status."""
     try:
         if find_user_by_id(user_id):
-            logging.info(f"Попытка добавить существующего пользователя {user_id}. Операция пропущена.")
+            logging.info(f"Attempted to add existing user {user_id}. Operation skipped.")
             return
 
         worksheet = get_sheet()
@@ -75,12 +75,12 @@ def add_new_user(user_id: int, username: str, first_name: str, source: str, refe
         
         row_to_add = [current_time_utc, user_id, username, first_name, 'registered', referrer_id if referrer_id else '', '', source, '']
         worksheet.append_row(row_to_add)
-        logging.info(f"Пользователь {user_id} добавлен со статусом 'registered'. Источник: {source}, Пригласил: {referrer_id}")
+        logging.info(f"User {user_id} added with status 'registered'. Source: {source}, Referred by: {referrer_id}")
     except Exception as e:
-        logging.error(f"Не удалось добавить пользователя {user_id} в Google Таблицу: {e}")
+        logging.error(f"Could not add user {user_id} to Google Sheet: {e}")
 
 def update_status(user_id: int, new_status: str) -> bool:
-    """Обновляет статус награды пользователя и дату погашения, если нужно."""
+    """Updates the user's reward status and redemption date if needed."""
     try:
         cell = find_user_by_id(user_id)
         if not cell: return False
@@ -93,17 +93,17 @@ def update_status(user_id: int, new_status: str) -> bool:
              current_time_utc = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
              worksheet.update_cell(cell.row, COL_REDEEM_DATE, current_time_utc)
         
-        logging.info(f"Статус пользователя {user_id} обновлен на {new_status}")
+        logging.info(f"User {user_id} status updated to {new_status}")
         return True
     except Exception as e:
-        logging.error(f"Не удалось обновить статус для пользователя {user_id}: {e}")
+        logging.error(f"Could not update status for user {user_id}: {e}")
         return False
 
 def delete_user(user_id: int) -> Tuple[bool, str]:
-    """Удаляет пользователя и проверяет, что он действительно удален."""
+    """Deletes a user and verifies the deletion."""
     try:
         worksheet = get_sheet()
-        if not worksheet: return False, "Не удалось получить доступ к таблице."
+        if not worksheet: return False, "Could not access the sheet."
         all_records = worksheet.get_all_records()
         row_to_delete = -1
         for index, record in enumerate(all_records):
@@ -114,19 +114,19 @@ def delete_user(user_id: int) -> Tuple[bool, str]:
             worksheet.delete_rows(row_to_delete)
             cell_after_delete = find_user_by_id(user_id)
             if cell_after_delete is None:
-                msg = f"Пользователь {user_id} успешно удален. Проверка подтвердила."
+                msg = f"User {user_id} successfully deleted. Verification confirmed."
                 logging.info(msg)
                 return True, msg
             else:
-                msg = "Команда на удаление отправлена, но пользователь все еще в базе. Проверьте права 'Редактора' у сервисного аккаунта."
+                msg = "Deletion command sent, but user is still in the database. Check 'Editor' permissions for the service account."
                 logging.error(msg)
                 return False, msg
         else:
-            msg = f"Пользователь {user_id} не найден в таблице для удаления."
+            msg = f"User {user_id} not found in the sheet for deletion."
             logging.info(msg)
             return False, msg
     except Exception as e:
-        error_msg = f"Ошибка при удалении пользователя {user_id}: {e}"
+        error_msg = f"Error deleting user {user_id}: {e}"
         logging.error(error_msg)
         return False, str(e)
 
@@ -146,7 +146,7 @@ def count_successful_referrals(referrer_id: int) -> int:
         claimed_count = sum(1 for cell in all_referrer_cells if worksheet.cell(cell.row, COL_FRIEND_BONUS).value == 'claimed')
         return claimed_count
     except Exception as e:
-        logging.error(f"Ошибка при подсчете рефералов для {referrer_id}: {e}")
+        logging.error(f"Error counting referrals for {referrer_id}: {e}")
         return 0
 
 def mark_referral_bonus_claimed(referred_user_id: int):
@@ -167,10 +167,9 @@ def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime
                 signup_time_naive = datetime.datetime.strptime(record['Дата подписки (UTC)'], "%Y-%m-%d %H:%M:%S")
                 signup_time_utc = pytz.utc.localize(signup_time_naive)
                 if start_time <= signup_time_utc < end_time:
-                    # Считаем выданными тех, кто прошел регистрацию
                     if record.get('Статус награды') in ['issued', 'redeemed']:
                         issued_count += 1
-                    source = record.get('Источник', 'неизвестно')
+                    source = record.get('Источник', 'unknown')
                     sources[source] = sources.get(source, 0) + 1
                     if record['Статус награды'] == 'redeemed' and record.get('Дата погашения (UTC)'):
                         redeemed_count += 1
@@ -186,7 +185,7 @@ def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime
                 continue
         return issued_count, redeemed_count, redeemed_users, sources, total_redeem_time_seconds
     except Exception as e:
-        logging.error(f"Ошибка при сборе данных для отчета: {e}")
+        logging.error(f"Error gathering data for report: {e}")
         return 0, 0, [], {}, 0
 
 def get_stats_by_source() -> Dict[str, Dict[str, int]]:
@@ -196,8 +195,8 @@ def get_stats_by_source() -> Dict[str, Dict[str, int]]:
         all_records = worksheet.get_all_records()
         source_stats = {}
         for record in all_records:
-            source = record.get('Источник', 'неизвестно')
-            if not source: source = 'неизвестно'
+            source = record.get('Источник', 'unknown')
+            if not source: source = 'unknown'
             if source not in source_stats:
                 source_stats[source] = {'issued': 0, 'redeemed': 0}
             if record.get('Статус награды') in ['issued', 'redeemed']:
@@ -206,7 +205,7 @@ def get_stats_by_source() -> Dict[str, Dict[str, int]]:
                 source_stats[source]['redeemed'] += 1
         return source_stats
     except Exception as e:
-        logging.error(f"Ошибка при сборе статистики по источникам: {e}")
+        logging.error(f"Error gathering stats by source: {e}")
         return {}
 
 def get_weekly_cohort_data() -> List[Dict]:
@@ -237,7 +236,7 @@ def get_weekly_cohort_data() -> List[Dict]:
                 continue
         return [{'week': key, **value} for key, value in cohorts.items()]
     except Exception as e:
-        logging.error(f"Ошибка при сборе когортных данных: {e}")
+        logging.error(f"Error gathering cohort data: {e}")
         return []
 
 def get_top_referrers(limit: int = 5) -> List[Tuple[str, int]]:
@@ -253,11 +252,48 @@ def get_top_referrers(limit: int = 5) -> List[Tuple[str, int]]:
             return []
         referrer_counts = Counter(successful_referrals)
         top_referrers = []
-        user_map = {str(rec.get('ID Пользователя')): f"@{rec['Username']}" if rec.get('Username') else rec.get('Имя', 'Аноним') for rec in all_records if rec.get('ID Пользователя')}
+        user_map = {str(rec.get('ID Пользователя')): f"@{rec['Username']}" if rec.get('Username') else rec.get('Имя', 'Anonymous') for rec in all_records if rec.get('ID Пользователя')}
         for user_id, count in referrer_counts.most_common(limit):
             name = user_map.get(user_id, f"ID: {user_id}")
             top_referrers.append((name, count))
         return top_referrers
     except Exception as e:
-        logging.error(f"Ошибка при получении топа рефереров: {e}")
+        logging.error(f"Error getting top referrers: {e}")
         return []
+
+# === NEW FUNCTIONS FOR CONVERSATION MEMORY ===
+
+def log_conversation_turn(user_id: int, role: str, text: str):
+    """Logs one turn of a conversation (from user or bot) to the journal."""
+    try:
+        # Access the 'conversation_history' sheet
+        worksheet = get_sheet().spreadsheet.worksheet('conversation_history')
+        if not worksheet:
+            logging.error("Sheet 'conversation_history' not found in the spreadsheet!")
+            return
+        
+        timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        worksheet.append_row([user_id, timestamp, role, text])
+    except Exception as e:
+        logging.error(f"Error writing to conversation log for user_id {user_id}: {e}")
+
+def get_conversation_history(user_id: int, limit: int = 10) -> list:
+    """Retrieves the last 'limit' messages from a user's conversation."""
+    history = []
+    try:
+        worksheet = get_sheet().spreadsheet.worksheet('conversation_history')
+        if not worksheet:
+            logging.error("Sheet 'conversation_history' not found in the spreadsheet!")
+            return history
+            
+        all_records = worksheet.get_all_records()
+        user_records = [rec for rec in all_records if str(rec.get('user_id')) == str(user_id)]
+        
+        # Get the last 'limit' messages
+        for record in user_records[-limit:]:
+            history.append({"role": record.get('role'), "content": record.get('text')})
+            
+        return history
+    except Exception as e:
+        logging.error(f"Error getting conversation history for user_id {user_id}: {e}")
+        return history
