@@ -261,8 +261,6 @@ def get_top_referrers(limit: int = 5) -> List[Tuple[str, int]]:
         logging.error(f"Error getting top referrers: {e}")
         return []
 
-# === NEW FUNCTIONS FOR CONVERSATION MEMORY ===
-
 def log_conversation_turn(user_id: int, role: str, text: str):
     """Logs one turn of a conversation (from user or bot) to the journal."""
     try:
@@ -297,3 +295,30 @@ def get_conversation_history(user_id: int, limit: int = 10) -> list:
     except Exception as e:
         logging.error(f"Error getting conversation history for user_id {user_id}: {e}")
         return history
+
+# === NEW FUNCTION FOR DAILY SPECIALS AND STOP LIST ===
+def get_daily_updates() -> dict:
+    """Reads operational data from the 'daily_updates' sheet."""
+    updates = {'special': 'нет', 'stop-list': 'ничего'}
+    try:
+        worksheet = get_sheet().spreadsheet.worksheet('daily_updates')
+        if not worksheet:
+            logging.warning("Sheet 'daily_updates' not found. AI will not have daily specials info.")
+            return updates
+            
+        records = worksheet.get_all_records()
+        specials = [rec['item_name'] for rec in records if rec.get('status') == 'special']
+        stop_list = [rec['item_name'] for rec in records if rec.get('status') == 'stop-list']
+        
+        if specials:
+            updates['special'] = ", ".join(specials)
+        if stop_list:
+            updates['stop-list'] = ", ".join(stop_list)
+            
+        return updates
+    except gspread.exceptions.WorksheetNotFound:
+        logging.warning("Sheet 'daily_updates' not found. AI will not have daily specials info.")
+        return updates
+    except Exception as e:
+        logging.error(f"Error reading the 'daily_updates' sheet: {e}")
+        return updates
