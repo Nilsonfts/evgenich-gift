@@ -8,11 +8,10 @@ def register_handlers(bot):
 
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
-        """Отправляет приветствие и одноразовую кнопку для новых пользователей."""
         user_id = message.from_user.id
         status = get_reward_status(user_id)
         if status in ['issued', 'redeemed']:
-            bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉")
+            bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉\n\nЕсли ищешь ссылку на наш канал, просто отправь команду /channel.")
         else:
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
             get_gift_button = types.KeyboardButton("🎁 ПОЛУЧИТЬ НАСТОЙКУ")
@@ -20,6 +19,15 @@ def register_handlers(bot):
             bot.send_message(message.chat.id, 
                              "Привет! 👋 Нажми на кнопку ниже, чтобы получить свой подарок.", 
                              reply_markup=keyboard)
+
+    @bot.message_handler(commands=['channel'])
+    def handle_channel_command(message):
+        """Отправляет ссылку на канал по команде /channel."""
+        keyboard = types.InlineKeyboardMarkup()
+        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
+        url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
+        keyboard.add(url_button)
+        bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
 
     @bot.message_handler(func=lambda message: message.text == "🎁 ПОЛУЧИТЬ НАСТОЙКУ")
     def handle_get_gift_press(message: types.Message):
@@ -51,7 +59,11 @@ def register_handlers(bot):
         check_button = types.InlineKeyboardButton(text="✅ Я подписался, проверить!", callback_data="check_subscription")
         inline_keyboard.add(subscribe_button, check_button)
         
-        bot.send_sticker(message.chat.id, HELLO_STICKER_ID)
+        try:
+            bot.send_sticker(message.chat.id, HELLO_STICKER_ID)
+        except Exception as e:
+            logging.error(f"Не удалось отправить приветственный стикер: {e}")
+
         bot.send_message(message.chat.id, welcome_text, reply_markup=inline_keyboard, parse_mode="Markdown")
 
     @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
@@ -78,12 +90,12 @@ def register_handlers(bot):
         user_id = call.from_user.id
         if redeem_reward(user_id):
             final_text = "✅ Награда получена! Спасибо, что вы с нами. 😉"
-            # Удаляем сообщение с кнопкой
             bot.delete_message(call.message.chat.id, call.message.message_id)
-            # Отправляем текстовое подтверждение
             bot.send_message(call.message.chat.id, final_text)
-            # Сразу следом отправляем прощальный стикер
-            bot.send_sticker(call.message.chat.id, THANK_YOU_STICKER_ID)
+            try:
+                bot.send_sticker(call.message.chat.id, THANK_YOU_STICKER_ID)
+            except Exception as e:
+                logging.error(f"Не удалось отправить прощальный стикер: {e}")
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
 
@@ -109,5 +121,9 @@ def issue_coupon(bot, user_id, username, first_name, chat_id):
     )
     redeem_keyboard.add(redeem_button)
     
-    bot.send_sticker(chat_id, NASTOYKA_STICKER_ID)
+    try:
+        bot.send_sticker(chat_id, NASTOYKA_STICKER_ID)
+    except Exception as e:
+        logging.error(f"Не удалось отправить стикер-купон: {e}")
+        
     bot.send_message(chat_id, coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
