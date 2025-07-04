@@ -4,13 +4,13 @@ from telebot import types
 import pytz
 from config import (
     CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID,
-    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID, GOOGLE_SHEET_KEY
+    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID, GOOGLE_SHEET_KEY,
+    MENU_URL
 )
 from g_sheets import (
-    get_reward_status, add_new_user, update_status, delete_user,
+    get_reward_status, add_new_user, redeem_reward, delete_user,
     get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed,
-    get_report_data_for_period, get_stats_by_source, get_weekly_cohort_data, get_top_referrers,
-    get_sheet
+    get_report_data_for_period, get_sheet
 )
 
 def register_handlers(bot):
@@ -89,7 +89,9 @@ def register_handlers(bot):
     @bot.message_handler(func=lambda message: message.text == "📖 Меню")
     def handle_menu_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
-        url_button = types.InlineKeyboardButton(text="📖 Открыть меню бара", url="[https://spb.evgenich.bar/menu](https://spb.evgenich.bar/menu)")
+        # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+        # Ссылка теперь берется из конфига
+        url_button = types.InlineKeyboardButton(text="📖 Открыть меню бара", url=MENU_URL)
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Наше меню всегда доступно по кнопке ниже:", reply_markup=keyboard)
     
