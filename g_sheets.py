@@ -1,4 +1,3 @@
-# g_sheets.py
 import logging
 import json
 import datetime
@@ -15,6 +14,7 @@ from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
 # Номера колонок для удобства
 COL_USER_ID = 2
 COL_STATUS = 5
+COL_DATE = 1
 
 def get_sheet() -> Optional[gspread.Worksheet]:
     """Аутентифицируется и возвращает рабочий лист Google Таблицы."""
@@ -91,3 +91,40 @@ def redeem_reward(user_id: int) -> bool:
         worksheet.update_cell(cell.row, COL_STATUS, 'redeemed')
         return True
     return False
+
+def get_daily_report_data() -> (int, int):
+    """Собирает данные для отчета: сколько выдано и погашено за смену."""
+    try:
+        worksheet = get_sheet()
+        if not worksheet: return 0, 0
+
+        all_records = worksheet.get_all_records()
+        
+        now = datetime.datetime.now()
+        end_time = now.replace(hour=6, minute=0, second=0, microsecond=0)
+        # Если сейчас раньше 6 утра, значит, отчет за предыдущий день
+        if now.hour < 6:
+            start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+        else: # Иначе отчет за текущий "рабочий день"
+            start_time = now.replace(hour=12, minute=0, second=0, microsecond=0)
+            end_time = start_time + datetime.timedelta(days=1)
+            end_time = end_time.replace(hour=6, minute=0, second=0, microsecond=0)
+
+
+        issued_count = 0
+        redeemed_count = 0
+
+        for record in all_records:
+            try:
+                record_time = datetime.datetime.strptime(record['Дата подписки'], "%Y-%m-%d %H:%M:%S")
+                if start_time <= record_time < end_time:
+                    issued_count += 1
+                    if record['Статус награды'] == 'redeemed':
+                        redeemed_count += 1
+            except (ValueError, TypeError, KeyError):
+                continue 
+
+        return issued_count, redeemed_count
+    except Exception as e:
+        logging.error(f"Ошибка при сборе данных для отчета: {e}")
+        return 0, 0
