@@ -44,7 +44,7 @@ def register_handlers(bot):
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
             book_button = types.KeyboardButton("📍 Забронировать стол")
-            ai_help_button = types.KeyboardButton("🤖 Что мне выпить?")
+            ai_help_button = types.KeyboardButton("🗣 Спроси у Евгенича")
             
             keyboard.row(menu_button, friend_button)
             keyboard.row(ai_help_button, book_button)
@@ -157,7 +157,7 @@ def register_handlers(bot):
             help_text += admin_help_text
         bot.send_message(user_id, help_text, parse_mode="Markdown")
 
-    @bot.message_handler(func=lambda message: message.text == "🤖 Что мне выпить?")
+    @bot.message_handler(func=lambda message: message.text == "🗣 Спроси у Евгенича")
     def handle_ai_prompt_button(message: types.Message):
         bot.reply_to(message, "Смело пиши мне свои пожелания! Например: «посоветуй что-нибудь сладкое и сливочное» или «ищу самую ядрёную настойку».")
 
@@ -224,7 +224,7 @@ def register_handlers(bot):
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
             book_button = types.KeyboardButton("📍 Забронировать стол")
-            ai_help_button = types.KeyboardButton("🤖 Что мне выпить?")
+            ai_help_button = types.KeyboardButton("🗣 Спроси у Евгенича")
 
             final_keyboard.row(menu_button, friend_button)
             final_keyboard.row(ai_help_button, book_button)
@@ -511,7 +511,7 @@ def register_handlers(bot):
         user_id = message.from_user.id
         user_text = message.text
 
-        known_buttons = ['📖 Меню', '🤝 Привести товарища', '🤖 Что мне выпить?', '🥃 Получить настойку по талону', '📍 Забронировать стол']
+        known_buttons = ['📖 Меню', '🤝 Привести товарища', '🗣 Спроси у Евгенича', '🥃 Получить настойку по талону', '📍 Забронировать стол']
         if user_text in known_buttons or user_text.startswith('/'):
             return 
         
