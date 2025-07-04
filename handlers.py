@@ -31,8 +31,6 @@ from ai_assistant import get_ai_recommendation
 # =======================================================================
 
 # Временное хранилище в памяти для данных пошагового бронирования.
-# Это простой словарь, где ключ - это ID пользователя, а значение - другой словарь с его ответами.
-# ВАЖНО: При перезапуске бота эти данные стираются. Для серьезных проектов лучше использовать базу данных (например, Redis).
 user_booking_data = {}
 
 
@@ -43,10 +41,34 @@ user_booking_data = {}
 def register_handlers(bot):
     """
     Главная функция, которая "регистрирует" все обработчики команд и кнопок в боте.
-    Именно она вызывается в основном файле main.py для запуска и "оживления" бота.
-    Все функции, отмеченные декоратором @bot.message_handler или @bot.callback_query_handler,
-    должны находиться внутри этой функции, чтобы иметь доступ к объекту `bot`.
     """
+
+    # =======================================================================
+    # === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+    # =======================================================================
+    
+    def _cancel_booking(message: types.Message):
+        """
+        Внутренняя функция для логики отмены бронирования.
+        """
+        user_id = message.from_user.id
+        if user_id in user_booking_data:
+            del user_booking_data[user_id]
+            
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            menu_button = types.KeyboardButton("📖 Меню")
+            friend_button = types.KeyboardButton("🤝 Привести товарища")
+            book_button = types.KeyboardButton("📍 Забронировать стол")
+            ai_help_button = types.KeyboardButton("🗣 Спроси у Евгенича")
+            keyboard.row(menu_button, friend_button)
+            keyboard.row(ai_help_button, book_button)
+            if user_id in ADMIN_IDS:
+                restart_button = types.KeyboardButton("/restart")
+                keyboard.row(restart_button)
+            
+            bot.send_message(user_id, "Бронирование отменено. Вы возвращены в главное меню.", reply_markup=keyboard)
+        else:
+            bot.reply_to(message, "Нет активного действия для отмены.")
 
     # =======================================================================
     # === ОСНОВНЫЕ ПОЛЬЗОВАТЕЛЬСКИЕ КОМАНДЫ И КНОПКИ ===
@@ -55,8 +77,7 @@ def register_handlers(bot):
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
         """
-        Обрабатывает самое первое сообщение от пользователя — команду /start.
-        Логика разделяется в зависимости от того, новый это пользователь или уже "старый".
+        Обрабатывает команду /start.
         """
         logging.info(f"Пользователь {message.from_user.id} нажал /start")
         user_id = message.from_user.id
@@ -140,20 +161,14 @@ def register_handlers(bot):
         bot_username = bot.get_me().username
         ref_link = f"https.me/{bot_username}?start=ref_{user_id}"
 
-        text_before = (
+        text = (
             "💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
-            "Вот твоя персональная директива на привлечение нового бойца. Отправь эту ссылку другу:"
-        )
-        bot.send_message(user_id, text_before, parse_mode="Markdown")
-
-        bot.send_message(user_id, ref_link)
-
-        text_after = (
+            "Вот твоя персональная директива на привлечение нового бойца. Скопируй ссылку ниже и отправь её другу:\n\n"
+            f"`{ref_link}`\n\n"
             "Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит **еще одной дефицитной настойкой**! 🥃\n\n"
             "*Помни, план — не более 5 товарищей.*"
         )
-        bot.send_message(user_id, text_after, parse_mode="Markdown")
-
+        bot.send_message(user_id, text, parse_mode="Markdown")
 
     @bot.message_handler(commands=['channel'])
     def handle_channel_command(message: types.Message):
@@ -171,7 +186,7 @@ def register_handlers(bot):
     @bot.message_handler(func=lambda message: message.text == "📖 Меню")
     def handle_menu_command(message: types.Message):
         """
-        Показывает пользователю кнопки для выбора меню (настойки, кухня или полный сайт).
+        Показывает пользователю кнопки для выбора меню.
         """
         if user_booking_data.get(message.from_user.id):
             bot.reply_to(message, "Товарищ, давай сначала закончим с бронью. Пожалуйста, введи запрошенные данные или отмени командой /cancel.")
@@ -188,7 +203,6 @@ def register_handlers(bot):
     def handle_help_command(message: types.Message):
         """
         Отправляет справочное сообщение с описанием команд бота.
-        Для админов справка расширенная.
         """
         user_id = message.from_user.id
         help_text = (
@@ -213,33 +227,16 @@ def register_handlers(bot):
         bot.send_message(user_id, help_text, parse_mode="Markdown")
         
     @bot.message_handler(commands=['cancel'])
-    def handle_cancel(message: types.Message):
+    def handle_cancel_command(message: types.Message):
         """
-        Отменяет текущий пошаговый процесс, например, бронирование.
+        Обрабатывает команду /cancel для отмены текущего действия.
         """
-        user_id = message.from_user.id
-        if user_id in user_booking_data:
-            del user_booking_data[user_id]
-            
-            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-            menu_button = types.KeyboardButton("📖 Меню")
-            friend_button = types.KeyboardButton("🤝 Привести товарища")
-            book_button = types.KeyboardButton("📍 Забронировать стол")
-            ai_help_button = types.KeyboardButton("🗣 Спроси у Евгенича")
-            keyboard.row(menu_button, friend_button)
-            keyboard.row(ai_help_button, book_button)
-            if user_id in ADMIN_IDS:
-                restart_button = types.KeyboardButton("/restart")
-                keyboard.row(restart_button)
-            
-            bot.send_message(user_id, "Действие отменено. Вы возвращены в главное меню.", reply_markup=keyboard)
-        else:
-            bot.reply_to(message, "Нет активного действия для отмены.")
+        _cancel_booking(message)
 
     @bot.message_handler(func=lambda message: message.text == "🗣 Спроси у Евгенича")
     def handle_ai_prompt_button(message: types.Message):
         """
-        Обрабатывает нажатие на кнопку-подсказку для ИИ и дает пример запроса.
+        Обрабатывает нажатие на кнопку-подсказку для ИИ.
         """
         if user_booking_data.get(message.from_user.id):
             bot.reply_to(message, "Товарищ, давай сначала закончим с бронью. Пожалуйста, введи запрошенные данные или отмени командой /cancel.")
@@ -286,7 +283,7 @@ def register_handlers(bot):
     @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
     def handle_check_subscription(call: types.CallbackQuery):
         """
-        Проверяет, подписался ли пользователь на канал после нажатия на кнопку.
+        Проверяет подписку на канал.
         """
         user_id = call.from_user.id
         bot.answer_callback_query(call.id, text="Проверяю вашу подписку...")
@@ -304,7 +301,7 @@ def register_handlers(bot):
     @bot.callback_query_handler(func=lambda call: call.data == "redeem_reward")
     def handle_redeem_reward(call: types.CallbackQuery):
         """
-        Обрабатывает погашение купона на настойку (нажатие кнопки "у бармена").
+        Обрабатывает погашение купона на настойку.
         """
         user_id = call.from_user.id
         if update_status(user_id, 'redeemed'):
@@ -323,10 +320,8 @@ def register_handlers(bot):
             friend_button = types.KeyboardButton("🤝 Привести товарища")
             book_button = types.KeyboardButton("📍 Забронировать стол")
             ai_help_button = types.KeyboardButton("🗣 Спроси у Евгенича")
-
             final_keyboard.row(menu_button, friend_button)
             final_keyboard.row(ai_help_button, book_button)
-
             if user_id in ADMIN_IDS:
                 restart_button = types.KeyboardButton("/restart")
                 final_keyboard.row(restart_button)
@@ -420,7 +415,7 @@ def register_handlers(bot):
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("booking_"))
     def handle_booking_option(call: types.CallbackQuery):
-        """Шаг 2: Обрабатывает выбор пользователя и либо дает информацию, либо запускает сбор данных."""
+        """Шаг 2: Обрабатывает выбор пользователя и запускает сбор данных."""
         bot.answer_callback_query(call.id)
         bot.delete_message(call.message.chat.id, call.message.message_id)
 
@@ -428,7 +423,6 @@ def register_handlers(bot):
             bot.send_message(call.message.chat.id, "📞 Звони по номеру: `8 (812) 317-23-53`", parse_mode="Markdown")
         elif call.data == "booking_site":
             bot.send_message(call.message.chat.id, "🌐 Вот ссылка для самостоятельной брони: https://evgenichspb.restoplace.ws/")
-        
         elif call.data == "booking_secret":
             keyboard = types.InlineKeyboardMarkup()
             url_button = types.InlineKeyboardButton(text="👉 Перейти в секретный чат", url="https://t.me/stolik_evgenicha")
@@ -439,7 +433,6 @@ def register_handlers(bot):
                 "Смело жми на кнопку и пиши туда."
             )
             bot.send_message(call.message.chat.id, text, reply_markup=keyboard)
-        
         elif call.data == "booking_bot":
             prompt_text = (
                 "Отлично! Как тебя звать, товарищ?\n\n"
@@ -449,41 +442,51 @@ def register_handlers(bot):
             bot.register_next_step_handler(msg, process_name_step)
 
     def process_name_step(message):
+        if message.text == '/cancel':
+            return _cancel_booking(message)
         user_id = message.from_user.id
         user_booking_data[user_id] = {'name': message.text}
         msg = bot.send_message(message.chat.id, "Записал. Когда хочешь заглянуть в рюмочную? (Дата)")
         bot.register_next_step_handler(msg, process_date_step)
 
     def process_date_step(message):
+        if message.text == '/cancel':
+            return _cancel_booking(message)
         user_id = message.from_user.id
         user_booking_data[user_id]['date'] = message.text
         msg = bot.send_message(message.chat.id, "Принято. Во сколько подходишь? (Время)")
         bot.register_next_step_handler(msg, process_time_step)
 
     def process_time_step(message):
+        if message.text == '/cancel':
+            return _cancel_booking(message)
         user_id = message.from_user.id
         user_booking_data[user_id]['time'] = message.text
         msg = bot.send_message(message.chat.id, "Сколько вас будет — чтобы чебуреков хватило на всех! (Кол-во гостей)")
         bot.register_next_step_handler(msg, process_guests_step)
 
     def process_guests_step(message):
+        if message.text == '/cancel':
+            return _cancel_booking(message)
         user_id = message.from_user.id
         user_booking_data[user_id]['guests'] = message.text
         msg = bot.send_message(message.chat.id, "Телефончик оставь, а то в 80-х без номерка даже кассеты не выдавали.")
         bot.register_next_step_handler(msg, process_phone_step)
 
     def process_phone_step(message):
+        if message.text == '/cancel':
+            return _cancel_booking(message)
         user_id = message.from_user.id
         user_booking_data[user_id]['phone'] = message.text
         msg = bot.send_message(message.chat.id, "И последнее: повод душевный или торжественный?")
         bot.register_next_step_handler(msg, process_reason_step)
 
     def process_reason_step(message):
+        if message.text == '/cancel':
+            return _cancel_booking(message)
         user_id = message.from_user.id
         user_booking_data[user_id]['reason'] = message.text
-        
         data = user_booking_data.get(user_id, {})
-        
         confirmation_text = (
             "Всё верно, товарищ?\n\n"
             f"📌 Имя: {data.get('name', 'не указано')}\n"
@@ -493,11 +496,9 @@ def register_handlers(bot):
             f"☎️ Телефон: {data.get('phone', 'не указано')}\n"
             f"🎉 Повод: {data.get('reason', 'не указано')}"
         )
-        
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("✅ Всё верно!", callback_data="confirm_booking"))
         markup.add(types.InlineKeyboardButton("❌ Начать заново", callback_data="cancel_booking"))
-        
         bot.send_message(message.chat.id, confirmation_text, reply_markup=markup)
 
     @bot.callback_query_handler(func=lambda call: call.data in ["confirm_booking", "cancel_booking"])
@@ -508,7 +509,6 @@ def register_handlers(bot):
 
         if call.data == "confirm_booking":
             data = user_booking_data.get(user_id, {})
-            
             final_text = (
                 "🚨 Новая бронь:\n\n"
                 f"Имя: {data.get('name', 'не указано')}\n"
@@ -520,18 +520,17 @@ def register_handlers(bot):
             )
             bot.send_message(REPORT_CHAT_ID, final_text)
             bot.send_message(user_id, "Я всё записал в блокнот. Передам лично. Ну ты даёшь!")
-
+            if user_id in user_booking_data:
+                del user_booking_data[user_id]
         elif call.data == "cancel_booking":
+            if user_id in user_booking_data:
+                del user_booking_data[user_id]
             prompt_text = (
                 "Без проблем, товарищ. Начнем сначала. Как тебя звать?\n\n"
                 "*Чтобы отменить, в любой момент напиши /cancel*"
             )
             msg = bot.send_message(user_id, prompt_text, parse_mode="Markdown")
             bot.register_next_step_handler(msg, process_name_step)
-
-        if user_id in user_booking_data and call.data == "confirm_booking":
-             del user_booking_data[user_id]
-
 
     # =======================================================================
     # === АДМИН-ПАНЕЛЬ И ПРОЧИЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
@@ -577,7 +576,6 @@ def register_handlers(bot):
             keyboard.add(reports_button, analytics_button, leaderboard_button)
             try: bot.edit_message_text(main_menu_text, call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
             except: pass
-            return
         elif action == 'admin_menu_reports':
             keyboard = types.InlineKeyboardMarkup(row_width=1)
             today_report_button = types.InlineKeyboardButton("📊 Отчет за текущую смену", callback_data="admin_report_today")
@@ -586,7 +584,6 @@ def register_handlers(bot):
             back_button = types.InlineKeyboardButton("⬅️ Назад в главное меню", callback_data="admin_menu_main")
             keyboard.add(today_report_button, week_report_button, month_report_button, back_button)
             bot.edit_message_text("**Меню отчетов**", call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
-            return
         elif action == 'admin_menu_analytics':
             keyboard = types.InlineKeyboardMarkup(row_width=1)
             source_button = types.InlineKeyboardButton("По источникам", callback_data="admin_action_sources")
@@ -594,9 +591,7 @@ def register_handlers(bot):
             back_button = types.InlineKeyboardButton("⬅️ Назад в главное меню", callback_data="admin_menu_main")
             keyboard.add(source_button, cohort_button, back_button)
             bot.edit_message_text("**Меню аналитики**", call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
-            return
-
-        if action == 'admin_action_leaderboard':
+        elif action == 'admin_action_leaderboard':
             bot.answer_callback_query(call.id, "Составляю рейтинг...")
             top_list = get_top_referrers(5)
             if not top_list:
@@ -631,7 +626,6 @@ def register_handlers(bot):
                 conversion = round((cohort['redeemed'] / cohort['issued']) * 100, 1)
                 response += f"**Неделя ({cohort['week']}):**\n  Новых: {cohort['issued']}, Погашено: {cohort['redeemed']} (Конверсия: {conversion}%)\n\n"
             bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
-        
         elif call.data.startswith('admin_report'):
             period = call.data.split('_')[-1]
             tz_moscow = pytz.timezone('Europe/Moscow')
