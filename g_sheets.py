@@ -87,23 +87,27 @@ def redeem_reward(user_id: int) -> bool:
         return True
     return False
 
-def delete_user(user_id: int) -> bool:
-    """Удаляет пользователя из таблицы по ID."""
+def delete_user(user_id: int) -> Tuple[bool, str]:
+    """Удаляет пользователя и возвращает кортеж (успех, сообщение)."""
     try:
         cell = find_user_by_id(user_id)
         if not cell:
-            logging.info(f"Попытка удалить пользователя {user_id}, но он не найден.")
-            return False
+            msg = f"Пользователь {user_id} не найден в таблице."
+            logging.info(msg)
+            return False, msg
         
         worksheet = get_sheet()
-        if not worksheet: return False
+        if not worksheet:
+            return False, "Не удалось получить доступ к таблице."
         
         worksheet.delete_rows(cell.row)
-        logging.info(f"Пользователь {user_id} успешно удален из таблицы для перезапуска.")
-        return True
+        msg = f"Пользователь {user_id} успешно удален."
+        logging.info(msg)
+        return True, msg
     except Exception as e:
-        logging.error(f"Ошибка при удалении пользователя {user_id}: {e}")
-        return False
+        error_msg = f"Ошибка при удалении пользователя {user_id}: {e}"
+        logging.error(error_msg)
+        return False, str(e)
 
 def get_referrer_id_from_user(user_id: int) -> Optional[int]:
     cell = find_user_by_id(user_id)
