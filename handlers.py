@@ -1,51 +1,79 @@
 # =======================================================================
 # === ИМПОРТЫ: ПОДКЛЮЧЕНИЕ ВСЕХ НЕОБХОДИМЫХ БИБЛИОТЕК И МОДУЛЕЙ ===
 # =======================================================================
+# Системные библиотеки для логирования и работы с датой/временем
 import logging
 import datetime
+
+# Основные компоненты библиотеки для создания Telegram-бота
 from telebot import types
+
+# Библиотека для работы с часовыми поясами, чтобы время было корректным
 import pytz
 
-# --- Подключение переменных и настроек из файла config.py ---
+# --- Подключение переменных и настроек из вашего файла config.py ---
+# Здесь мы импортируем все секретные токены, ID каналов и другие настройки
 from config import (
     CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID,
     FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID, GOOGLE_SHEET_KEY, MENU_URL
 )
-# --- Подключение функций для работы с Google Таблицами ---
+# --- Подключение всех функций для работы с Google Таблицами из файла g_sheets.py ---
+# Каждая функция отвечает за свою операцию: чтение, запись, обновление и т.д.
 from g_sheets import (
     get_reward_status, add_new_user, update_status, delete_user,
     get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed,
     get_report_data_for_period, get_stats_by_source, get_weekly_cohort_data, get_top_referrers,
     log_conversation_turn, get_conversation_history, get_daily_updates
 )
-# --- Подключение меню ---
+# --- Подключение данных о меню из отдельных файлов для удобства редактирования ---
 from menu_nastoiki import MENU_DATA
 from food_menu import FOOD_MENU_DATA
-# --- Подключение функции для вызова нейросети ---
+
+# --- Подключение "мозга" нашего бота - функции для вызова нейросети ---
 from ai_assistant import get_ai_recommendation
 
+# =======================================================================
+# === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
+# =======================================================================
+
 # Временное хранилище в памяти для данных пошагового бронирования.
-# Ключ - user_id, значение - словарь с данными брони.
+# Это простой словарь, где ключ - это ID пользователя, а значение - другой словарь с его ответами.
+# ВАЖНО: При перезапуске бота эти данные стираются. Для серьезных проектов лучше использовать базу данных (например, Redis).
 user_booking_data = {}
+
+
+# =======================================================================
+# === ГЛАВНАЯ ФУНКЦИЯ РЕГИСТРАЦИИ ОБРАБОТЧИКОВ ===
+# =======================================================================
 
 def register_handlers(bot):
     """
-    Главная функция, которая регистрирует все обработчики команд и кнопок в боте.
-    Именно она вызывается в основном файле main.py для запуска бота.
+    Главная функция, которая "регистрирует" все обработчики команд и кнопок в боте.
+    Именно она вызывается в основном файле main.py для запуска и "оживления" бота.
+    Все функции, отмеченные декоратором @bot.message_handler или @bot.callback_query_handler,
+    должны находиться внутри этой функции, чтобы иметь доступ к объекту `bot`.
     """
 
     # =======================================================================
     # === ОСНОВНЫЕ ПОЛЬЗОВАТЕЛЬСКИЕ КОМАНДЫ И КНОПКИ ===
     # =======================================================================
 
-    # Обработчик команды /start, основной вход в бота
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
+        """
+        Обрабатывает самое первое сообщение от пользователя — команду /start.
+        Логика разделяется в зависимости от того, новый это пользователь или уже "старый".
+        """
+        logging.info(f"Пользователь {message.from_user.id} нажал /start")
+        # Получаем ID пользователя, чтобы работать с ним
         user_id = message.from_user.id
+        # Проверяем статус пользователя в нашей "базе данных" (Google Таблице)
         status = get_reward_status(user_id)
         
-        # Сценарий для пользователя, который уже получил свою настойку
+        # СЦЕНАРИЙ 1: Пользователь уже получил свою настойку (статус 'redeemed')
         if status == 'redeemed':
+            logging.info(f"Пользователь {user_id} уже получал награду. Показываем основное меню.")
+            # Создаем клавиатуру с основными кнопками для постоянного пользователя
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
@@ -55,22 +83,26 @@ def register_handlers(bot):
             keyboard.row(menu_button, friend_button)
             keyboard.row(ai_help_button, book_button)
 
+            # Если пользователь - админ, добавляем ему кнопку для сброса своего профиля
             if user_id in ADMIN_IDS:
                 restart_button = types.KeyboardButton("/restart")
                 keyboard.row(restart_button)
             
+            # Приветственное сообщение для вернувшегося пользователя с подсказкой про ИИ
             info_text = (
                 "С возвращением, товарищ! Рады видеть снова. 😉\n\n"
                 "Нажимай «📖 Меню» для просмотра или **просто напиши мне в чат, чего бы тебе хотелось** "
                 "(например: _«хочу что-нибудь кислое и ягодное»_), и я помогу с выбором!"
             )
             bot.send_message(user_id, info_text, reply_markup=keyboard, parse_mode="Markdown")
-            return
+            return # Завершаем выполнение функции здесь
 
-        # Сценарий для нового пользователя или того, кто еще не получил настойку
+        # СЦЕНАРИЙ 2: Пользователь новый или еще не получил настойку
         if status == 'not_found':
+            logging.info(f"Новый пользователь {user_id}. Регистрируем...")
+            # Логика для отслеживания источника перехода (реферал, QR-код)
             referrer_id = None
-            source = 'direct'
+            source = 'direct' # Источник по умолчанию
             args = message.text.split()
             if len(args) > 1:
                 payload = args[1]
@@ -78,25 +110,33 @@ def register_handlers(bot):
                     try:
                         referrer_id = int(payload.replace('ref_', ''))
                         source = 'Реферал'
-                    except (ValueError, IndexError): pass
+                    except (ValueError, IndexError):
+                        logging.warning(f"Не удалось распознать ref_id из {payload}")
+                        pass
                 else:
                     allowed_sources = {'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 'qr_toilet': 'QR в туалете', 'vk': 'VK', 'inst': 'Instagram', 'flyer': 'Листовки', 'site': 'Сайт'}
                     if payload in allowed_sources:
                         source = allowed_sources[payload]
             
+            # Добавляем нового пользователя в Google Таблицу
             add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
             if referrer_id:
                 bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся.")
 
+        # Стартовая клавиатура для нового пользователя
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
         keyboard.add(gift_button)
         bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
 
-    # Обработчик для получения информации о бронировании (простой вариант)
     @bot.message_handler(commands=['book'])
     @bot.message_handler(func=lambda message: message.text == "📍 Забронировать стол")
     def handle_booking_info(message: types.Message):
+        """
+        Отправляет пользователю информацию о способах бронирования (простой вариант).
+        Этот обработчик для кнопки, а основная логика бронирования через ИИ находится ниже.
+        """
+        logging.info(f"Пользователь {message.from_user.id} нажал кнопку 'Забронировать стол'")
         booking_text = (
             "Товарищ, забронировать столик в нашей рюмочной можно несколькими способами:\n\n"
             "1️⃣ **Для своих:** У нас есть секретный чат для броней и душевных бесед: @stolik_evgenicha\n\n"
@@ -110,13 +150,16 @@ def register_handlers(bot):
 
         bot.send_message(message.chat.id, booking_text, parse_mode="Markdown", reply_markup=keyboard)
 
-    # Обработчик для получения реферальной ссылки
     @bot.message_handler(commands=['friend'])
     @bot.message_handler(func=lambda message: message.text == "🤝 Привести товарища")
     def handle_friend_command(message: types.Message):
+        """
+        Генерирует и отправляет пользователю его персональную реферальную ссылку.
+        """
+        logging.info(f"Пользователь {message.from_user.id} запросил реферальную ссылку.")
         user_id = message.from_user.id
         bot_username = bot.get_me().username
-        ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
+        ref_link = f"https.me/{bot_username}?start=ref_{user_id}"
         text = (
             "💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
             "Вот твоя персональная директива на привлечение нового бойца. Нажми на ссылку ниже, чтобы скопировать:\n"
@@ -126,19 +169,25 @@ def register_handlers(bot):
         )
         bot.send_message(user_id, text, parse_mode="Markdown")
 
-    # Обработчик для получения ссылки на Telegram-канал
     @bot.message_handler(commands=['channel'])
     def handle_channel_command(message: types.Message):
+        """
+        Отправляет пользователю ссылку на основной Telegram-канал заведения.
+        """
+        logging.info(f"Пользователь {message.from_user.id} запросил ссылку на канал.")
         keyboard = types.InlineKeyboardMarkup()
         channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
         url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
 
-    # Обработчик для вызова меню
     @bot.message_handler(commands=['menu'])
     @bot.message_handler(func=lambda message: message.text == "📖 Меню")
     def handle_menu_command(message: types.Message):
+        """
+        Показывает пользователю кнопки для выбора меню (настойки, кухня или полный сайт).
+        """
+        logging.info(f"Пользователь {message.from_user.id} открыл меню.")
         keyboard = types.InlineKeyboardMarkup(row_width=1)
         nastoiki_button = types.InlineKeyboardButton(text="🥃 Меню настоек", callback_data="menu_nastoiki_main")
         food_button = types.InlineKeyboardButton(text="🍔 Меню кухни", callback_data="menu_food_main")
@@ -146,9 +195,12 @@ def register_handlers(bot):
         keyboard.add(nastoiki_button, food_button, full_menu_button)
         bot.send_message(message.chat.id, "Чего желаешь, товарищ? Настойку или закусить?", reply_markup=keyboard)
 
-    # Обработчик для команды /help
     @bot.message_handler(commands=['help'])
     def handle_help_command(message: types.Message):
+        """
+        Отправляет справочное сообщение с описанием команд бота.
+        Для админов справка расширенная.
+        """
         user_id = message.from_user.id
         help_text = (
             "**Инструкция по боту «Евгенич Настаивает»**\n\n"
@@ -169,19 +221,26 @@ def register_handlers(bot):
             help_text += admin_help_text
         bot.send_message(user_id, help_text, parse_mode="Markdown")
 
-    # Обработчик для кнопки-подсказки "Спроси у Евгенича"
     @bot.message_handler(func=lambda message: message.text == "🗣 Спроси у Евгенича")
     def handle_ai_prompt_button(message: types.Message):
+        """
+        Обрабатывает нажатие на кнопку-подсказку для ИИ и дает пример запроса.
+        """
         bot.reply_to(message, "Смело пиши мне свои пожелания! Например: «посоветуй что-нибудь сладкое и сливочное» или «ищу самую ядрёную настойку».")
 
-    # Обработчик для кнопки "Получить настойку по талону"
+    # Этот обработчик запускает основной сценарий для новых пользователей
     @bot.message_handler(func=lambda message: message.text == "🥃 Получить настойку по талону")
     def handle_get_gift_press(message: types.Message):
+        """
+        Запускает воронку получения настойки за подписку.
+        """
         user_id = message.from_user.id
         status = get_reward_status(user_id)
+        # Дополнительная проверка, чтобы уже получившие не могли запустить воронку снова
         if status in ['issued', 'redeemed']:
             bot.send_message(user_id, "Вы уже получали свой подарок. Спасибо, что вы с нами! 😉")
             return
+        # Проверка, вдруг пользователь уже подписан
         try:
             chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
             if chat_member.status in ['member', 'administrator', 'creator']:
@@ -190,6 +249,8 @@ def register_handlers(bot):
                 return
         except Exception as e:
             logging.error(f"Ошибка при предварительной проверке подписки для {user_id}: {e}")
+        
+        # Если не подписан, показываем стандартное приглашение
         welcome_text = ("Отлично! 👍\n\n"
                         "Чтобы получить настойку, подпишись на наш телеграм-канал. Это займет всего секунду.\n\n"
                         "Когда подпишешься — нажимай на кнопку «Я подписался» здесь же.")
@@ -208,9 +269,11 @@ def register_handlers(bot):
     # === ОБРАБОТЧИКИ НАЖАТИЙ НА INLINE-КНОПКИ (CALLBACKS) ===
     # =======================================================================
 
-    # Обработчик кнопки "Я подписался"
     @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
     def handle_check_subscription(call: types.CallbackQuery):
+        """
+        Проверяет, подписался ли пользователь на канал после нажатия на кнопку.
+        """
         user_id = call.from_user.id
         bot.answer_callback_query(call.id, text="Проверяю вашу подписку...")
         try:
@@ -224,9 +287,11 @@ def register_handlers(bot):
             logging.error(f"Ошибка при проверке подписки для {user_id}: {e}")
             bot.answer_callback_query(call.id, "Не удалось проверить подписку. Попробуйте позже.", show_alert=True)
 
-    # Обработчик кнопки "НАЛИТЬ ПРИ БАРМЕНЕ"
     @bot.callback_query_handler(func=lambda call: call.data == "redeem_reward")
     def handle_redeem_reward(call: types.CallbackQuery):
+        """
+        Обрабатывает погашение купона на настойку (нажатие кнопки "у бармена").
+        """
         user_id = call.from_user.id
         if update_status(user_id, 'redeemed'):
             final_text = ("✅ Ну вот и бахнули!\n\n"
@@ -265,9 +330,10 @@ def register_handlers(bot):
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
 
-    # --- ОБРАБОТЧИКИ МЕНЮ НАСТОЕК ---
+    # --- ОБРАБОТЧИКИ ИНТЕРАКТИВНОГО МЕНЮ НАСТОЕК ---
     @bot.callback_query_handler(func=lambda call: call.data == "menu_nastoiki_main")
     def callback_menu_nastoiki_main(call: types.CallbackQuery):
+        """Показывает главное меню с категориями настоек."""
         keyboard = types.InlineKeyboardMarkup(row_width=2)
         buttons = [types.InlineKeyboardButton(text=category['title'], callback_data=f"menu_category_{index}") for index, category in enumerate(MENU_DATA)]
         keyboard.add(*buttons)
@@ -282,6 +348,7 @@ def register_handlers(bot):
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("menu_category_"))
     def callback_menu_category(call: types.CallbackQuery):
+        """Показывает список настоек в выбранной категории."""
         category_index = int(call.data.split("_")[2])
         category = MENU_DATA[category_index]
         text = f"**{category['title']}**\n_{category.get('category_narrative', '')}_\n\n"
@@ -295,9 +362,10 @@ def register_handlers(bot):
         )
         bot.answer_callback_query(call.id)
 
-    # --- ОБРАБОТЧИКИ МЕНЮ КУХНИ ---
+    # --- ОБРАБОТЧИКИ ИНТЕРАКТИВНОГО МЕНЮ КУХНИ ---
     @bot.callback_query_handler(func=lambda call: call.data == "menu_food_main")
     def callback_menu_food_main(call: types.CallbackQuery):
+        """Показывает главное меню с категориями кухни."""
         keyboard = types.InlineKeyboardMarkup(row_width=2)
         buttons = [types.InlineKeyboardButton(text=category, callback_data=f"food_category_{category}") for category in FOOD_MENU_DATA.keys()]
         keyboard.add(*buttons)
@@ -309,6 +377,7 @@ def register_handlers(bot):
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("food_category_"))
     def callback_food_category(call: types.CallbackQuery):
+        """Показывает список блюд в выбранной категории."""
         category_name = call.data.replace("food_category_", "")
         category_items = FOOD_MENU_DATA.get(category_name, [])
         text = f"**{category_name}**\n\n"
@@ -321,13 +390,14 @@ def register_handlers(bot):
             text, call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown"
         )
         bot.answer_callback_query(call.id)
-
+        
     # =======================================================================
-    # === ЛОГИКА ПОШАГОВОГО БРОНИРОВАНИЯ ===
+    # === ЛОГИКА ПОШАГОВОГО БРОНИРОВАНИЯ (FINITE STATE MACHINE) ===
     # =======================================================================
     
-    # --- Шаг 1: Показываем кнопки выбора ---
+    # Эта функция вызывается, когда ИИ распознает намерение бронировать.
     def _show_booking_options(message):
+        """Шаг 1: Показывает пользователю кнопки с вариантами бронирования."""
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
             types.InlineKeyboardButton("📞 Позвонить", callback_data="booking_phone"),
@@ -337,12 +407,12 @@ def register_handlers(bot):
         )
         bot.send_message(message.chat.id, "Конечно, товарищ! Как будем действовать?", reply_markup=markup)
 
-    # --- Шаг 2: Обрабатываем нажатие на кнопки ---
+    # Эта функция обрабатывает нажатие на одну из кнопок бронирования.
     @bot.callback_query_handler(func=lambda call: call.data.startswith("booking_"))
     def handle_booking_option(call: types.CallbackQuery):
+        """Шаг 2: Обрабатывает выбор пользователя и либо дает информацию, либо запускает сбор данных."""
         bot.answer_callback_query(call.id)
-        # Удаляем сообщение с кнопками, чтобы не загромождать чат
-        bot.delete_message(call.message.chat.id, call.message.message_id)
+        bot.delete_message(call.message.chat.id, call.message.message_id) # Удаляем сообщение с кнопками
 
         if call.data == "booking_phone":
             bot.send_message(call.message.chat.id, "📞 Звони по номеру: `8 (812) 317-23-53`", parse_mode="Markdown")
@@ -351,47 +421,55 @@ def register_handlers(bot):
         elif call.data == "booking_secret":
             bot.send_message(call.message.chat.id, "🔐 Для своих есть секретный чат: @stolik_evgenicha")
         elif call.data == "booking_bot":
-            # Запускаем пошаговый сбор данных
+            # Запускаем пошаговый сбор данных (Finite State Machine)
             msg = bot.send_message(call.message.chat.id, "Отлично! Как тебя звать, товарищ?")
             bot.register_next_step_handler(msg, process_name_step)
 
-    # --- Шаг 3: Цепочка сбора данных для брони ---
+    # --- Шаг 3: Цепочка функций для сбора данных о брони ---
     def process_name_step(message):
+        """Получает имя, сохраняет его и спрашивает о дате."""
         user_id = message.from_user.id
         user_booking_data[user_id] = {'name': message.text}
         msg = bot.send_message(message.chat.id, "Записал. Когда хочешь заглянуть в рюмочную? (Дата)")
         bot.register_next_step_handler(msg, process_date_step)
 
     def process_date_step(message):
+        """Получает дату, сохраняет ее и спрашивает о времени."""
         user_id = message.from_user.id
         user_booking_data[user_id]['date'] = message.text
         msg = bot.send_message(message.chat.id, "Принято. Во сколько подходишь? (Время)")
         bot.register_next_step_handler(msg, process_time_step)
 
     def process_time_step(message):
+        """Получает время, сохраняет его и спрашивает о количестве гостей."""
         user_id = message.from_user.id
         user_booking_data[user_id]['time'] = message.text
         msg = bot.send_message(message.chat.id, "Сколько вас будет — чтобы чебуреков хватило на всех! (Кол-во гостей)")
         bot.register_next_step_handler(msg, process_guests_step)
 
     def process_guests_step(message):
+        """Получает кол-во гостей, сохраняет и спрашивает телефон."""
         user_id = message.from_user.id
         user_booking_data[user_id]['guests'] = message.text
         msg = bot.send_message(message.chat.id, "Телефончик оставь, а то в 80-х без номерка даже кассеты не выдавали.")
         bot.register_next_step_handler(msg, process_phone_step)
 
     def process_phone_step(message):
+        """Получает телефон, сохраняет и спрашивает о поводе."""
         user_id = message.from_user.id
         user_booking_data[user_id]['phone'] = message.text
         msg = bot.send_message(message.chat.id, "И последнее: повод душевный или торжественный?")
         bot.register_next_step_handler(msg, process_reason_step)
 
+    # Последний шаг сбора данных, после которого отправляется заявка
     def process_reason_step(message):
+        """Получает повод, собирает все данные и отправляет на подтверждение."""
         user_id = message.from_user.id
         user_booking_data[user_id]['reason'] = message.text
         
         data = user_booking_data.get(user_id, {})
         
+        # Показываем пользователю собранные данные для подтверждения
         confirmation_text = (
             "Всё верно, товарищ?\n\n"
             f"📌 Имя: {data.get('name', 'не указано')}\n"
@@ -408,9 +486,10 @@ def register_handlers(bot):
         
         bot.send_message(message.chat.id, confirmation_text, reply_markup=markup)
 
-    # --- Шаг 4: Обработка подтверждения брони ---
+    # Шаг 4: Обработка кнопок подтверждения брони ("Да" / "Нет")
     @bot.callback_query_handler(func=lambda call: call.data in ["confirm_booking", "cancel_booking"])
     def handle_booking_confirmation(call: types.CallbackQuery):
+        """Обрабатывает финальное подтверждение или отмену брони."""
         user_id = call.from_user.id
         bot.answer_callback_query(call.id)
         bot.delete_message(call.message.chat.id, call.message.message_id)
@@ -427,17 +506,18 @@ def register_handlers(bot):
                 f"Телефон: {data.get('phone', 'не указано')}\n"
                 f"Повод: {data.get('reason', 'не указано')}"
             )
-
+            # Отправляем заявку в чат админов
             bot.send_message(REPORT_CHAT_ID, final_text)
             bot.send_message(user_id, "Я всё записал в блокнот. Передам лично. Ну ты даёшь!")
 
         elif call.data == "cancel_booking":
+            # Если пользователь нажал "Начать заново", запускаем сбор данных с первого шага
             msg = bot.send_message(user_id, "Без проблем, товарищ. Начнем сначала. Как тебя звать?")
             bot.register_next_step_handler(msg, process_name_step)
 
+        # В любом случае очищаем временные данные после завершения
         if user_id in user_booking_data:
             del user_booking_data[user_id]
-
 
     # =======================================================================
     # === АДМИН-ПАНЕЛЬ И ПРОЧИЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
@@ -609,70 +689,37 @@ def register_handlers(bot):
         except Exception as e:
             logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
 
-# =======================================================================
-# === ГЛАВНЫЙ ОБРАБОТЧИК СООБЩЕНИЙ К ИИ (ДОЛЖЕН БЫТЬ ПОСЛЕДНИМ) ===
-# =======================================================================
-@bot.message_handler(func=lambda message: True, content_types=['text'])
-def handle_ai_query(message: types.Message):
-    # --- Собираем данные о пользователе и его сообщении ---
-    user_id = message.from_user.id
-    user_text = message.text
+    # =======================================================================
+    # === ГЛАВНЫЙ ОБРАБОТЧИК СООБЩЕНИЙ К ИИ (ДОЛЖЕН БЫТЬ ПОСЛЕДНИМ) ===
+    # =======================================================================
+    @bot.message_handler(func=lambda message: True, content_types=['text'])
+    def handle_ai_query(message: types.Message):
+        user_id = message.from_user.id
+        user_text = message.text
 
-    # --- Проверяем, не находится ли пользователь в процессе бронирования ---
-    if user_booking_data.get(user_id):
-        # Если да, то бот не будет реагировать на другие сообщения, пока бронь не завершится
-        return
-    
-    # --- Проверяем, не является ли сообщение нажатием на одну из кнопок ---
-    known_buttons = ['📖 Меню', '🤝 Привести товарища', '🗣 Спроси у Евгенича', '📍 Забронировать стол', '🥃 Получить настойку по талону']
-    if user_text in known_buttons or user_text.startswith('/'):
-        return 
-    
-    # --- Подготовка всех данных для вызова "умного" ИИ ---
-    log_conversation_turn(user_id, "user", user_text)
-    history = get_conversation_history(user_id, limit=6)
-    daily_updates = get_daily_updates()
-    
-    context_info = {
-        "time_of_day": datetime.datetime.now(pytz.timezone('Europe/Moscow')).strftime('%H:%M'),
-        "occasion": "неизвестен" # В будущем это можно будет брать из аналитики
-    }
-
-    # Показываем пользователю, что мы "думаем"
-    bot.send_chat_action(message.chat.id, 'typing')
-
-    # --- ИСПРАВЛЕННЫЙ ВЫЗОВ ФУНКЦИИ ---
-    # Вызываем новую, гибкую функцию со всеми данными, передавая их по имени
-    ai_response = get_ai_recommendation(
-        user_query=user_text,
-        conversation_history=history,
-        menu_data=MENU_DATA,
-        food_menu_data=FOOD_MENU_DATA,
-        daily_updates=daily_updates,
-        context_info=context_info
-    )
-    
-    # --- Обработка ответа от ИИ ---
-    booking_chat_id = -1002574697415
-
-    if "[START_BOOKING_FLOW]" in ai_response:
-        # Если ИИ распознал намерение бронировать, показываем кнопки
-        _show_booking_options(message)
-        log_conversation_turn(user_id, "assistant", "Предложил варианты бронирования.")
-        return # Важно завершить выполнение здесь
-
-    if "[BOOKING_REQUEST]" in ai_response:
-        # Этот блок сработает, если ИИ соберет заявку (на случай, если мы вернем эту логику в ИИ)
-        parts = ai_response.split("[BOOKING_REQUEST]")
-        response_to_user = parts[0].strip()
-        booking_details = parts[1].strip()
+        # Если пользователь находится в процессе бронирования, не прерываем его
+        if user_booking_data.get(user_id):
+            return
         
-        admin_notification = f"🚨 **НОВАЯ ЗАЯВКА НА БРОНЬ** 🚨\n\nОт: @{message.from_user.username} (ID: `{user_id}`)\n\n**Детали:** `{booking_details}`\n\nПожалуйста, свяжитесь с гостем для подтверждения."
-        bot.send_message(booking_chat_id, admin_notification, parse_mode="Markdown")
+        # Игнорируем нажатия на известные кнопки
+        known_buttons = ['📖 Меню', '🤝 Привести товарища', '🗣 Спроси у Евгенича', '🥃 Получить настойку по талону', '📍 Забронировать стол']
+        if user_text in known_buttons or user_text.startswith('/'):
+            return 
         
-        log_conversation_turn(user_id, "assistant", response_to_user)
-        bot.reply_to(message, response_to_user, parse_mode="Markdown")
-    else:
-        # Если это обычный ответ, отправляем его и записываем в лог
-        log_conversation_turn(user_id, "assistant", ai_response)
-        bot.reply_to(message, ai_response, parse_mode="Markdown")
+        # --- Логика вызова ИИ ---
+        log_conversation_turn(user_id, "user", user_text)
+        history = get_conversation_history(user_id, limit=6)
+        
+        bot.send_chat_action(message.chat.id, 'typing')
+
+        # Вызываем ИИ. Он либо вернет совет, либо тег для начала бронирования
+        ai_response = get_ai_recommendation(user_text, history)
+        
+        if "[START_BOOKING_FLOW]" in ai_response:
+            # Если ИИ распознал намерение бронировать, показываем кнопки
+            _show_booking_options(message)
+            log_conversation_turn(user_id, "assistant", "Предложил варианты бронирования.")
+        else:
+            # Иначе это обычный ответ, который мы просто отправляем
+            log_conversation_turn(user_id, "assistant", ai_response)
+            bot.reply_to(message, ai_response, parse_mode="Markdown")
