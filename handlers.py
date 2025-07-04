@@ -1,35 +1,51 @@
+# =======================================================================
+# === ИМПОРТЫ: ПОДКЛЮЧЕНИЕ ВСЕХ НЕОБХОДИМЫХ БИБЛИОТЕК И МОДУЛЕЙ ===
+# =======================================================================
 import logging
 import datetime
 from telebot import types
 import pytz
 
-# --- ИЗМЕНЕННЫЙ КОД: Добавлены новые импорты ---
+# --- Подключение переменных и настроек из файла config.py ---
 from config import (
     CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID,
     FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID, GOOGLE_SHEET_KEY, MENU_URL
 )
+# --- Подключение функций для работы с Google Таблицами ---
 from g_sheets import (
     get_reward_status, add_new_user, update_status, delete_user,
     get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed,
     get_report_data_for_period, get_stats_by_source, get_weekly_cohort_data, get_top_referrers,
-    get_sheet
+    log_conversation_turn, get_conversation_history  # Функции для "памяти" ИИ
 )
-# --- НОВЫЙ КОД: Импорты для меню и ИИ ---
+# --- Подключение меню ---
 from menu_nastoiki import MENU_DATA
+from food_menu import FOOD_MENU_DATA
+# --- Подключение функции для вызова нейросети ---
 from ai_assistant import get_ai_recommendation
 
 
 def register_handlers(bot):
-    """Регистрирует все обработчики сообщений и кнопок."""
+    """
+    Главная функция, которая регистрирует все обработчики команд и кнопок в боте.
+    Все обработчики (декораторы @bot) должны находиться внутри этой функции.
+    """
 
-    # === ПОЛЬЗОВАТЕЛЬСКИЕ КОМАНДЫ ===
+    # =======================================================================
+    # === ОСНОВНЫЕ ПОЛЬЗОВАТЕЛЬСКИЕ КОМАНДЫ И КНОПКИ ===
+    # =======================================================================
+
+    # --- Обработчик команды /start ---
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
+        # Получаем ID пользователя, чтобы работать с ним
         user_id = message.from_user.id
+        # Проверяем статус пользователя в нашей "базе данных" (Google Таблице)
         status = get_reward_status(user_id)
         
-        # Сценарий для пользователя, который УЖЕ получил настойку
+        # СЦЕНАРИЙ 1: Пользователь уже получил свою настойку
         if status == 'redeemed':
+            # Создаем клавиатуру с основными кнопками для постоянного пользователя
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
@@ -38,10 +54,12 @@ def register_handlers(bot):
             keyboard.row(menu_button, friend_button)
             keyboard.row(ai_help_button)
 
+            # Если пользователь - админ, добавляем ему кнопку для сброса
             if user_id in ADMIN_IDS:
                 restart_button = types.KeyboardButton("/restart")
                 keyboard.row(restart_button)
             
+            # Приветственное сообщение для вернувшегося пользователя с подсказкой про ИИ
             info_text = (
                 "С возвращением, товарищ! Рады видеть снова. 😉\n\n"
                 "Нажимай «📖 Меню» для просмотра или **просто напиши мне в чат, чего бы тебе хотелось** "
@@ -50,10 +68,11 @@ def register_handlers(bot):
             bot.send_message(user_id, info_text, reply_markup=keyboard, parse_mode="Markdown")
             return
 
-        # Сценарий для пользователя, который еще НЕ получал настойку (not_found, registered, issued)
+        # СЦЕНАРИЙ 2: Пользователь новый или еще не получил настойку
         if status == 'not_found':
+            # Логика для отслеживания источника перехода (реферал, QR-код)
             referrer_id = None
-            source = 'direct'
+            source = 'direct' # Источник по умолчанию
             args = message.text.split()
             if len(args) > 1:
                 payload = args[1]
@@ -67,15 +86,18 @@ def register_handlers(bot):
                     if payload in allowed_sources:
                         source = allowed_sources[payload]
             
+            # Добавляем нового пользователя в Google Таблицу
             add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
             if referrer_id:
                 bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся.")
 
+        # Стартовая клавиатура для нового пользователя
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
         keyboard.add(gift_button)
         bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
 
+    # --- Обработчик для получения реферальной ссылки ---
     @bot.message_handler(commands=['friend'])
     @bot.message_handler(func=lambda message: message.text == "🤝 Привести товарища")
     def handle_friend_command(message: types.Message):
@@ -91,6 +113,7 @@ def register_handlers(bot):
         )
         bot.send_message(user_id, text, parse_mode="Markdown")
 
+    # --- Обработчик для получения ссылки на канал ---
     @bot.message_handler(commands=['channel'])
     def handle_channel_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
@@ -99,16 +122,18 @@ def register_handlers(bot):
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
 
-    # --- ИЗМЕНЕННЫЙ КОД: Обработчик меню теперь предлагает выбор ---
+    # --- Обработчик для вызова меню (настойки, кухня, сайт) ---
     @bot.message_handler(commands=['menu'])
     @bot.message_handler(func=lambda message: message.text == "📖 Меню")
     def handle_menu_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup(row_width=1)
-        nastoiki_button = types.InlineKeyboardButton(text="🥃 Меню настоек (Интерактивное)", callback_data="menu_nastoiki_main")
-        full_menu_button = types.InlineKeyboardButton(text="📖 Полное меню бара (Сайт)", url=MENU_URL)
-        keyboard.add(nastoiki_button, full_menu_button)
-        bot.send_message(message.chat.id, "Выберите раздел меню, товарищ:", reply_markup=keyboard)
+        nastoiki_button = types.InlineKeyboardButton(text="🥃 Меню настоек", callback_data="menu_nastoiki_main")
+        food_button = types.InlineKeyboardButton(text="🍔 Меню кухни", callback_data="menu_food_main")
+        full_menu_button = types.InlineKeyboardButton(text="📄 Полное меню (Сайт)", url=MENU_URL)
+        keyboard.add(nastoiki_button, food_button, full_menu_button)
+        bot.send_message(message.chat.id, "Чего желаешь, товарищ? Настойку или закусить?", reply_markup=keyboard)
 
+    # --- Обработчик команды /help ---
     @bot.message_handler(commands=['help'])
     def handle_help_command(message: types.Message):
         user_id = message.from_user.id
@@ -131,11 +156,12 @@ def register_handlers(bot):
             help_text += admin_help_text
         bot.send_message(user_id, help_text, parse_mode="Markdown")
 
-    # --- НОВЫЙ КОД: Обработчик кнопки-подсказки для ИИ ---
+    # --- Обработчик кнопки-подсказки для ИИ ---
     @bot.message_handler(func=lambda message: message.text == "🤖 Что мне выпить?")
     def handle_ai_prompt_button(message: types.Message):
         bot.reply_to(message, "Смело пиши мне свои пожелания! Например: «посоветуй что-нибудь сладкое и сливочное» или «ищу самую ядрёную настойку».")
 
+    # --- Обработчик кнопки для получения настойки ---
     @bot.message_handler(func=lambda message: message.text == "🥃 Получить настойку по талону")
     def handle_get_gift_press(message: types.Message):
         user_id = message.from_user.id
@@ -143,6 +169,7 @@ def register_handlers(bot):
         if status in ['issued', 'redeemed']:
             bot.send_message(user_id, "Вы уже получали свой подарок. Спасибо, что вы с нами! 😉")
             return
+        # Пробуем проверить подписку сразу, если пользователь уже подписан
         try:
             chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
             if chat_member.status in ['member', 'administrator', 'creator']:
@@ -151,6 +178,8 @@ def register_handlers(bot):
                 return
         except Exception as e:
             logging.error(f"Ошибка при предварительной проверке подписки для {user_id}: {e}")
+        
+        # Если не подписан, показываем стандартное приглашение
         welcome_text = ("Отлично! 👍\n\n"
                         "Чтобы получить настойку, подпишись на наш телеграм-канал. Это займет всего секунду.\n\n"
                         "Когда подпишешься — нажимай на кнопку «Я подписался» здесь же.")
@@ -165,6 +194,11 @@ def register_handlers(bot):
             logging.error(f"Не удалось отправить приветственный стикер: {e}")
         bot.send_message(message.chat.id, welcome_text, reply_markup=inline_keyboard, parse_mode="Markdown")
 
+    # =======================================================================
+    # === ОБРАБОТЧИКИ НАЖАТИЙ НА INLINE-КНОПКИ (CALLBACKS) ===
+    # =======================================================================
+
+    # --- Обработчик проверки подписки ---
     @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
     def handle_check_subscription(call: types.CallbackQuery):
         user_id = call.from_user.id
@@ -180,7 +214,7 @@ def register_handlers(bot):
             logging.error(f"Ошибка при проверке подписки для {user_id}: {e}")
             bot.answer_callback_query(call.id, "Не удалось проверить подписку. Попробуйте позже.", show_alert=True)
 
-    # --- ИЗМЕНЕННЫЙ КОД: Обработчик для погашения награды теперь выдает новую клавиатуру и текст ---
+    # --- Обработчик погашения купона на настойку ---
     @bot.callback_query_handler(func=lambda call: call.data == "redeem_reward")
     def handle_redeem_reward(call: types.CallbackQuery):
         user_id = call.from_user.id
@@ -195,6 +229,7 @@ def register_handlers(bot):
             except Exception as e:
                 logging.error(f"Не удалось отправить прощальный стикер: {e}")
             
+            # Создаем финальную клавиатуру
             final_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
@@ -214,64 +249,74 @@ def register_handlers(bot):
             )
             bot.send_message(user_id, info_text, reply_markup=final_keyboard, parse_mode="Markdown")
 
+            # Проверяем, был ли этот пользователь приглашен кем-то
             referrer_id = get_referrer_id_from_user(user_id)
             if referrer_id:
-                logging.info(f"Пользователь {user_id} погасил награду. Внешний планировщик должен будет его проверить для реферера {referrer_id} через 24ч.")
+                logging.info(f"Пользователь {user_id} погасил награду. Планировщик должен будет его проверить для реферера {referrer_id} через 24ч.")
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
 
-    # --- НОВЫЙ КОД: ОБРАБОТЧИКИ МЕНЮ НАСТОЕК ---
+    # --- Обработчики меню настоек ---
     @bot.callback_query_handler(func=lambda call: call.data == "menu_nastoiki_main")
     def callback_menu_nastoiki_main(call: types.CallbackQuery):
-        """Показывает главное меню с категориями настоек."""
         keyboard = types.InlineKeyboardMarkup(row_width=2)
-        buttons = []
-        for index, category in enumerate(MENU_DATA):
-            buttons.append(
-                types.InlineKeyboardButton(
-                    text=category['title'],
-                    callback_data=f"menu_category_{index}"
-                )
-            )
+        buttons = [types.InlineKeyboardButton(text=category['title'], callback_data=f"menu_category_{index}") for index, category in enumerate(MENU_DATA)]
         keyboard.add(*buttons)
         try:
             bot.edit_message_text(
                 "**Меню настоек «Евгенич»**\n\nВыберите категорию:",
-                call.message.chat.id,
-                call.message.message_id,
-                reply_markup=keyboard,
-                parse_mode="Markdown"
+                call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown"
             )
-        except Exception: # Сообщение не изменилось, отправим новое
-            bot.send_message(call.message.chat.id, "**Меню настоек «Еенич»**\n\nВыберите категорию:", reply_markup=keyboard, parse_mode="Markdown")
+        except Exception:
+            bot.send_message(call.message.chat.id, "**Меню настоек «Евгенич»**\n\nВыберите категорию:", reply_markup=keyboard, parse_mode="Markdown")
         bot.answer_callback_query(call.id)
-
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("menu_category_"))
     def callback_menu_category(call: types.CallbackQuery):
-        """Показывает список настоек в выбранной категории."""
         category_index = int(call.data.split("_")[2])
         category = MENU_DATA[category_index]
-
         text = f"**{category['title']}**\n_{category.get('category_narrative', '')}_\n\n"
         for item in category['items']:
             text += f"• **{item['name']}** — {item['price']}\n_{item['narrative_desc']}_\n\n"
-
         keyboard = types.InlineKeyboardMarkup()
         back_button = types.InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="menu_nastoiki_main")
         keyboard.add(back_button)
-
         bot.edit_message_text(
-            text,
-            call.message.chat.id,
-            call.message.message_id,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
+            text, call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown"
         )
         bot.answer_callback_query(call.id)
 
+    # --- Обработчики меню кухни ---
+    @bot.callback_query_handler(func=lambda call: call.data == "menu_food_main")
+    def callback_menu_food_main(call: types.CallbackQuery):
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        buttons = [types.InlineKeyboardButton(text=category, callback_data=f"food_category_{category}") for category in FOOD_MENU_DATA.keys()]
+        keyboard.add(*buttons)
+        bot.edit_message_text(
+            "**Меню Кухни**\n\nВыбирай, чем будешь закусывать:",
+            call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown"
+        )
+        bot.answer_callback_query(call.id)
 
-    # === АДМИН-ПАНЕЛЬ ===
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("food_category_"))
+    def callback_food_category(call: types.CallbackQuery):
+        category_name = call.data.replace("food_category_", "")
+        category_items = FOOD_MENU_DATA.get(category_name, [])
+        text = f"**{category_name}**\n\n"
+        for item in category_items:
+            text += f"• {item['name']} - **{item['price']}₽**\n"
+        keyboard = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton(text="⬅️ Назад к категориям кухни", callback_data="menu_food_main")
+        keyboard.add(back_button)
+        bot.edit_message_text(
+            text, call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown"
+        )
+        bot.answer_callback_query(call.id)
+
+    # =======================================================================
+    # === АДМИН-ПАНЕЛЬ: КОМАНДЫ И ОТЧЕТЫ ДЛЯ АДМИНИСТРАТОРОВ ===
+    # =======================================================================
+
     @bot.message_handler(commands=['admin'])
     def handle_admin(message: types.Message):
         if message.from_user.id not in ADMIN_IDS:
@@ -310,8 +355,10 @@ def register_handlers(bot):
             analytics_button = types.InlineKeyboardButton("📈 Глубокая аналитика", callback_data="admin_menu_analytics")
             leaderboard_button = types.InlineKeyboardButton("🏆 Доска почета вербовщиков", callback_data="admin_action_leaderboard")
             keyboard.add(reports_button, analytics_button, leaderboard_button)
-            try: bot.edit_message_text(main_menu_text, call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
-            except: pass
+            try:
+                bot.edit_message_text(main_menu_text, call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
+            except Exception as e:
+                logging.warning(f"Could not edit admin menu message: {e}")
             return
         elif action == 'admin_menu_reports':
             keyboard = types.InlineKeyboardMarkup(row_width=1)
@@ -380,7 +427,10 @@ def register_handlers(bot):
             else: return
             send_report(bot, call.message.chat.id, start_time, end_time)
 
-    # === СКРЫТЫЕ КОМАНДЫ ДЛЯ ПЛАНИРОВЩИКА ===
+    # =======================================================================
+    # === СКРЫТЫЕ КОМАНДЫ ДЛЯ ВНЕШНЕГО ПЛАНИРОВЩИКА (CRON) ===
+    # =======================================================================
+
     @bot.message_handler(commands=['send_daily_report'])
     def handle_send_report_command(message):
         tz_moscow = pytz.timezone('Europe/Moscow')
@@ -413,7 +463,10 @@ def register_handlers(bot):
         except Exception as e:
             logging.error(f"Ошибка при выполнении отложенной задачи по рефералам: {e}")
 
-    # === Вспомогательные функции ===
+    # =======================================================================
+    # === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (HELPERS) ===
+    # =======================================================================
+
     def issue_coupon(bot, user_id, username, first_name, chat_id):
         update_status(user_id, 'issued')
         coupon_text = ("🎉 Гражданин-товарищ, поздравляем!\n\n"
@@ -471,9 +524,42 @@ def register_handlers(bot):
         except Exception as e:
             logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
 
-    # --- НОВЫЙ КОД: ОБРАБОТЧИК ЗАПРОСОВ К НЕЙРОСЕТИ (ДОЛЖЕН БЫТЬ В САМОМ КОНЦЕ) ---
+    # =======================================================================
+    # === ОБРАБОТЧИК ЗАПРОСОВ К НЕЙРОСЕТИ (ДОЛЖЕН БЫТЬ В САМОМ КОНЦЕ) ===
+    # =======================================================================
+    # Этот обработчик "ловит" любые текстовые сообщения, которые не были пойманы
+    # другими, более конкретными обработчиками (командами или текстом кнопок).
     @bot.message_handler(func=lambda message: True, content_types=['text'])
     def handle_ai_query(message: types.Message):
+        user_id = message.from_user.id
+        user_text = message.text
+
+        # Эта проверка нужна, чтобы случайно не ответить на нажатие Reply-кнопки
+        # (хотя порядок обработчиков должен это предотвращать, это дополнительная защита)
+        known_buttons = ['📖 Меню', '🤝 Привести товарища', '🤖 Что мне выпить?', '🥃 Получить настойку по талону']
+        if user_text in known_buttons or user_text.startswith('/'):
+            return 
+        
+        # --- ЛОГИКА "ПАМЯТИ" БОТА ---
+        # Шаг 1: Записываем вопрос пользователя в "журнал бесед"
+        log_conversation_turn(user_id, "user", user_text)
+        # Шаг 2: Достаем последние 10 сообщений из этого диалога
+        history = get_conversation_history(user_id, limit=10)
+        
+        # Показываем пользователю, что мы "печатаем...", чтобы он знал, что запрос обрабатывается
         bot.send_chat_action(message.chat.id, 'typing')
-        recommendation = get_ai_recommendation(message.text, MENU_DATA)
+
+        # --- ВЫЗОВ НЕЙРОСЕТИ ---
+        # Шаг 3: Вызываем основную функцию ИИ, передавая ей все необходимое:
+        # - Запрос пользователя (user_text)
+        # - Меню настоек (MENU_DATA)
+        # - Меню кухни (FOOD_MENU_DATA)
+        # - Историю диалога (history)
+        recommendation = get_ai_recommendation(user_text, MENU_DATA, FOOD_MENU_DATA, history)
+        
+        # --- ЗАВЕРШЕНИЕ ЦИКЛА ПАМЯТИ ---
+        # Шаг 4: Записываем ответ нейросети в "журнал бесед"
+        log_conversation_turn(user_id, "assistant", recommendation)
+
+        # Отправляем ответ пользователю
         bot.reply_to(message, recommendation, parse_mode="Markdown")
