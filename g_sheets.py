@@ -87,6 +87,7 @@ def redeem_reward(user_id: int) -> bool:
         return True
     return False
 
+# --- НОВАЯ ФУНКЦИЯ ---
 def delete_user(user_id: int) -> bool:
     """Удаляет пользователя из таблицы по ID."""
     try:
@@ -131,8 +132,7 @@ def mark_referral_bonus_claimed(referred_user_id: int):
     if not worksheet: return
     worksheet.update_cell(cell.row, COL_FRIEND_BONUS, 'claimed')
 
-def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime.datetime) -> Tuple[int, int, List[str], dict, float]:
-    """Собирает данные за период: выдано, погашено, список username'ов, источники и время."""
+def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime.datetime) -> tuple:
     try:
         worksheet = get_sheet()
         if not worksheet: return 0, 0, [], {}, 0
