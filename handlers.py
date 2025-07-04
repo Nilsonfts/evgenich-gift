@@ -43,13 +43,12 @@ def register_handlers(bot):
 
         status = get_reward_status(user_id)
         
-        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
         if status in ['issued', 'redeemed']:
             # Клавиатура для ВЕРНУВШЕГОСЯ пользователя
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
-            keyboard.row(menu_button, friend_button) # Четко указываем, что кнопки в одном ряду
+            keyboard.row(menu_button, friend_button) # Кнопки в одном ряду
             bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉", reply_markup=keyboard)
         else:
             # Клавиатура для НОВОГО пользователя
@@ -57,9 +56,6 @@ def register_handlers(bot):
             gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
             keyboard.add(gift_button) # Только одна кнопка
             bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
-
-    # ... (остальной код файла остается без изменений) ...
-    # ... (я привожу его полностью ниже для твоего удобства) ...
 
     @bot.message_handler(commands=['friend'])
     @bot.message_handler(func=lambda message: message.text == "🤝 Привести товарища")
@@ -78,7 +74,7 @@ def register_handlers(bot):
     @bot.message_handler(commands=['channel'])
     def handle_channel_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
-        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
         url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
@@ -110,7 +106,7 @@ def register_handlers(bot):
                         "Чтобы получить настойку, подпишись на наш телеграм-канал. Это займет всего секунду.\n\n"
                         "Когда подпишешься — нажимай на кнопку «Я подписался» здесь же.")
         inline_keyboard = types.InlineKeyboardMarkup(row_width=1)
-        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
         subscribe_button = types.InlineKeyboardButton(text="➡️ Перейти к каналу", url=channel_url)
         check_button = types.InlineKeyboardButton(text="✅ Я подписался, проверить!", callback_data="check_subscription")
         inline_keyboard.add(subscribe_button, check_button)
