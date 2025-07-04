@@ -1,7 +1,6 @@
-# handlers.py
 import logging
 from telebot import types
-from config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID
+from config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID
 from g_sheets import get_reward_status, add_new_user, redeem_reward
 
 def register_handlers(bot):
@@ -9,6 +8,7 @@ def register_handlers(bot):
 
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
+        """Отправляет приветствие и одноразовую кнопку для новых пользователей."""
         user_id = message.from_user.id
         status = get_reward_status(user_id)
         if status in ['issued', 'redeemed']:
@@ -23,6 +23,7 @@ def register_handlers(bot):
 
     @bot.message_handler(func=lambda message: message.text == "🎁 ПОЛУЧИТЬ НАСТОЙКУ")
     def handle_get_gift_press(message: types.Message):
+        """Обрабатывает нажатие на кнопку и УМНО проверяет подписку."""
         user_id = message.from_user.id
         status = get_reward_status(user_id)
 
@@ -55,6 +56,7 @@ def register_handlers(bot):
 
     @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
     def handle_check_subscription(call: types.CallbackQuery):
+        """Проверяет подписку для тех, кто только что подписался."""
         user_id = call.from_user.id
         bot.answer_callback_query(call.id, text="Проверяю вашу подписку...")
 
@@ -72,11 +74,16 @@ def register_handlers(bot):
 
     @bot.callback_query_handler(func=lambda call: call.data == "redeem_reward")
     def handle_redeem_reward(call: types.CallbackQuery):
+        """Обрабатывает погашение награды и отправляет прощальный стикер."""
         user_id = call.from_user.id
         if redeem_reward(user_id):
             final_text = "✅ Награда получена! Спасибо, что вы с нами. 😉"
+            # Удаляем сообщение с кнопкой
             bot.delete_message(call.message.chat.id, call.message.message_id)
+            # Отправляем текстовое подтверждение
             bot.send_message(call.message.chat.id, final_text)
+            # Сразу следом отправляем прощальный стикер
+            bot.send_sticker(call.message.chat.id, THANK_YOU_STICKER_ID)
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
 
