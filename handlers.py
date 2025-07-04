@@ -4,12 +4,12 @@ from telebot import types
 import pytz
 from config import (
     CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID,
-    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID, GOOGLE_SHEET_KEY
+    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID
 )
 from g_sheets import (
     get_reward_status, add_new_user, redeem_reward, delete_user,
     get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed,
-    get_report_data_for_period, get_sheet
+    get_report_data_for_period
 )
 
 def register_handlers(bot):
@@ -19,6 +19,24 @@ def register_handlers(bot):
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
         user_id = message.from_user.id
+        
+        # --- НОВАЯ, ИСПРАВЛЕННАЯ ЛОГИКА ---
+        
+        status = get_reward_status(user_id)
+
+        # Сценарий 1: Пользователь уже есть в базе (старый или вернувшийся)
+        if status in ['issued', 'redeemed']:
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            menu_button = types.KeyboardButton("📖 Меню")
+            friend_button = types.KeyboardButton("🤝 Привести товарища")
+            keyboard.row(menu_button, friend_button)
+            if user_id in ADMIN_IDS:
+                restart_button = types.KeyboardButton("/restart")
+                keyboard.row(restart_button)
+            bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉", reply_markup=keyboard)
+            return
+
+        # Сценарий 2: Пользователя нет в базе (новый или после /restart)
         referrer_id = None
         source = 'direct'
         args = message.text.split()
@@ -33,28 +51,19 @@ def register_handlers(bot):
                 allowed_sources = {'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 'qr_toilet': 'QR в туалете', 'vk': 'VK', 'inst': 'Instagram', 'flyer': 'Листовки', 'site': 'Сайт'}
                 if payload in allowed_sources:
                     source = allowed_sources[payload]
-
-        if get_reward_status(user_id) == 'not_found':
-            add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
-            if referrer_id:
-                bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся. У нас тут почти коммунизм — первая бесплатно.")
-
-        status = get_reward_status(user_id)
         
-        if status in ['issued', 'redeemed']:
-            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-            menu_button = types.KeyboardButton("📖 Меню")
-            friend_button = types.KeyboardButton("🤝 Привести товарища")
-            keyboard.row(menu_button, friend_button)
-            if user_id in ADMIN_IDS:
-                restart_button = types.KeyboardButton("/restart")
-                keyboard.row(restart_button)
-            bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉", reply_markup=keyboard)
-        else:
-            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
-            keyboard.add(gift_button)
-            bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
+        # Добавляем нового пользователя в базу
+        add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
+        
+        if referrer_id:
+            bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся. У нас тут почти коммунизм — первая бесплатно.")
+        
+        # Показываем клавиатуру для нового пользователя
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
+        keyboard.add(gift_button)
+        bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
+
 
     @bot.message_handler(commands=['friend'])
     @bot.message_handler(func=lambda message: message.text == "🤝 Привести товарища")
@@ -62,10 +71,12 @@ def register_handlers(bot):
         user_id = message.from_user.id
         bot_username = bot.get_me().username
         ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
-        text = ("💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
-                f"Вот твоя персональная директива на привлечение нового бойца:\n`{ref_link}`\n\n"
-                "Отправь ее другу. Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит дефицитной закуской! 🥖\n\n"
-                "*Помни, план — не более 5 товарищей.*")
+        text = (
+            "💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
+            f"Вот твоя персональная директива на привлечение нового бойца:\n`{ref_link}`\n\n"
+            "Отправь ее другу. Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит дефицитной закуской! 🥖\n\n"
+            "*Помни, план — не более 5 товарищей.*"
+        )
         bot.send_message(user_id, text, parse_mode="Markdown")
 
     @bot.message_handler(commands=['channel'])
@@ -199,33 +210,24 @@ def register_handlers(bot):
             bot.answer_callback_query(call.id, "⛔️ Доступ запрещен.")
             return
         
-        # Переиспользуем код из обработчика команды /diag
         if call.data == 'admin_diag':
             bot.answer_callback_query(call.id, "Запускаю диагностику...")
             diag_message = types.Message(message_id=call.message.message_id, from_user=call.from_user, date=call.message.date, chat=call.message.chat, content_type='text', options={}, json_string='')
-            diag_message.text = '/diag'
             handle_diag_command(diag_message)
             return
 
         if call.data.startswith('admin_report'):
             period = call.data.split('_')[-1]
             bot.answer_callback_query(call.id, f"Формирую отчет...")
-            
             tz_moscow = pytz.timezone('Europe/Moscow')
             now_moscow = datetime.datetime.now(tz_moscow)
             end_time = now_moscow
-
             if period == 'today':
-                if now_moscow.hour < 12:
-                    start_time = (now_moscow - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
-                else:
-                    start_time = now_moscow.replace(hour=12, minute=0, second=0, microsecond=0)
-            elif period == 'week':
-                start_time = now_moscow - datetime.timedelta(days=7)
-            elif period == 'month':
-                start_time = now_moscow - datetime.timedelta(days=30)
-            else:
-                return
+                if now_moscow.hour < 12: start_time = (now_moscow - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+                else: start_time = now_moscow.replace(hour=12, minute=0, second=0, microsecond=0)
+            elif period == 'week': start_time = now_moscow - datetime.timedelta(days=7)
+            elif period == 'month': start_time = now_moscow - datetime.timedelta(days=30)
+            else: return
             send_report(bot, call.message.chat.id, start_time, end_time)
 
     # === СКРЫТЫЕ КОМАНДЫ ДЛЯ ПЛАНИРОВЩИКА ===
@@ -242,15 +244,13 @@ def register_handlers(bot):
         try:
             parts = message.text.split()
             if len(parts) < 3: return
-            referred_user_id = int(parts[1])
-            referrer_id = int(parts[2])
+            referred_user_id, referrer_id = int(parts[1]), int(parts[2])
             member = bot.get_chat_member(CHANNEL_ID, referred_user_id)
             if member.status not in ['member', 'administrator', 'creator']:
-                logging.info(f"Реферал {referred_user_id} отписался. Бонус для {referrer_id} не выдан.")
+                logging.info(f"Реферал {referred_user_id} отписался.")
                 return
-            ref_count = count_successful_referrals(referrer_id)
-            if ref_count >= 5:
-                logging.info(f"Реферер {referrer_id} достиг лимита бонусов.")
+            if count_successful_referrals(referrer_id) >= 5:
+                logging.info(f"Реферер {referrer_id} достиг лимита.")
                 return
             bonus_text = ("✊ Товарищ! Твой друг проявил сознательность и остался в наших рядах. Партия тобой гордится!\n\n"
                           "Вот твой заслуженный бонус. Покажи это сообщение бармену, чтобы получить **фирменные гренки**.")
@@ -263,13 +263,12 @@ def register_handlers(bot):
         except Exception as e:
             logging.error(f"Ошибка при выполнении отложенной задачи по рефералам: {e}")
 
-# === Вспомогательные функции (вынесены за пределы register_handlers) ===
+# === Вспомогательные функции ===
 def issue_coupon(bot, user_id, username, first_name, chat_id):
     status = get_reward_status(user_id)
     if status in ['issued', 'redeemed']: return
     if status == 'not_found':
         add_new_user(user_id, username or "N/A", first_name, 'direct', None)
-    
     coupon_text = ("🎉 Гражданин-товарищ, поздравляем!\n\n"
                    "Тебе досталась фирменная настойка «Евгенич» — почти как путёвка в пионерлагерь, только повеселее.\n\n"
                    "Что делать — коротко и ясно:\n"
@@ -289,8 +288,8 @@ def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users,
     avg_redeem_time_str = "н/д"
     if redeemed > 0:
         avg_seconds = total_redeem_time_seconds / redeemed
-        hours = int(avg_seconds // 3600)
-        minutes = int((avg_seconds % 3600) // 60)
+        hours, remainder = divmod(int(avg_seconds), 3600)
+        minutes, _ = divmod(remainder, 60)
         avg_redeem_time_str = f"{hours} ч {minutes} мин"
     report_date = end_time.strftime('%d.%m.%Y')
     header = f"**#Настойка_за_Подписку (Аналитика за {report_date})**\n\n"
