@@ -1,8 +1,8 @@
 import logging
 import json
 import datetime
-from typing import Optional
-import pytz  # Импортируем новую библиотеку
+from typing import Optional, Tuple
+import pytz
 
 try:
     import gspread
@@ -17,26 +17,50 @@ COL_USER_ID = 2
 COL_STATUS = 5
 
 def get_sheet() -> Optional[gspread.Worksheet]:
-    # ... (эта функция остается без изменений) ...
+    if not gspread:
+        logging.error("Библиотека gspread не установлена.")
+        return None
+    try:
+        creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+        creds = Credentials.from_service_account_info(
+            creds_dict,
+            scopes=['https://www.googleapis.com/auth/spreadsheets']
+        )
+        gc = gspread.authorize(creds)
+        spreadsheet = gc.open_by_key(GOOGLE_SHEET_KEY)
+        return spreadsheet.sheet1
+    except Exception as e:
+        logging.error(f"Ошибка подключения к Google Sheets: {e}")
+        return None
 
 def find_user_by_id(user_id: int) -> Optional[gspread.Cell]:
-    # ... (эта функция остается без изменений) ...
+    try:
+        worksheet = get_sheet()
+        if not worksheet: return None
+        return worksheet.find(str(user_id), in_column=COL_USER_ID)
+    except gspread.exceptions.CellNotFound:
+        return None
+    except Exception as e:
+        logging.error(f"Ошибка при поиске пользователя {user_id} в Google Sheets: {e}")
+        return None
 
 def get_reward_status(user_id: int) -> str:
-    # ... (эта функция остается без изменений) ...
+    cell = find_user_by_id(user_id)
+    if not cell:
+        return 'not_found'
+    worksheet = get_sheet()
+    if not worksheet: return 'not_found'
+    status = worksheet.cell(cell.row, COL_STATUS).value
+    return status or 'not_found'
 
 def add_new_user(user_id: int, username: str, first_name: str):
-    """Добавляет нового пользователя, сохраняя время в UTC."""
     try:
         worksheet = get_sheet()
         if not worksheet: return
-
-        # Сохраняем время в универсальном формате UTC
-        current_time_utc = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         
+        current_time_utc = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         if not worksheet.get_all_values():
              headers = ['Дата подписки (UTC)', 'ID Пользователя', 'Username', 'Имя', 'Статус награды']
-             worksheet.delete_rows(1) # Очищаем лист на случай если он был создан, но пуст
              worksheet.insert_row(headers, 1)
              worksheet.format('A1:E1', {'textFormat': {'bold': True}})
 
@@ -47,48 +71,36 @@ def add_new_user(user_id: int, username: str, first_name: str):
         logging.error(f"Не удалось добавить пользователя {user_id} в Google Таблицу: {e}")
 
 def redeem_reward(user_id: int) -> bool:
-    # ... (эта функция остается без изменений) ...
+    cell = find_user_by_id(user_id)
+    if not cell: return False
+    worksheet = get_sheet()
+    if not worksheet: return False
+    current_status = worksheet.cell(cell.row, COL_STATUS).value
+    if current_status == 'issued':
+        worksheet.update_cell(cell.row, COL_STATUS, 'redeemed')
+        return True
+    return False
 
-def get_daily_report_data() -> (int, int):
-    """Собирает данные для отчета, используя МОСКОВСКОЕ ВРЕМЯ."""
+def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime.datetime) -> Tuple[int, int]:
+    """Собирает данные за указанный период времени."""
     try:
         worksheet = get_sheet()
         if not worksheet: return 0, 0
-
         all_records = worksheet.get_all_records()
         
-        # Устанавливаем часовой пояс Москвы
-        tz_moscow = pytz.timezone('Europe/Moscow')
-        
-        # Определяем временные рамки смены по МОСКОВСКОМУ времени
-        now_moscow = datetime.datetime.now(tz_moscow)
-        
-        end_of_shift = now_moscow.replace(hour=6, minute=0, second=0, microsecond=0)
-        # Если сейчас раньше 6 утра, значит, рабочая смена еще вчерашняя
-        if now_moscow.hour < 6:
-            start_of_shift = (end_of_shift - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
-        else: # Иначе смена уже сегодняшняя
-            start_of_shift = now_moscow.replace(hour=12, minute=0, second=0, microsecond=0)
-            # Конец смены будет в 6 утра следующего дня
-            end_of_shift = (start_of_shift + datetime.timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
-
         issued_count = 0
         redeemed_count = 0
 
         for record in all_records:
             try:
-                # Записи в таблице хранятся в UTC. Приводим их к этому формату для сравнения.
                 record_time_naive = datetime.datetime.strptime(record['Дата подписки (UTC)'], "%Y-%m-%d %H:%M:%S")
                 record_time_utc = pytz.utc.localize(record_time_naive)
-
-                # Сравниваем время в одном и том же стандарте
-                if start_of_shift <= record_time_utc < end_of_shift:
+                if start_time <= record_time_utc < end_time:
                     issued_count += 1
                     if record['Статус награды'] == 'redeemed':
                         redeemed_count += 1
             except (ValueError, TypeError, KeyError):
-                continue 
-
+                continue
         return issued_count, redeemed_count
     except Exception as e:
         logging.error(f"Ошибка при сборе данных для отчета: {e}")
