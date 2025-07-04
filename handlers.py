@@ -19,12 +19,30 @@ def register_handlers(bot):
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
         user_id = message.from_user.id
-        
-        # --- НОВАЯ, ИСПРАВЛЕННАЯ ЛОГИКА ---
-        
-        status = get_reward_status(user_id)
+        referrer_id = None
+        source = 'direct'
 
-        # Сценарий 1: Пользователь уже есть в базе (старый или вернувшийся)
+        args = message.text.split()
+        if len(args) > 1:
+            payload = args[1]
+            if payload.startswith('ref_'):
+                try:
+                    referrer_id = int(payload.replace('ref_', ''))
+                    source = 'Реферал'
+                except (ValueError, IndexError):
+                    pass
+            else:
+                allowed_sources = {'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 'qr_toilet': 'QR в туалете', 'vk': 'VK', 'inst': 'Instagram', 'flyer': 'Листовки', 'site': 'Сайт'}
+                if payload in allowed_sources:
+                    source = allowed_sources[payload]
+
+        if get_reward_status(user_id) == 'not_found':
+            add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
+            if referrer_id:
+                bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся. У нас тут почти коммунизм — первая бесплатно.")
+
+        status = get_reward_status(user_id)
+        
         if status in ['issued', 'redeemed']:
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
@@ -34,36 +52,11 @@ def register_handlers(bot):
                 restart_button = types.KeyboardButton("/restart")
                 keyboard.row(restart_button)
             bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉", reply_markup=keyboard)
-            return
-
-        # Сценарий 2: Пользователя нет в базе (новый или после /restart)
-        referrer_id = None
-        source = 'direct'
-        args = message.text.split()
-        if len(args) > 1:
-            payload = args[1]
-            if payload.startswith('ref_'):
-                try:
-                    referrer_id = int(payload.replace('ref_', ''))
-                    source = 'Реферал'
-                except (ValueError, IndexError): pass
-            else:
-                allowed_sources = {'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 'qr_toilet': 'QR в туалете', 'vk': 'VK', 'inst': 'Instagram', 'flyer': 'Листовки', 'site': 'Сайт'}
-                if payload in allowed_sources:
-                    source = allowed_sources[payload]
-        
-        # Добавляем нового пользователя в базу
-        add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
-        
-        if referrer_id:
-            bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся. У нас тут почти коммунизм — первая бесплатно.")
-        
-        # Показываем клавиатуру для нового пользователя
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
-        keyboard.add(gift_button)
-        bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
-
+        else:
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+            gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
+            keyboard.add(gift_button)
+            bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
 
     @bot.message_handler(commands=['friend'])
     @bot.message_handler(func=lambda message: message.text == "🤝 Привести товарища")
@@ -73,8 +66,9 @@ def register_handlers(bot):
         ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
         text = (
             "💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
-            f"Вот твоя персональная директива на привлечение нового бойца:\n`{ref_link}`\n\n"
-            "Отправь ее другу. Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит дефицитной закуской! 🥖\n\n"
+            "Вот твоя персональная директива на привлечение нового бойца. Нажми на ссылку ниже, чтобы скопировать:\n"
+            f"`{ref_link}`\n\n"
+            "Отправь ее другу. Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит **еще одной дефицитной настойкой**! 🥃\n\n"
             "*Помни, план — не более 5 товарищей.*"
         )
         bot.send_message(user_id, text, parse_mode="Markdown")
@@ -82,7 +76,7 @@ def register_handlers(bot):
     @bot.message_handler(commands=['channel'])
     def handle_channel_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
-        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
         url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
@@ -114,7 +108,7 @@ def register_handlers(bot):
                         "Чтобы получить настойку, подпишись на наш телеграм-канал. Это займет всего секунду.\n\n"
                         "Когда подпишешься — нажимай на кнопку «Я подписался» здесь же.")
         inline_keyboard = types.InlineKeyboardMarkup(row_width=1)
-        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
         subscribe_button = types.InlineKeyboardButton(text="➡️ Перейти к каналу", url=channel_url)
         check_button = types.InlineKeyboardButton(text="✅ Я подписался, проверить!", callback_data="check_subscription")
         inline_keyboard.add(subscribe_button, check_button)
@@ -212,6 +206,7 @@ def register_handlers(bot):
         
         if call.data == 'admin_diag':
             bot.answer_callback_query(call.id, "Запускаю диагностику...")
+            # Создаем фейковое сообщение, чтобы переиспользовать код
             diag_message = types.Message(message_id=call.message.message_id, from_user=call.from_user, date=call.message.date, chat=call.message.chat, content_type='text', options={}, json_string='')
             handle_diag_command(diag_message)
             return
@@ -222,6 +217,7 @@ def register_handlers(bot):
             tz_moscow = pytz.timezone('Europe/Moscow')
             now_moscow = datetime.datetime.now(tz_moscow)
             end_time = now_moscow
+
             if period == 'today':
                 if now_moscow.hour < 12: start_time = (now_moscow - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
                 else: start_time = now_moscow.replace(hour=12, minute=0, second=0, microsecond=0)
@@ -253,7 +249,7 @@ def register_handlers(bot):
                 logging.info(f"Реферер {referrer_id} достиг лимита.")
                 return
             bonus_text = ("✊ Товарищ! Твой друг проявил сознательность и остался в наших рядах. Партия тобой гордится!\n\n"
-                          "Вот твой заслуженный бонус. Покажи это сообщение бармену, чтобы получить **фирменные гренки**.")
+                          "Вот твой заслуженный бонус. Покажи это сообщение бармену, чтобы получить **еще одну фирменную настойку**.")
             if FRIEND_BONUS_STICKER_ID:
                 try: bot.send_sticker(referrer_id, FRIEND_BONUS_STICKER_ID)
                 except Exception as e: logging.error(f"Не удалось отправить стикер за друга: {e}")
@@ -269,6 +265,7 @@ def issue_coupon(bot, user_id, username, first_name, chat_id):
     if status in ['issued', 'redeemed']: return
     if status == 'not_found':
         add_new_user(user_id, username or "N/A", first_name, 'direct', None)
+    
     coupon_text = ("🎉 Гражданин-товарищ, поздравляем!\n\n"
                    "Тебе досталась фирменная настойка «Евгенич» — почти как путёвка в пионерлагерь, только повеселее.\n\n"
                    "Что делать — коротко и ясно:\n"
@@ -292,7 +289,7 @@ def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users,
         minutes, _ = divmod(remainder, 60)
         avg_redeem_time_str = f"{hours} ч {minutes} мин"
     report_date = end_time.strftime('%d.%m.%Y')
-    header = f"**#Настойка_за_Подписку (Аналитика за {report_date})**\n\n"
+    header = f"**#Настойка_за_Подписку ({report_date})**\n\n"
     period_str = f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
     stats = (f"✅ **Выдано купонов:** {issued}\n"
              f"🥃 **Погашено настоек:** {redeemed}\n"
