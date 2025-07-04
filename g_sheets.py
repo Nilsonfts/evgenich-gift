@@ -88,22 +88,37 @@ def redeem_reward(user_id: int) -> bool:
     return False
 
 def delete_user(user_id: int) -> Tuple[bool, str]:
-    """Удаляет пользователя и возвращает кортеж (успех, сообщение)."""
+    """Удаляет пользователя и проверяет, что он действительно удален."""
     try:
-        cell = find_user_by_id(user_id)
-        if not cell:
-            msg = f"Пользователь {user_id} не найден в таблице."
-            logging.info(msg)
-            return False, msg
-        
         worksheet = get_sheet()
         if not worksheet:
             return False, "Не удалось получить доступ к таблице."
+
+        all_records = worksheet.get_all_records()
+        row_to_delete = -1
+
+        for index, record in enumerate(all_records):
+            if str(record.get('ID Пользователя')) == str(user_id):
+                row_to_delete = index + 2
+                break
         
-        worksheet.delete_rows(cell.row)
-        msg = f"Пользователь {user_id} успешно удален."
-        logging.info(msg)
-        return True, msg
+        if row_to_delete != -1:
+            worksheet.delete_rows(row_to_delete)
+            # Двойная проверка
+            cell_after_delete = find_user_by_id(user_id)
+            if cell_after_delete is None:
+                msg = f"Пользователь {user_id} успешно удален. Проверка подтвердила."
+                logging.info(msg)
+                return True, msg
+            else:
+                msg = "Команда на удаление отправлена, но пользователь все еще в базе. Вероятно, проблема с правами доступа или кэшем Google."
+                logging.error(msg)
+                return False, msg
+        else:
+            msg = f"Пользователь {user_id} не найден в таблице для удаления."
+            logging.info(msg)
+            return False, msg
+
     except Exception as e:
         error_msg = f"Ошибка при удалении пользователя {user_id}: {e}"
         logging.error(error_msg)
