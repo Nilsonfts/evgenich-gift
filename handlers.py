@@ -7,8 +7,9 @@ from config import (
     FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID
 )
 from g_sheets import (
-    get_reward_status, add_new_user, redeem_reward, get_report_data_for_period,
-    get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed
+    get_reward_status, add_new_user, redeem_reward, delete_user,
+    get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed,
+    get_report_data_for_period
 )
 
 def register_handlers(bot):
@@ -20,7 +21,7 @@ def register_handlers(bot):
         user_id = message.from_user.id
         referrer_id = None
         source = 'direct'  # Источник по умолчанию
-        
+
         args = message.text.split()
         if len(args) > 1:
             payload = args[1]
@@ -69,7 +70,7 @@ def register_handlers(bot):
         bot.send_message(user_id, text, parse_mode="Markdown")
 
     @bot.message_handler(commands=['channel'])
-    def handle_channel_command(message):
+    def handle_channel_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
         channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
         url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
@@ -160,6 +161,18 @@ def register_handlers(bot):
         month_report_button = types.InlineKeyboardButton("🗓️ Отчет за месяц", callback_data="admin_report_month")
         keyboard.add(today_report_button, week_report_button, month_report_button)
         bot.send_message(message.chat.id, "👑 Админ-панель", reply_markup=keyboard)
+
+    @bot.message_handler(commands=['restart'])
+    def handle_restart_command(message: types.Message):
+        """Сбрасывает профиль администратора для тестирования."""
+        if message.from_user.id not in ADMIN_IDS:
+            return # Игнорируем команду от не-админов
+        
+        user_id = message.from_user.id
+        if delete_user(user_id):
+            bot.reply_to(message, "✅ Ваш профиль в боте сброшен. Можете начинать тестирование заново, отправив команду /start.")
+        else:
+            bot.reply_to(message, "🤔 Не удалось найти ваш профиль для сброса. Возможно, вы еще не взаимодействовали с ботом.")
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_report'))
     def handle_admin_report_callbacks(call: types.CallbackQuery):
@@ -296,7 +309,7 @@ def send_report(bot, chat_id, start_time, end_time):
         if not report_data or report_data.get("issued", 0) == 0:
             bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
             return
-        report_text = generate_super_report_text(start_time, end_time, **report_data)
+        report_text = generate_report_text(start_time, end_time, **report_data)
         bot.send_message(chat_id, report_text, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
