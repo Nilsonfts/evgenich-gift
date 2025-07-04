@@ -1,3 +1,6 @@
+# =======================================================================
+# === ИМПОРТЫ: ПОДКЛЮЧЕНИЕ ВСЕХ НЕОБХОДИМЫХ БИБЛИОТЕК И МОДУЛЕЙ ===
+# =======================================================================
 import logging
 import datetime
 from telebot import types
@@ -13,7 +16,7 @@ from g_sheets import (
     get_reward_status, add_new_user, update_status, delete_user,
     get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed,
     get_report_data_for_period, get_stats_by_source, get_weekly_cohort_data, get_top_referrers,
-    log_conversation_turn, get_conversation_history
+    log_conversation_turn, get_conversation_history, get_daily_updates
 )
 # --- Подключение меню ---
 from menu_nastoiki import MENU_DATA
@@ -26,8 +29,11 @@ def register_handlers(bot):
     """
     Главная функция, которая регистрирует все обработчики команд и кнопок в боте.
     """
-    
+
+    # =======================================================================
     # === ОСНОВНЫЕ ПОЛЬЗОВАТЕЛЬСКИЕ КОМАНДЫ И КНОПКИ ===
+    # =======================================================================
+
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
         user_id = message.from_user.id
@@ -169,7 +175,7 @@ def register_handlers(bot):
                 issue_coupon(bot, user_id, message.from_user.username, message.from_user.first_name, message.chat.id)
                 return
         except Exception as e:
-            logging.error(f"Error during preliminary subscription check for {user_id}: {e}")
+            logging.error(f"Ошибка при предварительной проверке подписки для {user_id}: {e}")
         welcome_text = ("Отлично! 👍\n\n"
                         "Чтобы получить настойку, подпишись на наш телеграм-канал. Это займет всего секунду.\n\n"
                         "Когда подпишешься — нажимай на кнопку «Я подписался» здесь же.")
@@ -181,10 +187,10 @@ def register_handlers(bot):
         try:
             bot.send_sticker(message.chat.id, HELLO_STICKER_ID)
         except Exception as e:
-            logging.error(f"Failed to send hello sticker: {e}")
+            logging.error(f"Не удалось отправить приветственный стикер: {e}")
         bot.send_message(message.chat.id, welcome_text, reply_markup=inline_keyboard, parse_mode="Markdown")
 
-    # === CALLBACK HANDLERS ===
+    # === ОБРАБОТЧИКИ НАЖАТИЙ НА INLINE-КНОПКИ (CALLBACKS) ===
     @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
     def handle_check_subscription(call: types.CallbackQuery):
         user_id = call.from_user.id
@@ -197,7 +203,7 @@ def register_handlers(bot):
             else:
                 bot.answer_callback_query(call.id, "Ну куда без подписки, родной? Там всё по-честному.", show_alert=True)
         except Exception as e:
-            logging.error(f"Error checking subscription for {user_id}: {e}")
+            logging.error(f"Ошибка при проверке подписки для {user_id}: {e}")
             bot.answer_callback_query(call.id, "Не удалось проверить подписку. Попробуйте позже.", show_alert=True)
 
     @bot.callback_query_handler(func=lambda call: call.data == "redeem_reward")
@@ -212,7 +218,7 @@ def register_handlers(bot):
             try:
                 bot.send_sticker(call.message.chat.id, THANK_YOU_STICKER_ID)
             except Exception as e:
-                logging.error(f"Failed to send thank you sticker: {e}")
+                logging.error(f"Не удалось отправить прощальный стикер: {e}")
             
             final_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
@@ -236,11 +242,11 @@ def register_handlers(bot):
 
             referrer_id = get_referrer_id_from_user(user_id)
             if referrer_id:
-                logging.info(f"User {user_id} redeemed reward. Scheduler should check for referrer {referrer_id} in 24h.")
+                logging.info(f"Пользователь {user_id} погасил награду. Планировщик должен его проверить для реферера {referrer_id} через 24ч.")
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
 
-    # --- TINCTURE MENU HANDLERS ---
+    # --- ОБРАБОТЧИКИ МЕНЮ НАСТОЕК ---
     @bot.callback_query_handler(func=lambda call: call.data == "menu_nastoiki_main")
     def callback_menu_nastoiki_main(call: types.CallbackQuery):
         keyboard = types.InlineKeyboardMarkup(row_width=2)
@@ -270,7 +276,7 @@ def register_handlers(bot):
         )
         bot.answer_callback_query(call.id)
 
-    # --- FOOD MENU HANDLERS ---
+    # --- ОБРАБОТЧИКИ МЕНЮ КУХНИ ---
     @bot.callback_query_handler(func=lambda call: call.data == "menu_food_main")
     def callback_menu_food_main(call: types.CallbackQuery):
         keyboard = types.InlineKeyboardMarkup(row_width=2)
@@ -297,7 +303,7 @@ def register_handlers(bot):
         )
         bot.answer_callback_query(call.id)
 
-    # === ADMIN PANEL ===
+    # === АДМИН-ПАНЕЛЬ ===
     @bot.message_handler(commands=['admin'])
     def handle_admin(message: types.Message):
         if message.from_user.id not in ADMIN_IDS:
@@ -406,7 +412,7 @@ def register_handlers(bot):
             else: return
             send_report(bot, call.message.chat.id, start_time, end_time)
 
-    # === HIDDEN COMMANDS FOR SCHEDULER ===
+    # === СКРЫТЫЕ КОМАНДЫ ДЛЯ ПЛАНИРОВЩИКА ===
     @bot.message_handler(commands=['send_daily_report'])
     def handle_send_report_command(message):
         tz_moscow = pytz.timezone('Europe/Moscow')
@@ -423,23 +429,23 @@ def register_handlers(bot):
             referred_user_id, referrer_id = int(parts[1]), int(parts[2])
             member = bot.get_chat_member(CHANNEL_ID, referred_user_id)
             if member.status not in ['member', 'administrator', 'creator']:
-                logging.info(f"Referral {referred_user_id} unsubscribed.")
+                logging.info(f"Реферал {referred_user_id} отписался.")
                 return
             if count_successful_referrals(referrer_id) >= 5:
-                logging.info(f"Referrer {referrer_id} has reached the limit.")
+                logging.info(f"Реферер {referrer_id} достиг лимита.")
                 return
             bonus_text = ("✊ Товарищ! Твой друг проявил сознательность и остался в наших рядах. Партия тобой гордится!\n\n"
                           "Вот твой заслуженный бонус. Покажи это сообщение бармену, чтобы получить **еще одну фирменную настойку**.")
             if FRIEND_BONUS_STICKER_ID:
                 try: bot.send_sticker(referrer_id, FRIEND_BONUS_STICKER_ID)
-                except Exception as e: logging.error(f"Failed to send sticker for friend: {e}")
+                except Exception as e: logging.error(f"Не удалось отправить стикер за друга: {e}")
             bot.send_message(referrer_id, bonus_text)
             mark_referral_bonus_claimed(referred_user_id)
-            logging.info(f"Bonus for referral {referred_user_id} successfully issued to {referrer_id}.")
+            logging.info(f"Бонус за реферала {referred_user_id} успешно выдан {referrer_id}.")
         except Exception as e:
-            logging.error(f"Error processing deferred referral task: {e}")
+            logging.error(f"Ошибка при выполнении отложенной задачи по рефералам: {e}")
 
-    # === HELPER FUNCTIONS ===
+    # === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
     def issue_coupon(bot, user_id, username, first_name, chat_id):
         update_status(user_id, 'issued')
         coupon_text = ("🎉 Гражданин-товарищ, поздравляем!\n\n"
@@ -453,7 +459,7 @@ def register_handlers(bot):
         try:
             bot.send_sticker(chat_id, NASTOYKA_STICKER_ID)
         except Exception as e:
-            logging.error(f"Failed to send coupon sticker: {e}")
+            logging.error(f"Не удалось отправить стикер-купон: {e}")
         bot.send_message(chat_id, coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
 
     def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds):
@@ -495,9 +501,11 @@ def register_handlers(bot):
             report_text = generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time)
             bot.send_message(chat_id, report_text, parse_mode="Markdown")
         except Exception as e:
-            logging.error(f"Failed to send report to chat {chat_id}: {e}")
+            logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
 
-    # === AI QUERY HANDLER (MUST BE LAST) ===
+    # =======================================================================
+    # === ОБРАБОТЧИК ЗАПРОСОВ К НЕЙРОСЕТИ (ДОЛЖЕН БЫТЬ В САМОМ КОНЦЕ) ===
+    # =======================================================================
     @bot.message_handler(func=lambda message: True, content_types=['text'])
     def handle_ai_query(message: types.Message):
         user_id = message.from_user.id
@@ -509,10 +517,16 @@ def register_handlers(bot):
         
         log_conversation_turn(user_id, "user", user_text)
         history = get_conversation_history(user_id, limit=10)
+        daily_updates = get_daily_updates()
         
+        context_info = {
+            "time_of_day": datetime.datetime.now(pytz.timezone('Europe/Moscow')).strftime('%H:%M'),
+            "occasion": "неизвестен"
+        }
+
         bot.send_chat_action(message.chat.id, 'typing')
 
-        ai_response = get_ai_recommendation(user_text, MENU_DATA, FOOD_MENU_DATA, history)
+        ai_response = get_ai_recommendation(user_text, MENU_DATA, FOOD_MENU_DATA, history, daily_updates, context_info)
         
         booking_chat_id = -1002574697415
 
