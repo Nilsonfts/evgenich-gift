@@ -20,7 +20,7 @@ def register_handlers(bot):
         user_id = message.from_user.id
         referrer_id = None
         source = 'direct'  # Источник по умолчанию
-
+        
         args = message.text.split()
         if len(args) > 1:
             payload = args[1]
@@ -69,7 +69,7 @@ def register_handlers(bot):
         bot.send_message(user_id, text, parse_mode="Markdown")
 
     @bot.message_handler(commands=['channel'])
-    def handle_channel_command(message: types.Message):
+    def handle_channel_command(message):
         keyboard = types.InlineKeyboardMarkup()
         channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
         url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
@@ -144,7 +144,7 @@ def register_handlers(bot):
             
             referrer_id = get_referrer_id_from_user(user_id)
             if referrer_id:
-                logging.info(f"Пользователь {user_id} погасил награду. Планировщик должен будет его проверить для реферера {referrer_id} через 24ч.")
+                logging.info(f"Пользователь {user_id} погасил награду. Внешний планировщик должен будет его проверить для реферера {referrer_id} через 24ч.")
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
 
@@ -249,19 +249,13 @@ def issue_coupon(bot, user_id, username, first_name, chat_id):
         logging.error(f"Не удалось отправить стикер-купон: {e}")
     bot.send_message(chat_id, coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
 
-def generate_super_report_text(start_time, end_time, report_data):
-    """Генерирует текст нового 'супер-отчета'."""
-    issued = report_data.get("issued", 0)
-    redeemed = report_data.get("redeemed", 0)
-    redeemed_users = report_data.get("redeemed_users", [])
-    sources = report_data.get("sources", {})
-    total_redeem_time = report_data.get("total_redeem_time_seconds", 0)
-
+def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds):
+    """Генерирует текст 'супер-отчета' на основе данных."""
     conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
     
     avg_redeem_time_str = "н/д"
     if redeemed > 0:
-        avg_seconds = total_redeem_time / redeemed
+        avg_seconds = total_redeem_time_seconds / redeemed
         hours = int(avg_seconds // 3600)
         minutes = int((avg_seconds % 3600) // 60)
         avg_redeem_time_str = f"{hours} ч {minutes} мин"
@@ -294,11 +288,15 @@ def generate_super_report_text(start_time, end_time, report_data):
 def send_report(bot, chat_id, start_time, end_time):
     """Универсальная функция для отправки отчета."""
     try:
-        report_data = get_super_report_data(start_time, end_time)
+        issued, redeemed, redeemed_users, sources, total_redeem_time = get_report_data_for_period(start_time, end_time)
+        report_data = {
+            "issued": issued, "redeemed": redeemed, "redeemed_users": redeemed_users,
+            "sources": sources, "total_redeem_time_seconds": total_redeem_time
+        }
         if not report_data or report_data.get("issued", 0) == 0:
-            bot.send_message(chat_id, "За указанный период нет данных для отчета.")
+            bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
             return
-        report_text = generate_super_report_text(start_time, end_time, report_data)
+        report_text = generate_super_report_text(start_time, end_time, **report_data)
         bot.send_message(chat_id, report_text, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
