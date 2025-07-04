@@ -10,7 +10,6 @@ from g_sheets import (
     get_reward_status, add_new_user, redeem_reward, get_report_data_for_period,
     get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed
 )
-from scheduler import scheduler
 
 def register_handlers(bot):
     """Регистрирует все обработчики сообщений и кнопок."""
@@ -21,7 +20,6 @@ def register_handlers(bot):
         user_id = message.from_user.id
         referrer_id = None
         
-        # Логика для реферальных ссылок
         args = message.text.split()
         if len(args) > 1 and args[1].startswith('ref_'):
             try:
@@ -29,7 +27,6 @@ def register_handlers(bot):
             except (ValueError, IndexError):
                 pass
         
-        # Проверяем, есть ли юзер в базе. Если нет - добавляем.
         if get_reward_status(user_id) == 'not_found':
             add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, referrer_id)
             if referrer_id:
@@ -37,7 +34,6 @@ def register_handlers(bot):
 
         status = get_reward_status(user_id)
         if status in ['issued', 'redeemed']:
-            # Для старых юзеров просто покажем постоянную клавиатуру без приветствия
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
             menu_button = types.KeyboardButton("📖 Меню")
@@ -46,7 +42,6 @@ def register_handlers(bot):
             keyboard.row(friend_button)
             bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉", reply_markup=keyboard)
         else:
-            # Для новых - одноразовую
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
             get_gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
             keyboard.add(get_gift_button)
@@ -142,9 +137,8 @@ def register_handlers(bot):
             
             referrer_id = get_referrer_id_from_user(user_id)
             if referrer_id:
-                query = f'/check_referral_and_give_bonus {user_id} {referrer_id}'
-                scheduler.schedule(query=query, run_after_seconds=86400) # 24 часа
-                logging.info(f"Запланирована проверка реферала {user_id} для пригласившего {referrer_id}.")
+                # Просто логируем. Внешний планировщик вызовет команду /check_referral_and_give_bonus
+                logging.info(f"Пользователь {user_id} погасил награду. Планировщик должен будет его проверить для реферера {referrer_id} через 24ч.")
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
 
@@ -185,6 +179,7 @@ def register_handlers(bot):
             start_time = now_moscow - datetime.timedelta(days=30)
         else:
             return
+
         send_report(bot, call.message.chat.id, start_time, end_time)
 
     # === СКРЫТЫЕ КОМАНДЫ ДЛЯ ПЛАНИРОВЩИКА ===
@@ -200,6 +195,7 @@ def register_handlers(bot):
     def handle_check_referral_command(message):
         try:
             parts = message.text.split()
+            if len(parts) < 3: return # Проверка на корректность команды
             referred_user_id = int(parts[1])
             referrer_id = int(parts[2])
 
@@ -218,7 +214,7 @@ def register_handlers(bot):
             
             if FRIEND_BONUS_STICKER_ID:
                 try: bot.send_sticker(referrer_id, FRIEND_BONUS_STICKER_ID)
-                except Exception: pass
+                except Exception as e: logging.error(f"Не удалось отправить стикер за друга: {e}")
             
             bot.send_message(referrer_id, bonus_text)
             mark_referral_bonus_claimed(referred_user_id)
@@ -231,7 +227,6 @@ def register_handlers(bot):
 def issue_coupon(bot, user_id, username, first_name, chat_id):
     status = get_reward_status(user_id)
     if status in ['issued', 'redeemed']: return
-    # Если пользователь еще не в базе (например, пришел не по реф. ссылке), добавляем его
     if status == 'not_found':
         add_new_user(user_id, username or "N/A", first_name)
     
