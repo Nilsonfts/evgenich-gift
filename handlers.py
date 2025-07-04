@@ -1,848 +1,741 @@
-# handlers.py (ИСПРАВЛЕННАЯ ВЕРСИЯ)
-"""
-Этот файл содержит все обработчики сообщений и кнопок (хендлеры) для бота.
-Он импортирует необходимые функции и переменные из других модулей.
-"""
 import logging
-import os
 import datetime
-import random
-import pytz
-import threading
-import time
-import pandas as pd
+
+# Основные компоненты библиотеки для создания Telegram-бота
 from telebot import types
-from collections import Counter
 
-# Импорты из наших собственных модулей
-from config import *
-from state import *
-from g_sheets import get_sheet
-from utils import (
-    is_admin, admin_required, get_username, get_chat_title,
-    init_user_data, init_shift_data, handle_user_return,
-    save_history_event, save_json_data, generate_detailed_report
+# Библиотека для работы с часовыми поясами, чтобы время было корректным
+import pytz
+
+# --- Подключение переменных и настроек из вашего файла config.py ---
+from config import (
+    CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID,
+    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID, GOOGLE_SHEET_KEY, MENU_URL
 )
-from scheduler import send_end_of_shift_report_for_chat
+# --- Подключение всех функций для работы с Google Таблицами из файла g_sheets.py ---
+from g_sheets import (
+    get_reward_status, add_new_user, update_status, delete_user,
+    get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed,
+    get_report_data_for_period, get_stats_by_source, get_weekly_cohort_data, get_top_referrers,
+    log_conversation_turn, get_conversation_history, get_daily_updates
+)
+# --- Подключение данных о меню из отдельных файлов для удобства редактирования ---
+from menu_nastoiki import MENU_DATA
+from food_menu import FOOD_MENU_DATA
 
-# Используем openai, если он установлен
-try:
-    import openai
-    client = openai.OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY and openai else None
-except ImportError:
-    client = None
+# --- Подключение "мозга" нашего бота - функции для вызова нейросети ---
+from ai_assistant import get_ai_recommendation
 
-# Глобальный словарь для отслеживания предложений о передаче смены
-# Формат: { chat_id: { 'from_id': int, 'to_id': int, 'message_id': int, 'timer': Timer } }
-pending_transfers = {}
+# =======================================================================
+# === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
+# =======================================================================
 
+# Временное хранилище в памяти для данных пошагового бронирования.
+# Это простой словарь, где ключ - это ID пользователя, а значение - другой словарь с его ответами.
+# ВАЖНО: При перезапуске бота эти данные стираются. Для серьезных проектов лучше использовать базу данных (например, Redis).
+user_booking_data = {}
+
+
+# =======================================================================
+# === ГЛАВНАЯ ФУНКЦИЯ РЕГИСТРАЦИИ ОБРАБОТЧИКОВ ===
+# =======================================================================
 
 def register_handlers(bot):
-    """Регистрирует все обработчики сообщений и колбэков для бота."""
+    """
+    Главная функция, которая "регистрирует" все обработчики команд и кнопок в боте.
+    Именно она вызывается в основном файле main.py для запуска и "оживления" бота.
+    Все функции, отмеченные декоратором @bot.message_handler или @bot.callback_query_handler,
+    должны находиться внутри этой функции, чтобы иметь доступ к объекту `bot`.
+    """
 
-    # ========================================
-    #   ВНУТРЕННИЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-    # ========================================
-    def analyze_voice_thread(audio_path: str, user_data: dict, chat_id: int):
-        """Анализирует аудио в отдельном потоке, чтобы не блокировать бота."""
-        if not client or not ad_templates:
-            if os.path.exists(audio_path): os.remove(audio_path)
-            return
+    # =======================================================================
+    # === ОСНОВНЫЕ ПОЛЬЗОВАТЕЛЬСКИЕ КОМАНДЫ И КНОПКИ ===
+    # =======================================================================
 
-        chat_config = chat_configs.get(chat_id, {})
-        brand, city = chat_config.get("brand"), chat_config.get("city")
-        if not brand or not city:
-            if os.path.exists(audio_path): os.remove(audio_path)
-            return
-
-        templates_for_location = ad_templates.get(brand, {}).get(city)
-        if not templates_for_location:
-            if os.path.exists(audio_path): os.remove(audio_path)
-            return
-
-        try:
-            with open(audio_path, "rb") as audio_file:
-                transcript = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
-            
-            recognized_text = transcript.text
-            if not recognized_text.strip(): return
-
-            system_prompt = "Ты — ассистент, который находит в тексте диктора упоминания рекламных шаблонов из списка. В ответ верни названия ВСЕХ подходящих шаблонов, каждое с новой строки. Если совпадений нет, верни 'None'."
-            ad_list_for_prompt = "\n".join([f"- {name}: '{text}'" for name, text in templates_for_location.items()])
-            user_prompt = f"Текст диктора: '{recognized_text}'.\n\nСписок шаблонов:\n{ad_list_for_prompt}\n\nКакие шаблоны были упомянуты?"
-
-            completion = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-                temperature=0
-            )
-            analysis_result_text = completion.choices[0].message.content.strip()
-
-            if analysis_result_text != 'None':
-                found_templates = [line.strip() for line in analysis_result_text.splitlines() if line.strip() in templates_for_location]
-                if found_templates:
-                    user_data['recognized_ads'].extend(found_templates)
-                    logging.info(f"GPT ({chat_id}) определил совпадения: {found_templates}")
-        except Exception as e:
-            logging.error(f"Ошибка OpenAI ({chat_id}): {e}")
-            try:
-                if BOSS_ID: bot.send_message(BOSS_ID, f"❗️ Ошибка анализа речи OpenAI в чате {get_chat_title(bot, chat_id)}:\n`{e}`")
-            except Exception as send_e:
-                logging.error(f"Не удалось отправить ЛС об ошибке: {send_e}")
-        finally:
-            if os.path.exists(audio_path):
-                os.remove(audio_path)
-
-    # ========================================
-    #   ОСНОВНЫЕ ОБРАБОТЧИКИ СООБЩЕНИЙ
-    # ========================================
-    @bot.message_handler(content_types=['voice'])
-    def handle_voice_message(message: types.Message):
-        chat_id = message.chat.id
-        if chat_id > 0: return
-
-        user_id = message.from_user.id
-        username = get_username(message.from_user)
-        now_moscow = datetime.datetime.now(pytz.timezone('Europe/Moscow'))
-
-        if chat_id not in chat_data: init_shift_data(chat_id)
-        if user_id not in chat_data[chat_id]['users']:
-            chat_data[chat_id]['users'][user_id] = init_user_data(user_id, username)
-
-        is_new_main = False
-        if chat_data[chat_id].get('main_id') is None:
-            chat_data[chat_id]['main_id'] = user_id
-            chat_data[chat_id]['main_username'] = username
-            is_new_main = True
-
-        if chat_data[chat_id]['main_id'] == user_id:
-            if is_new_main:
-                phrase = random.choice(soviet_phrases.get("system_messages", {}).get('first_voice_new_main', ["👑 {username} становится главным, записав первое ГС!"]))
-                bot.send_message(chat_id, phrase.format(username=username))
-                save_history_event(chat_id, user_id, username, "Стал главным (первое ГС)")
-
-            user_data = chat_data[chat_id]['users'][user_id]
-            
-            last_voice_time_str = user_data.get('last_voice_time')
-            if not is_new_main and last_voice_time_str:
-                last_voice_time = datetime.datetime.fromisoformat(last_voice_time_str)
-                time_since_last = (now_moscow - last_voice_time).total_seconds()
-                if time_since_last < VOICE_COOLDOWN_SECONDS:
-                    remaining = int(VOICE_COOLDOWN_SECONDS - time_since_last)
-                    phrase = random.choice(soviet_phrases.get("system_messages", {}).get('voice_cooldown', ["Слишком часто! Пауза {remaining} сек."]))
-                    bot.reply_to(message, phrase.format(remaining=remaining), disable_notification=True)
-                    return
-
-            if message.voice.duration < VOICE_MIN_DURATION_SECONDS:
-                bot.reply_to(message, f"*{random.choice(soviet_phrases.get('too_short', ['Коротко']))}* ({message.voice.duration} сек)")
-                return
-
-            bot.send_message(chat_id, f"*{random.choice(soviet_phrases.get('accept', ['Принято']))}*", reply_to_message_id=message.message_id)
-
-            if user_data.get('last_voice_time'):
-                delta_minutes = (now_moscow - datetime.datetime.fromisoformat(user_data['last_voice_time'])).total_seconds() / 60
-                user_data['voice_deltas'].append(delta_minutes)
-
-            user_data['count'] += 1
-            user_data['last_voice_time'] = now_moscow.isoformat() # Сохраняем как строку
-            user_data['voice_durations'].append(message.voice.duration)
-            user_data['voice_timeout_reminder_sent'] = False
-
-            if client:
-                try:
-                    file_info = bot.get_file(message.voice.file_id)
-                    downloaded_file = bot.download_file(file_info.file_path)
-                    file_path = f"voice_{message.message_id}.ogg"
-                    with open(file_path, 'wb') as new_file:
-                        new_file.write(downloaded_file)
-                    threading.Thread(target=analyze_voice_thread, args=(file_path, user_data, chat_id)).start()
-                except Exception as e:
-                    logging.error(f"Ошибка при скачивании аудиофайла: {e}")
-
-    @bot.message_handler(func=lambda m: m.text and any(word in m.text.lower().split() for word in BREAK_KEYWORDS))
-    def handle_break_request(message: types.Message):
-        chat_id = message.chat.id
-        user_id = message.from_user.id
-        if chat_id > 0 or chat_data.get(chat_id, {}).get('main_id') != user_id: return
-        
-        user_data = chat_data[chat_id]['users'][user_id]
-        
-        if user_data.get('on_break'):
-            phrase = random.choice(soviet_phrases.get("system_messages", {}).get('break_already_on', ["Вы уже на перерыве."]))
-            return bot.reply_to(message, phrase)
-            
-        now_moscow = datetime.datetime.now(pytz.timezone('Europe/Moscow'))
-        last_break_str = user_data.get('last_break_time')
-        
-        if last_break_str:
-            last_break_time = datetime.datetime.fromisoformat(last_break_str)
-            if (now_moscow - last_break_time).total_seconds() / 60 < BREAK_DELAY_MINUTES:
-                remaining_time = int(BREAK_DELAY_MINUTES - (now_moscow - last_break_time).total_seconds() / 60)
-                phrase = random.choice(soviet_phrases.get("system_messages", {}).get('break_cooldown', ["Следующий перерыв можно взять через {remaining_time} мин."]))
-                return bot.reply_to(message, phrase.format(remaining_time=remaining_time))
-            
-        user_data.update({
-            'on_break': True, 
-            'break_start_time': now_moscow.isoformat(), # Сохраняем как строку
-            'last_break_time': now_moscow.isoformat(), # Сохраняем как строку
-            'breaks_count': user_data['breaks_count'] + 1,
-            'last_break_reminder_time': None
-        })
-        response_phrase = random.choice(soviet_phrases.get('break_acknowledgement', ['Перерыв начат.']))
-        bot.reply_to(message, f"{response_phrase} на {BREAK_DURATION_MINUTES} минут.")
-
-    @bot.message_handler(func=lambda m: m.text and any(word in m.text.lower().split() for word in RETURN_CONFIRM_WORDS))
-    def handle_return_message(message: types.Message):
-        chat_id = message.chat.id
-        user_id = message.from_user.id
-        if chat_id > 0 or chat_data.get(chat_id, {}).get('main_id') != user_id: return
-        
-        handle_user_return(bot, chat_id, user_id)
-
-    # ========================================
-    #   ФУНКЦИОНАЛ: ПЕРЕДАЧА СМЕНЫ
-    # ========================================
-    def cancel_transfer(chat_id: int):
-        """Отменяет предложение о передаче смены по таймауту."""
-        if chat_id in pending_transfers:
-            transfer_info = pending_transfers.pop(chat_id)
-            try:
-                bot.edit_message_reply_markup(chat_id, transfer_info['message_id'], reply_markup=None)
-                phrase = random.choice(soviet_phrases.get("system_messages", {}).get('shift_transfer_timeout', ["Время на принятие смены вышло. Предложение аннулировано."]))
-                bot.send_message(chat_id, phrase)
-            except Exception as e:
-                logging.warning(f"Не удалось отменить передачу смены (сообщение могло быть удалено): {e}")
-
-    @bot.message_handler(commands=['передать'])
-    def handle_shift_transfer_request(message: types.Message):
-        chat_id = message.chat.id
-        from_user = message.from_user
-        
-        if chat_data.get(chat_id, {}).get('main_id') != from_user.id:
-            return bot.reply_to(message, "Только текущий главный на смене может передать ее.")
-
-        if not message.reply_to_message:
-            return bot.reply_to(message, "Чтобы передать смену, ответьте этой командой на любое сообщение пользователя, которому вы хотите ее передать.")
-
-        to_user = message.reply_to_message.from_user
-        if to_user.is_bot: return bot.reply_to(message, "Нельзя передать смену боту.")
-        if to_user.id == from_user.id: return bot.reply_to(message, "Нельзя передать смену самому себе.")
-        if chat_id in pending_transfers: return bot.reply_to(message, "В данный момент уже есть активное предложение о передаче смены. Дождитесь его завершения.")
-
-        from_username = get_username(from_user)
-        to_username = get_username(to_user)
-
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("✅ Принять смену", callback_data=f"transfer_accept_{to_user.id}"))
-        
-        phrase_template = random.choice(soviet_phrases.get("system_messages", {}).get('shift_transfer_offer', ["."]))
-        text = phrase_template.format(from_username=from_username, to_username=to_username)
-        
-        sent_message = bot.send_message(chat_id, text, reply_markup=markup)
-        
-        timer = threading.Timer(300, cancel_transfer, args=[chat_id])
-        timer.start()
-        
-        pending_transfers[chat_id] = {
-            'from_id': from_user.id, 'from_username': from_username,
-            'to_id': to_user.id, 'to_username': to_username,
-            'message_id': sent_message.message_id, 'timer': timer
-        }
-
-    @bot.callback_query_handler(func=lambda call: call.data.startswith('transfer_accept_'))
-    def handle_shift_transfer_accept(call: types.CallbackQuery):
-        chat_id = call.message.chat.id
-        user_id = call.from_user.id
-        
-        if chat_id not in pending_transfers:
-            return bot.answer_callback_query(call.id, "Предложение о передаче смены уже неактуально.", show_alert=True)
-        
-        transfer_info = pending_transfers[chat_id]
-        
-        if user_id != transfer_info['to_id']:
-            return bot.answer_callback_query(call.id, "Это предложение адресовано не вам.", show_alert=True)
-            
-        transfer_info['timer'].cancel()
-
-        chat_data[chat_id]['main_id'] = transfer_info['to_id']
-        chat_data[chat_id]['main_username'] = transfer_info['to_username']
-        
-        if transfer_info['to_id'] not in chat_data[chat_id]['users']:
-            chat_data[chat_id]['users'][transfer_info['to_id']] = init_user_data(transfer_info['to_id'], transfer_info['to_username'])
-
-        del pending_transfers[chat_id]
-        
-        bot.answer_callback_query(call.id, "Смена принята!")
-        try: bot.delete_message(chat_id, call.message.message_id)
-        except Exception: pass
-        
-        phrase_template = random.choice(soviet_phrases.get("system_messages", {}).get('shift_transfer_success', ["."]))
-        text = phrase_template.format(from_username=transfer_info['from_username'], to_username=transfer_info['to_username'])
-        bot.send_message(chat_id, text)
-        save_history_event(chat_id, user_id, transfer_info['to_username'], f"Принял смену от {transfer_info['from_username']}")
-
-
-    # ========================================
-    #   ПОЛЬЗОВАТЕЛЬСКИЕ КОМАНДЫ
-    # ========================================
-    @bot.message_handler(commands=['start', 'старт'])
+    @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
-        chat_id = message.chat.id
-        if chat_id > 0: 
-            phrase = random.choice(soviet_phrases.get("system_messages", {}).get('group_only_command', ["Эта команда работает только в групповом чате."]))
-            return bot.reply_to(message, phrase)
-            
-        from_user = message.from_user
-        username = get_username(from_user)
-        
-        if chat_id not in chat_data: init_shift_data(chat_id)
-        if from_user.id not in chat_data[chat_id]['users']:
-            chat_data[chat_id]['users'][from_user.id] = init_user_data(from_user.id, username)
-            
-        if chat_data[chat_id].get('main_id') is not None:
-            main_username = chat_data[chat_id].get('main_username', 'Неизвестно')
-            phrase = random.choice(soviet_phrases.get("system_messages", {}).get('start_shift_fail_taken', ["Смена уже занята. Текущий главный: {main_username}."]))
-            return bot.reply_to(message, phrase.format(main_username=main_username))
-            
-        chat_data[chat_id]['main_id'] = from_user.id
-        chat_data[chat_id]['main_username'] = username
-        
-        phrase = random.choice(soviet_phrases.get("system_messages", {}).get('start_shift_success', ["👑 {username}, вы заступили на смену! Удачи!"]))
-        bot.send_message(chat_id, phrase.format(username=username))
-        save_history_event(chat_id, from_user.id, username, "Стал главным на смене (команда /start)")
-
-    @bot.message_handler(commands=['промежуточный', 'check'])
-    def handle_check(message: types.Message):
-        chat_id = message.chat.id
+        """
+        Обрабатывает самое первое сообщение от пользователя — команду /start.
+        Логика разделяется в зависимости от того, новый это пользователь или уже "старый".
+        """
+        logging.info(f"Пользователь {message.from_user.id} нажал /start")
+        # Получаем ID пользователя, чтобы работать с ним
         user_id = message.from_user.id
-        data = chat_data.get(chat_id)
+        # Проверяем статус пользователя в нашей "базе данных" (Google Таблице)
+        status = get_reward_status(user_id)
         
-        if not data or not data.get('main_id'):
-            phrase = random.choice(soviet_phrases.get("system_messages", {}).get('shift_not_started', ["Смена в этом чате еще не началась."]))
-            return bot.reply_to(message, phrase)
+        # СЦЕНАРИЙ 1: Пользователь уже получил свою настойку (статус 'redeemed')
+        if status == 'redeemed':
+            logging.info(f"Пользователь {user_id} уже получал награду. Показываем основное меню.")
+            # Создаем клавиатуру с основными кнопками для постоянного пользователя
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            menu_button = types.KeyboardButton("📖 Меню")
+            friend_button = types.KeyboardButton("🤝 Привести товарища")
+            book_button = types.KeyboardButton("📍 Забронировать стол")
+            ai_help_button = types.KeyboardButton("🗣 Спроси у Евгенича")
             
-        main_user_id = data['main_id']
-        if user_id != main_user_id:
-            main_username = data.get('main_username')
-            phrase = random.choice(soviet_phrases.get("system_messages", {}).get('only_for_main_user', ["Эту команду может использовать только текущий главный на смене: {main_username}."]))
-            return bot.reply_to(message, phrase.format(main_username=main_username))
-            
-        main_user_data = data.get('users', {}).get(main_user_id)
-        shift_goal = data.get('shift_goal', EXPECTED_VOICES_PER_SHIFT)
-        plan_percent = (main_user_data['count'] / shift_goal * 100) if shift_goal > 0 else 0
-        report_lines = [
-            f"📋 *Промежуточный отчет для вас* ({datetime.datetime.now(pytz.timezone('Europe/Moscow')).strftime('%H:%M')})",
-            f"🗣️ **Голосовых:** {main_user_data['count']} из {shift_goal} ({plan_percent:.0f}%)",
-            f"☕ **Перерывов:** {main_user_data['breaks_count']}",
-            f"⏳ **Опозданий с перерыва:** {main_user_data['late_returns']}"
-        ]
-        ad_counts = Counter(main_user_data.get('recognized_ads', []))
-        if ad_counts:
-            report_lines.append("\n**📝 Анализ контента:**")
-            for ad, count in ad_counts.items():
-                report_lines.append(f"✔️ {ad} (x{count})")
-        bot.reply_to(message, "\n".join(report_lines), parse_mode="Markdown")
+            keyboard.row(menu_button, friend_button)
+            keyboard.row(ai_help_button, book_button)
 
-    @bot.message_handler(commands=['сводка'])
-    def my_total_stats(message: types.Message):
-        if not pd: return bot.reply_to(message, "Модуль для анализа данных (pandas) не загружен.")
-        user_id = message.from_user.id
-        username = get_username(message.from_user)
-        bot.reply_to(message, f"📊 Собираю вашу общую статистику из Google Таблицы, {username}. Минутку...")
-        worksheet = get_sheet()
-        if not worksheet: return bot.send_message(message.chat.id, "Не удалось подключиться к Google Таблице.")
-        try:
-            df = pd.DataFrame(worksheet.get_all_records())
-            if df.empty or 'ID Ведущего' not in df.columns: return bot.send_message(message.chat.id, "В таблице пока нет данных для анализа.")
-            df['ID Ведущего'] = pd.to_numeric(df['ID Ведущего'], errors='coerce')
-            user_df = df[df['ID Ведущего'] == user_id].copy()
-            if user_df.empty: return bot.send_message(message.chat.id, f"{username}, не найдено ваших смен в общей статистике.")
-            numeric_cols = ['Голосовых (шт)', 'Перерывов (шт)', 'Опозданий (шт)']
-            for col in numeric_cols: user_df[col] = pd.to_numeric(user_df[col], errors='coerce').fillna(0)
-            total_shifts = len(user_df)
-            total_voices = user_df['Голосовых (шт)'].sum()
-            total_breaks = user_df['Перерывов (шт)'].sum()
-            total_lates = user_df['Опозданий (шт)'].sum()
-            report_text = (
-                f"⭐️ **Общая статистика для {username}** ⭐️\n\n"
-                f"👑 **Всего смен отработано:** {total_shifts}\n"
-                f"🗣️ **Всего голосовых записано:** {int(total_voices)}\n"
-                f"☕️ **Всего перерывов:** {int(total_breaks)}\n"
-                f"⏳ **Всего опозданий с перерыва:** {int(total_lates)}"
+            # Если пользователь - админ, добавляем ему кнопку для сброса своего профиля
+            if user_id in ADMIN_IDS:
+                restart_button = types.KeyboardButton("/restart")
+                keyboard.row(restart_button)
+            
+            # Приветственное сообщение для вернувшегося пользователя с подсказкой про ИИ
+            info_text = (
+                "С возвращением, товарищ! Рады видеть снова. 😉\n\n"
+                "Нажимай «📖 Меню» для просмотра или **просто напиши мне в чат, чего бы тебе хотелось** "
+                "(например: _«хочу что-нибудь кислое и ягодное»_), и я помогу с выбором!"
             )
-            bot.send_message(message.chat.id, report_text, parse_mode="Markdown")
-        except Exception as e:
-            logging.error(f"Ошибка анализа Google Sheets для /сводка: {e}")
-            phrase = random.choice(soviet_phrases.get("system_messages", {}).get('generic_error', ["Произошла ошибка при выполнении команды."]))
-            bot.send_message(message.chat.id, phrase)
+            bot.send_message(user_id, info_text, reply_markup=keyboard, parse_mode="Markdown")
+            return # Завершаем выполнение функции здесь
+
+        # СЦЕНАРИЙ 2: Пользователь новый или еще не получил настойку
+        if status == 'not_found':
+            logging.info(f"Новый пользователь {user_id}. Регистрируем...")
+            # Логика для отслеживания источника перехода (реферал, QR-код)
+            referrer_id = None
+            source = 'direct' # Источник по умолчанию
+            args = message.text.split()
+            if len(args) > 1:
+                payload = args[1]
+                if payload.startswith('ref_'):
+                    try:
+                        referrer_id = int(payload.replace('ref_', ''))
+                        source = 'Реферал'
+                    except (ValueError, IndexError):
+                        logging.warning(f"Не удалось распознать ref_id из {payload}")
+                        pass
+                else:
+                    allowed_sources = {'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 'qr_toilet': 'QR в туалете', 'vk': 'VK', 'inst': 'Instagram', 'flyer': 'Листовки', 'site': 'Сайт'}
+                    if payload in allowed_sources:
+                        source = allowed_sources[payload]
+            
+            # Добавляем нового пользователя в Google Таблицу
+            add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
+            if referrer_id:
+                bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся.")
+
+        # Стартовая клавиатура для нового пользователя
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
+        keyboard.add(gift_button)
+        bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
+
+    @bot.message_handler(commands=['book'])
+    @bot.message_handler(func=lambda message: message.text == "📍 Забронировать стол")
+    def handle_booking_info(message: types.Message):
+        """
+        Запускает интерактивный сценарий бронирования стола.
+        """
+        # --- ИСПРАВЛЕНИЕ ---
+        if user_booking_data.get(message.from_user.id):
+            bot.reply_to(message, "Ты уже находишься в процессе бронирования. Пожалуйста, введи запрошенные данные.")
+            return
+        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+        logging.info(f"Пользователь {message.from_user.id} нажал кнопку 'Забронировать стол', запускаем интерактивный сценарий.")
+        _show_booking_options(message)
+
+    @bot.message_handler(commands=['friend'])
+    @bot.message_handler(func=lambda message: message.text == "🤝 Привести товарища")
+    def handle_friend_command(message: types.Message):
+        """
+        Генерирует и отправляет пользователю его персональную реферальную ссылку.
+        """
+        # --- ИСПРАВЛЕНИЕ ---
+        if user_booking_data.get(message.from_user.id):
+            bot.reply_to(message, "Товарищ, давай сначала закончим с бронью. Пожалуйста, введи запрошенные данные.")
+            return
+        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+        logging.info(f"Пользователь {message.from_user.id} запросил реферальную ссылку.")
+        user_id = message.from_user.id
+        bot_username = bot.get_me().username
+        ref_link = f"https.me/{bot_username}?start=ref_{user_id}"
+        text = (
+            "💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
+            "Вот твоя персональная директива на привлечение нового бойца. Нажми на ссылку ниже, чтобы скопировать:\n"
+            f"`{ref_link}`\n\n"
+            "Отправь ее другу. Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит **еще одной дефицитной настойкой**! 🥃\n\n"
+            "*Помни, план — не более 5 товарищей.*"
+        )
+        bot.send_message(user_id, text, parse_mode="Markdown")
+
+    @bot.message_handler(commands=['channel'])
+    def handle_channel_command(message: types.Message):
+        """
+        Отправляет пользователю ссылку на основной Telegram-канал заведения.
+        """
+        logging.info(f"Пользователь {message.from_user.id} запросил ссылку на канал.")
+        keyboard = types.InlineKeyboardMarkup()
+        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
+        url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
+        keyboard.add(url_button)
+        bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
+
+    @bot.message_handler(commands=['menu'])
+    @bot.message_handler(func=lambda message: message.text == "📖 Меню")
+    def handle_menu_command(message: types.Message):
+        """
+        Показывает пользователю кнопки для выбора меню (настойки, кухня или полный сайт).
+        """
+        # --- ИСПРАВЛЕНИЕ ---
+        if user_booking_data.get(message.from_user.id):
+            bot.reply_to(message, "Товарищ, давай сначала закончим с бронью. Пожалуйста, введи запрошенные данные.")
+            return
+        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+        logging.info(f"Пользователь {message.from_user.id} открыл меню.")
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+        nastoiki_button = types.InlineKeyboardButton(text="🥃 Меню настоек", callback_data="menu_nastoiki_main")
+        food_button = types.InlineKeyboardButton(text="🍔 Меню кухни", callback_data="menu_food_main")
+        full_menu_button = types.InlineKeyboardButton(text="📄 Полное меню (Сайт)", url=MENU_URL)
+        keyboard.add(nastoiki_button, food_button, full_menu_button)
+        bot.send_message(message.chat.id, "Чего желаешь, товарищ? Настойку или закусить?", reply_markup=keyboard)
 
     @bot.message_handler(commands=['help'])
-    def handle_help(message: types.Message):
-        help_text_lines = [
-            "📘 **Основные команды для ведущего:**\n",
-            "`/start` или `/старт`",
-            "Занять смену, если она свободна.\n",
-            "`/промежуточный` или `/check`",
-            "Показать свой личный отчет по текущей смене.\n",
-            "`/сводка`",
-            "Посмотреть свою общую статистику за все время.\n",
-            "`/передать`",
-            "Передать смену другому (нужно ответить на его сообщение).\n",
-            "☕️ Для перерыва просто напишите в чат `перерыв`, `обед` или `отдых`.",
-            "✅ Для возвращения — `вернулся`, `на месте`."
-        ]
-        bot.reply_to(message, "\n".join(help_text_lines), parse_mode="Markdown")
-
-    # ========================================
-    #   АДМИНИСТРАТИВНЫЕ КОМАНДЫ
-    # ========================================
-
-    @bot.message_handler(commands=['admin'])
-    @admin_required(bot)
-    def handle_admin_panel(message: types.Message):
+    def handle_help_command(message: types.Message):
+        """
+        Отправляет справочное сообщение с описанием команд бота.
+        Для админов справка расширенная.
+        """
         user_id = message.from_user.id
-        panel_text = [
-            "**⚜️ Панель работы администратора ⚜️**\n",
-            "`/status` — 📊 Статус текущей смены",
-            "`/rating` — 📈 Общий рейтинг сотрудников",
-            "`/ads` — 📝 Управление рекламными шаблонами",
-            "`/problems` — 🚨 Поиск проблемных зон",
-            "`/restart` — 🔄 Перезапустить смену",
-            "`/report` — ➡️ Отчет досрочно",
-            "`/log` — 📜 Выгрузить лог смены",
-            "`/setup_wizard` — 🧙‍♂️ Мастер настройки чата",
-        ]
-        if user_id == BOSS_ID:
-             panel_text.append("`/broadcast` — 📢 Рассылка (BOSS)")
-        
-        panel_text.append("\n*Для подробной расшифровки введите /adminhelp*")
-        bot.reply_to(message, "\n".join(panel_text), parse_mode="Markdown")
+        help_text = (
+            "**Инструкция по боту «Евгенич Настаивает»**\n\n"
+            "Я — ваш партийный товарищ, который выдает дефицитный продукт (фирменную настойку) за подписку на наш канал.\n\n"
+            "**Основные команды:**\n"
+            "• `/start` - Начать диалог и получить талон на настойку.\n"
+            "• `/menu` - Посмотреть меню нашего заведения.\n"
+            "• `/channel` - Получить ссылку на наш основной Telegram-канал.\n"
+            "• `/friend` - Получить персональную ссылку, чтобы пригласить друга и получить за это бонус.\n"
+            "• `/help` - Показать это сообщение."
+        )
+        if user_id in ADMIN_IDS:
+            admin_help_text = (
+                "\n\n**👑 Административные команды:**\n"
+                "• `/admin` - Открыть панель управления с отчетами.\n"
+                "• `/restart` - Сбросить свой профиль для тестирования бота (осторожно!)."
+            )
+            help_text += admin_help_text
+        bot.send_message(user_id, help_text, parse_mode="Markdown")
 
-    @bot.message_handler(commands=['adminhelp'])
-    @admin_required(bot)
-    def handle_admin_help(message: types.Message):
-        help_text = [
-            "**🛠️ Расширенная справка для администратора**\n"
-            "====================\n"
-            "**АНАЛИТИКА И ОТЧЕТЫ:**\n",
-            "`/status` — 📊 Показывает полный статус *текущей смены*: кто на смене, сколько сделано, статистика по паузам и т.д.",
-            "`/rating` — 📈 Выводит общий рейтинг всех ведущих на основе данных из Google Таблицы.",
-            "`/problems` — 🚨 Анализирует данные из Google Таблицы и подсвечивает смены с низкой эффективностью, опозданиями или слишком долгими паузами.",
-            "`/log` — 📜 Выгружает текстовый файл с историей всех ключевых событий за *текущую* смену.",
-            "\n**УПРАВЛЕНИЕ СМЕНОЙ:**\n",
-            "`/restart` — 🔄 Принудительно сбрасывает *текущую* смену. Потребуется новый `/start` для начала.",
-            "`/report` — ➡️ Завершает смену досрочно и отправляет финальный отчет.",
-            "\n**УПРАВЛЕНИЕ КОНТЕНТОМ И НАСТРОЙКИ:**\n",
-            "`/ads` — 📝 Открывает интерактивное меню для управления рекламными шаблонами (просмотр, добавление, удаление).",
-            "`/setup_wizard` — 🧙‍♂️ Запускает удобный пошаговый мастер для полной настройки чата (рекомендуется).",
-        ]
-        if message.from_user.id == BOSS_ID:
-            help_text.append("`/broadcast` — 📢 Отправляет сообщение во все чаты, где работает бот (только для BOSS).")
-        
-        bot.reply_to(message, "\n".join(help_text), parse_mode="Markdown")
-
-    @bot.message_handler(commands=['status'])
-    @admin_required(bot)
-    def command_status(message: types.Message):
-        chat_id = message.chat.id
-        data = chat_data.get(chat_id)
-        if not data or not data.get('main_id'):
-            phrase = random.choice(soviet_phrases.get("system_messages", {}).get('shift_not_started', ["Смена в этом чате еще не началась."]))
-            return bot.send_message(chat_id, phrase)
-        
-        report_lines = generate_detailed_report(chat_id, data)
-        report_text = "\n".join(report_lines)
-        bot.send_message(chat_id, report_text, parse_mode="Markdown")
-    
-    @bot.message_handler(commands=['rating'])
-    @admin_required(bot)
-    def command_rating(message: types.Message):
-        chat_id = message.chat.id
-        if not pd: return bot.send_message(chat_id, "Модуль для анализа данных (pandas) не загружен.")
-        bot.send_message(chat_id, "📊 Анализирую общую статистику из Google Таблицы...")
-        worksheet = get_sheet()
-        if not worksheet: return bot.send_message(chat_id, "Не удалось подключиться к Google Таблице.")
-        try:
-            df = pd.DataFrame(worksheet.get_all_records())
-            if df.empty or 'Тег Ведущего' not in df.columns: return bot.send_message(chat_id, "В таблице пока нет данных для анализа.")
-            numeric_cols = ['Голосовых (шт)', 'Опозданий (шт)']
-            for col in numeric_cols: df[col] = pd.to_numeric(df[col], errors='coerce')
-            df.dropna(subset=numeric_cols, inplace=True)
-            summary = df.groupby('Тег Ведущего').agg(
-                total_shifts=('Дата', 'count'),
-                total_voices=('Голосовых (шт)', 'sum'),
-                total_lates=('Опозданий (шт)', 'sum')
-            ).reset_index()
-            summary['avg_voices'] = summary['total_voices'] / summary['total_shifts']
-            summary['lateness_percent'] = (summary['total_lates'] / summary['total_shifts']) * 100
-            summary = summary.sort_values(by='avg_voices', ascending=False).reset_index(drop=True)
-            report_lines = ["📊 **Общая сводка по всем сотрудникам**\n_(На основе данных из Google Sheets)_\n"]
-            medals = {0: "🥇", 1: "🥈", 2: "🥉"}
-            for i, row in summary.iterrows():
-                rank_icon = medals.get(i, f" {i+1}.")
-                report_lines.append(f"*{rank_icon}* {row['Тег Ведущего']} — *Ср. ГС:* `{row['avg_voices']:.1f}` | *Опоздания:* `{row['lateness_percent']:.0f}%` | *Смен:* `{row['total_shifts']}`")
-            bot.send_message(chat_id, "\n".join(report_lines), parse_mode="Markdown")
-        except Exception as e:
-            logging.error(f"Ошибка анализа Google Sheets для /rating: {e}")
-            phrase = random.choice(soviet_phrases.get("system_messages", {}).get('generic_error', ["Произошла ошибка при выполнении команды."]))
-            bot.send_message(chat_id, phrase)
-        
-    @bot.message_handler(commands=['problems'])
-    @admin_required(bot)
-    def command_problems(message: types.Message):
-        chat_id = message.chat.id
-        if not pd: return bot.send_message(chat_id, "Модуль для анализа данных (pandas) не загружен.")
-        bot.send_message(chat_id, "🚨 Ищу проблемные зоны в Google Таблице...")
-        worksheet = get_sheet()
-        if not worksheet: return bot.send_message(chat_id, "Не удалось подключиться к Google Таблице.")
-        try:
-            df = pd.DataFrame(worksheet.get_all_records())
-            if df.empty: return bot.send_message(chat_id, "В таблице нет данных.")
-            numeric_cols = ['Выполнение (%)', 'Опозданий (шт)', 'Макс. пауза (мин)']
-            for col in numeric_cols:
-                df[col] = df[col].astype(str).str.replace('%', '', regex=False)
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-            df.dropna(subset=numeric_cols, inplace=True)
-            low_perf = df[df['Выполнение (%)'] < 80]
-            latecomers = df[df['Опозданий (шт)'] > 0]
-            long_pauses = df[df['Макс. пауза (мин)'] > (VOICE_TIMEOUT_MINUTES * 1.5)]
-            report_lines = ["🚨 **Анализ проблемных зон**\n"]
-            if not low_perf.empty:
-                report_lines.append("*📉 Низкое выполнение плана (<80%):*")
-                for _, row in low_perf.sort_values(by='Дата', ascending=False).iterrows():
-                    report_lines.append(f" - {row.get('Дата', 'N/A')} {row.get('Тег Ведущего', 'N/A')}: *{row['Выполнение (%)']:.0f}%*")
-            if not latecomers.empty:
-                report_lines.append("\n*⏳ Опоздания с перерывов:*")
-                for _, row in latecomers.sort_values(by='Дата', ascending=False).iterrows():
-                    report_lines.append(f" - {row.get('Дата', 'N/A')} {row.get('Тег Ведущего', 'N/A')}: *{int(row['Опозданий (шт)'])}* раз(а)")
-            if not long_pauses.empty:
-                report_lines.append("\n*⏱️ Слишком долгие паузы:*")
-                for _, row in long_pauses.sort_values(by='Дата', ascending=False).iterrows():
-                    report_lines.append(f" - {row.get('Дата', 'N/A')} {row.get('Тег Ведущего', 'N/A')}: макс. пауза *{row['Макс. пауза (мин)']:.0f} мин*")
-            if len(report_lines) == 1:
-                bot.send_message(chat_id, "✅ Проблемных зон по основным критериям не найдено. Отличная работа!")
-            else:
-                bot.send_message(chat_id, "\n".join(report_lines), parse_mode="Markdown")
-        except Exception as e:
-            logging.error(f"Ошибка поиска проблемных зон: {e}")
-            bot.send_message(chat_id, f"Произошла ошибка при анализе: {e}")
-        
-    @bot.message_handler(commands=['restart'])
-    @admin_required(bot)
-    def command_restart(message: types.Message):
-        chat_id = message.chat.id
-        if chat_id in chat_data and chat_data[chat_id].get('main_id') is not None:
-            init_shift_data(chat_id)
-            bot.send_message(chat_id, "🔄 Смена перезапущена администратором. Текущий главный и план сброшены.")
-            save_history_event(chat_id, message.from_user.id, get_username(message.from_user), "Перезапустил смену")
-        else:
-            bot.send_message(chat_id, "Активной смены в этом чате и так не было.")
-
-    @bot.message_handler(commands=['report'])
-    @admin_required(bot)
-    def command_report(message: types.Message):
-        bot.send_message(message.chat.id, "⏳ Формирую финальный отчет досрочно по команде администратора...")
-        send_end_of_shift_report_for_chat(bot, message.chat.id)
-
-    @bot.message_handler(commands=['log'])
-    @admin_required(bot)
-    def command_log(message: types.Message):
-        chat_id = message.chat.id
-        history = user_history.get(chat_id)
-        if not history:
-            return bot.send_message(chat_id, "История событий для текущей смены пуста.")
-        try:
-            filename = f"history_{chat_id}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-            with open(filename, 'w', encoding='utf-8') as f:
-                f.write(f"История событий для чата: {get_chat_title(bot, chat_id)}\n" + "="*40 + "\n" + "\n".join(history))
-            with open(filename, 'rb') as f_rb:
-                bot.send_document(chat_id, f_rb, caption="Лог событий текущей смены.")
-            os.remove(filename)
-        except Exception as e:
-            logging.error(f"Ошибка при выгрузке истории: {e}")
-            bot.send_message(chat_id, "Произошла ошибка при создании файла истории.")
-            
-    @bot.message_handler(commands=['broadcast'])
-    @admin_required(bot)
-    def command_broadcast(message: types.Message):
-        if message.from_user.id != BOSS_ID:
-            return bot.send_message(message.chat.id, "⛔️ Эта команда доступна только для BOSS.")
-        msg = bot.send_message(message.chat.id, "Введите текст для массовой рассылки всем чатам. Для отмены введите /cancel.")
-        bot.register_next_step_handler(msg, process_broadcast_text)
-        
-    def process_broadcast_text(message: types.Message):
-        if message.text == '/cancel':
-            return bot.send_message(message.chat.id, "Рассылка отменена.")
-        if message.from_user.id != BOSS_ID: return
-        text_to_send = message.text
-        if not text_to_send: return bot.reply_to(message, "Текст рассылки не может быть пустым.")
-        sent_count = 0
-        total_chats = len(list(chat_configs.keys()))
-        bot.send_message(message.chat.id, f"Начинаю рассылку в {total_chats} чатов...")
-        for chat_id_str in chat_configs.keys():
-            try:
-                bot.send_message(int(chat_id_str), f"❗️ **Важное объявление от руководства:**\n\n{text_to_send}", parse_mode="Markdown")
-                sent_count += 1
-                time.sleep(0.1)
-            except Exception as e:
-                logging.error(f"Не удалось отправить рассылку в чат {chat_id_str}: {e}")
-        bot.send_message(message.chat.id, f"✅ Рассылка успешно отправлена в {sent_count} из {total_chats} чатов.")
-
-    # ========================================
-    #   НОВЫЙ МАСТЕР НАСТРОЙКИ ЧАТА
-    # ========================================
-
-    @bot.message_handler(commands=['setup_wizard'])
-    @admin_required(bot)
-    def handle_setup_wizard(message: types.Message):
-        """Начинает пошаговую настройку чата."""
-        chat_id = message.chat.id
-        user_id = message.from_user.id
-        
-        user_states[user_id] = {"state": "wizard_awaiting_brand_city", "chat_id": chat_id, "data": {}}
-        
-        text = ("🧙‍♂️ **Мастер настройки чата**\n\n"
-                "Я задам вам 4 вопроса для полной настройки. "
-                "Чтобы отменить настройку на любом шаге, просто отправьте /cancel.\n\n"
-                "**Шаг 1 из 4:** Введите **бренд** и **город** для этого чата.\n"
-                "*Пример:* `my-brand moscow`")
-        msg = bot.send_message(chat_id, text, parse_mode="Markdown")
-        bot.register_next_step_handler(msg, process_wizard_brand_city)
-
-    def process_wizard_brand_city(message: types.Message):
-        """Шаг 1: Обработка бренда и города."""
-        user_id = message.from_user.id
-        state = user_states.get(user_id, {})
-        if state.get("state") != "wizard_awaiting_brand_city": return
-        if message.text == '/cancel':
-            del user_states[user_id]
-            return bot.reply_to(message, "Настройка отменена.")
-
-        try:
-            brand, city = message.text.split(maxsplit=2)
-            state["data"]["brand"] = brand.lower()
-            state["data"]["city"] = city.lower()
-            
-            state["state"] = "wizard_awaiting_timezone"
-            text = ("✅ **Шаг 2 из 4:** Отлично! Теперь укажите **часовой пояс**.\n"
-                    "Введите смещение от Москвы. *Пример:* `+3` или `-1`")
-            msg = bot.reply_to(message, text, parse_mode="Markdown")
-            bot.register_next_step_handler(msg, process_wizard_timezone)
-        except ValueError:
-            msg = bot.reply_to(message, "❌ **Ошибка.** Пожалуйста, введите два слова: бренд и город. *Пример:* `my-brand moscow`", parse_mode="Markdown")
-            bot.register_next_step_handler(msg, process_wizard_brand_city)
-            
-    def process_wizard_timezone(message: types.Message):
-        """Шаг 2: Обработка часового пояса."""
-        user_id = message.from_user.id
-        state = user_states.get(user_id, {})
-        if state.get("state") != "wizard_awaiting_timezone": return
-        if message.text == '/cancel':
-            del user_states[user_id]
-            return bot.reply_to(message, "Настройка отменена.")
-            
-        offset = message.text.strip()
-        tz_name = TIMEZONE_MAP.get(offset)
-        if not tz_name:
-            msg = bot.reply_to(message, f"❌ **Ошибка.** Неверный формат смещения. Доступные варианты: {list(TIMEZONE_MAP.keys())}\nПопробуйте еще раз.", parse_mode="Markdown")
-            bot.register_next_step_handler(msg, process_wizard_timezone)
+    @bot.message_handler(func=lambda message: message.text == "🗣 Спроси у Евгенича")
+    def handle_ai_prompt_button(message: types.Message):
+        """
+        Обрабатывает нажатие на кнопку-подсказку для ИИ и дает пример запроса.
+        """
+        # --- ИСПРАВЛЕНИЕ ---
+        if user_booking_data.get(message.from_user.id):
+            bot.reply_to(message, "Товарищ, давай сначала закончим с бронью. Пожалуйста, введи запрошенные данные.")
             return
-            
-        state["data"]["timezone"] = tz_name
+        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+        bot.reply_to(message, "Смело пиши мне свои пожелания! Например: «посоветуй что-нибудь сладкое и сливочное» или «ищу самую ядрёную настойку».")
+
+    # Этот обработчик запускает основной сценарий для новых пользователей
+    @bot.message_handler(func=lambda message: message.text == "🥃 Получить настойку по талону")
+    def handle_get_gift_press(message: types.Message):
+        """
+        Запускает воронку получения настойки за подписку.
+        """
+        user_id = message.from_user.id
+        status = get_reward_status(user_id)
+        # Дополнительная проверка, чтобы уже получившие не могли запустить воронку снова
+        if status in ['issued', 'redeemed']:
+            bot.send_message(user_id, "Вы уже получали свой подарок. Спасибо, что вы с нами! 😉")
+            return
+        # Проверка, вдруг пользователь уже подписан
+        try:
+            chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+            if chat_member.status in ['member', 'administrator', 'creator']:
+                bot.send_message(user_id, "Уважаю — подписался! Получай гостинец.")
+                issue_coupon(bot, user_id, message.from_user.username, message.from_user.first_name, message.chat.id)
+                return
+        except Exception as e:
+            logging.error(f"Ошибка при предварительной проверке подписки для {user_id}: {e}")
         
-        state["state"] = "wizard_awaiting_timing"
-        text = ("✅ **Шаг 3 из 4:** Часовой пояс установлен! Теперь задайте **график смены**.\n"
-                "Введите время начала и конца. *Пример:* `19:00 04:00`")
-        msg = bot.reply_to(message, text, parse_mode="Markdown")
-        bot.register_next_step_handler(msg, process_wizard_timing)
-
-    def process_wizard_timing(message: types.Message):
-        """Шаг 3: Обработка времени смены."""
-        user_id = message.from_user.id
-        state = user_states.get(user_id, {})
-        if state.get("state") != "wizard_awaiting_timing": return
-        if message.text == '/cancel':
-            del user_states[user_id]
-            return bot.reply_to(message, "Настройка отменена.")
-
+        # Если не подписан, показываем стандартное приглашение
+        welcome_text = ("Отлично! 👍\n\n"
+                        "Чтобы получить настойку, подпишись на наш телеграм-канал. Это займет всего секунду.\n\n"
+                        "Когда подпишешься — нажимай на кнопку «Я подписался» здесь же.")
+        inline_keyboard = types.InlineKeyboardMarkup(row_width=1)
+        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
+        subscribe_button = types.InlineKeyboardButton(text="➡️ Перейти к каналу", url=channel_url)
+        check_button = types.InlineKeyboardButton(text="✅ Я подписался, проверить!", callback_data="check_subscription")
+        inline_keyboard.add(subscribe_button, check_button)
         try:
-            start_time_str, end_time_str = message.text.split()
-            datetime.datetime.strptime(start_time_str, '%H:%M')
-            datetime.datetime.strptime(end_time_str, '%H:%M')
-            state["data"]["start_time"] = start_time_str
-            state["data"]["end_time"] = end_time_str
-            
-            state["state"] = "wizard_awaiting_goal"
-            text = ("✅ **Шаг 4 из 4:** График задан! И последнее: укажите **план (норму) ГС** за смену.\n"
-                    "Введите одно число. *Пример:* `25`")
-            msg = bot.reply_to(message, text, parse_mode="Markdown")
-            bot.register_next_step_handler(msg, process_wizard_goal)
-        except (ValueError, IndexError):
-            msg = bot.reply_to(message, "❌ **Ошибка.** Неверный формат. Введите два времени через пробел. *Пример:* `19:00 04:00`", parse_mode="Markdown")
-            bot.register_next_step_handler(msg, process_wizard_timing)
+            bot.send_sticker(message.chat.id, HELLO_STICKER_ID)
+        except Exception as e:
+            logging.error(f"Не удалось отправить приветственный стикер: {e}")
+        bot.send_message(message.chat.id, welcome_text, reply_markup=inline_keyboard, parse_mode="Markdown")
 
-    def process_wizard_goal(message: types.Message):
-        """Шаг 4: Обработка цели и завершение."""
-        user_id = message.from_user.id
-        state = user_states.get(user_id, {})
-        if state.get("state") != "wizard_awaiting_goal": return
-        if message.text == '/cancel':
-            del user_states[user_id]
-            return bot.reply_to(message, "Настройка отменена.")
-            
+    # =======================================================================
+    # === ОБРАБОТЧИКИ НАЖАТИЙ НА INLINE-КНОПКИ (CALLBACKS) ===
+    # =======================================================================
+
+    @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
+    def handle_check_subscription(call: types.CallbackQuery):
+        """
+        Проверяет, подписался ли пользователь на канал после нажатия на кнопку.
+        """
+        user_id = call.from_user.id
+        bot.answer_callback_query(call.id, text="Проверяю вашу подписку...")
         try:
-            goal = int(message.text)
-            if goal <= 0: raise ValueError
-            state["data"]["default_goal"] = goal
+            chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+            if chat_member.status in ['member', 'administrator', 'creator']:
+                bot.delete_message(call.message.chat.id, call.message.message_id)
+                issue_coupon(bot, user_id, call.from_user.username, call.from_user.first_name, call.message.chat.id)
+            else:
+                bot.answer_callback_query(call.id, "Ну куда без подписки, родной? Там всё по-честному.", show_alert=True)
+        except Exception as e:
+            logging.error(f"Ошибка при проверке подписки для {user_id}: {e}")
+            bot.answer_callback_query(call.id, "Не удалось проверить подписку. Попробуйте позже.", show_alert=True)
+
+    @bot.callback_query_handler(func=lambda call: call.data == "redeem_reward")
+    def handle_redeem_reward(call: types.CallbackQuery):
+        """
+        Обрабатывает погашение купона на настойку (нажатие кнопки "у бармена").
+        """
+        user_id = call.from_user.id
+        if update_status(user_id, 'redeemed'):
+            final_text = ("✅ Ну вот и бахнули!\n\n"
+                          "Между первой и второй, как известно, перерывчик небольшой…\n"
+                          "🍷 Ждём тебя за следующей!")
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+            bot.send_message(call.message.chat.id, final_text)
+            try:
+                bot.send_sticker(call.message.chat.id, THANK_YOU_STICKER_ID)
+            except Exception as e:
+                logging.error(f"Не удалось отправить прощальный стикер: {e}")
             
-            chat_id_to_configure = state["chat_id"]
-            if chat_id_to_configure not in chat_configs:
-                chat_configs[chat_id_to_configure] = {}
-            chat_configs[chat_id_to_configure].update(state["data"])
-            save_json_data(CHAT_CONFIG_FILE, chat_configs)
+            final_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            menu_button = types.KeyboardButton("📖 Меню")
+            friend_button = types.KeyboardButton("🤝 Привести товарища")
+            book_button = types.KeyboardButton("📍 Забронировать стол")
+            ai_help_button = types.KeyboardButton("🗣 Спроси у Евгенича")
+
+            final_keyboard.row(menu_button, friend_button)
+            final_keyboard.row(ai_help_button, book_button)
+
+            if user_id in ADMIN_IDS:
+                restart_button = types.KeyboardButton("/restart")
+                final_keyboard.row(restart_button)
             
-            final_text = ("🎉 **Настройка завершена!**\n\n"
-                          "Чат успешно настроен со следующими параметрами:\n"
-                          f"  - Бренд: `{state['data']['brand']}`\n"
-                          f"  - Город: `{state['data']['city']}`\n"
-                          f"  - Часовой пояс: `{state['data']['timezone']}`\n"
-                          f"  - График: `{state['data']['start_time']}` - `{state['data']['end_time']}`\n"
-                          f"  - Норма ГС: `{state['data']['default_goal']}`\n\n"
-                          "Бот готов к работе в этом чате!")
-            bot.reply_to(message, final_text, parse_mode="Markdown")
-            
-        except (ValueError, IndexError):
-            msg = bot.reply_to(message, "❌ **Ошибка.** Введите целое положительное число. *Пример:* `25`", parse_mode="Markdown")
-            bot.register_next_step_handler(msg, process_wizard_goal)
-        finally:
-            if user_id in user_states:
-                del user_states[user_id]
+            info_text = (
+                "Отлично! Теперь тебе доступны все возможности, товарищ.\n\n"
+                "Нажимай «📖 Меню» для просмотра или **просто напиши мне в чат, чего бы тебе хотелось** "
+                "(например: _«хочу что-нибудь кислое и ягодное»_), и я помогу с выбором!"
+            )
+            bot.send_message(user_id, info_text, reply_markup=final_keyboard, parse_mode="Markdown")
+
+            referrer_id = get_referrer_id_from_user(user_id)
+            if referrer_id:
+                logging.info(f"Пользователь {user_id} погасил награду. Планировщик должен его проверить для реферера {referrer_id} через 24ч.")
+        else:
+            bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
+
+    # --- ОБРАБОТЧИКИ ИНТЕРАКТИВНОГО МЕНЮ НАСТОЕК ---
+    @bot.callback_query_handler(func=lambda call: call.data == "menu_nastoiki_main")
+    def callback_menu_nastoiki_main(call: types.CallbackQuery):
+        """Показывает главное меню с категориями настоек."""
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        buttons = [types.InlineKeyboardButton(text=category['title'], callback_data=f"menu_category_{index}") for index, category in enumerate(MENU_DATA)]
+        keyboard.add(*buttons)
+        try:
+            bot.edit_message_text(
+                "**Меню настоек «Евгенич»**\n\nВыберите категорию:",
+                call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown"
+            )
+        except Exception:
+            bot.send_message(call.message.chat.id, "**Меню настоек «Евгенич»**\n\nВыберите категорию:", reply_markup=keyboard, parse_mode="Markdown")
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("menu_category_"))
+    def callback_menu_category(call: types.CallbackQuery):
+        """Показывает список настоек в выбранной категории."""
+        category_index = int(call.data.split("_")[2])
+        category = MENU_DATA[category_index]
+        text = f"**{category['title']}**\n_{category.get('category_narrative', '')}_\n\n"
+        for item in category['items']:
+            text += f"• **{item['name']}** — {item['price']}\n_{item['narrative_desc']}_\n\n"
+        keyboard = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="menu_nastoiki_main")
+        keyboard.add(back_button)
+        bot.edit_message_text(
+            text, call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown"
+        )
+        bot.answer_callback_query(call.id)
+
+    # --- ОБРАБОТЧИКИ ИНТЕРАКТИВНОГО МЕНЮ КУХНИ ---
+    @bot.callback_query_handler(func=lambda call: call.data == "menu_food_main")
+    def callback_menu_food_main(call: types.CallbackQuery):
+        """Показывает главное меню с категориями кухни."""
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        buttons = [types.InlineKeyboardButton(text=category, callback_data=f"food_category_{category}") for category in FOOD_MENU_DATA.keys()]
+        keyboard.add(*buttons)
+        bot.edit_message_text(
+            "**Меню Кухни**\n\nВыбирай, чем будешь закусывать:",
+            call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown"
+        )
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("food_category_"))
+    def callback_food_category(call: types.CallbackQuery):
+        """Показывает список блюд в выбранной категории."""
+        category_name = call.data.replace("food_category_", "")
+        category_items = FOOD_MENU_DATA.get(category_name, [])
+        text = f"**{category_name}**\n\n"
+        for item in category_items:
+            text += f"• {item['name']} - **{item['price']}₽**\n"
+        keyboard = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton(text="⬅️ Назад к категориям кухни", callback_data="menu_food_main")
+        keyboard.add(back_button)
+        bot.edit_message_text(
+            text, call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown"
+        )
+        bot.answer_callback_query(call.id)
+        
+    # =======================================================================
+    # === ЛОГИКА ПОШАГОВОГО БРОНИРОВАНИЯ (FINITE STATE MACHINE) ===
+    # =======================================================================
     
-    # ========================================
-    #   УПРАВЛЕНИЕ РЕКЛАМОЙ (ADS)
-    # ========================================
-    @bot.message_handler(commands=['ads'])
-    @admin_required(bot)
-    def command_ads(message: types.Message):
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        brands = list(ad_templates.keys())
-        for brand in brands:
-            markup.add(types.InlineKeyboardButton(brand.upper(), callback_data=f"ad_brand_{brand}"))
-        markup.add(types.InlineKeyboardButton("➕ Добавить новый бренд", callback_data="ad_addbrand_form"))
-        bot.send_message(message.chat.id, "📝 Выберите бренд для управления рекламой:", reply_markup=markup)
-    
-    def show_ad_cities_menu(chat_id: int, brand: str):
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        cities = list(ad_templates.get(brand, {}).keys())
-        for city in cities:
-            markup.add(types.InlineKeyboardButton(city.capitalize(), callback_data=f"ad_city_{brand}_{city}"))
-        markup.add(types.InlineKeyboardButton("➕ Добавить новый город", callback_data=f"ad_addcity_form_{brand}"))
-        markup.add(types.InlineKeyboardButton("« Назад к брендам", callback_data="ad_backtobrand"))
-        bot.send_message(chat_id, f"Бренд: *{brand.upper()}*\nВыберите город:", reply_markup=markup, parse_mode="Markdown")
-    
-    def show_ad_actions_menu(chat_id: int, brand: str, city: str):
+    # Эта функция вызывается, когда ИИ распознает намерение бронировать ИЛИ когда нажата кнопка "Забронировать стол"
+    def _show_booking_options(message):
+        """Шаг 1: Показывает пользователю кнопки с вариантами бронирования."""
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
-            types.InlineKeyboardButton("👁️‍🗨️ Просмотреть шаблоны", callback_data=f"ad_view_{brand}_{city}"),
-            types.InlineKeyboardButton("➕ Добавить шаблон", callback_data=f"ad_addform_{brand}_{city}"),
-            types.InlineKeyboardButton("➖ Удалить шаблон", callback_data=f"ad_delform_{brand}_{city}"),
-            types.InlineKeyboardButton("« Назад к городам", callback_data=f"ad_backtocity_{brand}")
+            types.InlineKeyboardButton("📞 Позвонить", callback_data="booking_phone"),
+            types.InlineKeyboardButton("🌐 Забронировать через сайт", callback_data="booking_site"),
+            types.InlineKeyboardButton("🔐 Написать в секретный чат", callback_data="booking_secret"),
+            types.InlineKeyboardButton("🤖 Забронировать через меня", callback_data="booking_bot")
         )
-        bot.send_message(chat_id, f"Бренд: *{brand.upper()}* / Город: *{city.capitalize()}*\nВыберите действие:", reply_markup=markup, parse_mode="Markdown")
+        bot.send_message(message.chat.id, "Конечно, товарищ! Как будем действовать?", reply_markup=markup)
 
-    def show_templates_for_deletion(chat_id: int, brand: str, city: str):
-        templates = ad_templates.get(brand, {}).get(city, {})
-        if not templates:
-            bot.send_message(chat_id, "Здесь нет шаблонов для удаления.")
-            return
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        for tpl_key in templates.keys():
-            markup.add(types.InlineKeyboardButton(f"❌ {tpl_key}", callback_data=f"ad_delete_{brand}_{city}_{tpl_key}"))
-        markup.add(types.InlineKeyboardButton("« Назад", callback_data=f"ad_city_{brand}_{city}"))
-        bot.send_message(chat_id, "Выберите шаблон для удаления:", reply_markup=markup)
-
-    @bot.callback_query_handler(func=lambda call: call.data.startswith('ad_'))
-    def handle_ad_callbacks(call: types.CallbackQuery):
-        if not is_admin(bot, call.from_user.id, call.message.chat.id):
-            return bot.answer_callback_query(call.id, "⛔️ Доступ запрещен!", show_alert=True)
-        
-        chat_id = call.message.chat.id
-        message_id = call.message.message_id
-        
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("booking_"))
+    def handle_booking_option(call: types.CallbackQuery):
+        """Шаг 2: Обрабатывает выбор пользователя и либо дает информацию, либо запускает сбор данных."""
         bot.answer_callback_query(call.id)
-        parts = call.data.split('_')
-        action = parts[1]
+        bot.delete_message(call.message.chat.id, call.message.message_id) # Удаляем сообщение с кнопками
 
-        try: bot.delete_message(chat_id, message_id)
-        except Exception: pass
+        if call.data == "booking_phone":
+            bot.send_message(call.message.chat.id, "📞 Звони по номеру: `8 (812) 317-23-53`", parse_mode="Markdown")
+        elif call.data == "booking_site":
+            bot.send_message(call.message.chat.id, "🌐 Вот ссылка для самостоятельной брони: https://evgenichspb.restoplace.ws/")
+        
+        elif call.data == "booking_secret":
+            # Создаем новую клавиатуру с кнопкой-ссылкой на чат
+            keyboard = types.InlineKeyboardMarkup()
+            # Убедитесь, что 'stolik_evgenicha' - это правильный username вашего чата
+            url_button = types.InlineKeyboardButton(text="👉 Перейти в секретный чат", url="https://t.me/stolik_evgenicha")
+            keyboard.add(url_button)
 
-        if action == "brand":
-            brand = parts[2]
-            show_ad_cities_menu(chat_id, brand)
-        elif action == "city":
-            brand, city = parts[2], parts[3]
-            show_ad_actions_menu(chat_id, brand, city)
-        elif action == "view":
-            brand, city = parts[2], parts[3]
-            templates = ad_templates.get(brand, {}).get(city, {})
-            if not templates: text = "Шаблонов для этого города пока нет."
-            else:
-                text_lines = [f"📄 **Шаблоны для {brand.upper()} / {city.capitalize()}**\n"]
-                for name, content in templates.items():
-                    text_lines.append(f"🔹 *{name}*:\n`{content}`\n")
-                text = "\n".join(text_lines)
-            bot.send_message(chat_id, text, parse_mode="Markdown")
-        elif action == "addform":
-            brand, city = parts[2], parts[3]
-            user_id = call.from_user.id
-            user_states[user_id] = {"state": "awaiting_ad_template", "brand": brand, "city": city}
-            bot.send_message(chat_id, "Отправьте сообщение в формате:\n\n`Название шаблона`\n`Текст шаблона...`\n\nДля отмены введите /cancel", parse_mode="Markdown")
-        elif action == "delform":
-            brand, city = parts[2], parts[3]
-            show_templates_for_deletion(chat_id, brand, city)
-        elif action == "delete":
-            brand, city, tpl_key = parts[2], parts[3], "_".join(parts[4:])
-            if tpl_key in ad_templates.get(brand, {}).get(city, {}):
-                del ad_templates[brand][city][tpl_key]
-                if save_json_data(AD_TEMPLATES_FILE, ad_templates):
-                     bot.send_message(chat_id, f"Шаблон '{tpl_key}' удален.")
-                     show_templates_for_deletion(chat_id, brand, city)
-                else:
-                    bot.send_message(chat_id, "Ошибка сохранения!")
-        elif action == 'backtobrand':
-            command_ads(call.message)
-        elif action == 'backtocity':
-            brand = parts[2]
-            show_ad_cities_menu(chat_id, brand)
+            # Формируем новый, более душевный текст
+            text = (
+                "От сердца отрываю, товарищ! 🤫\n\n"
+                "Это наш секретный чат для броней, только для своих. А ты теперь свой. "
+                "Смело жми на кнопку и пиши туда."
+            )
+            bot.send_message(call.message.chat.id, text, reply_markup=keyboard)
+        
+        elif call.data == "booking_bot":
+            # Запускаем пошаговый сбор данных (Finite State Machine)
+            msg = bot.send_message(call.message.chat.id, "Отлично! Как тебя звать, товарищ?")
+            bot.register_next_step_handler(msg, process_name_step)
 
-    @bot.message_handler(func=lambda message: user_states.get(message.from_user.id, {}).get("state") == "awaiting_ad_template")
-    def receive_ad_template_to_add(message: types.Message):
+
+    # --- Шаг 3: Цепочка функций для сбора данных о брони ---
+    def process_name_step(message):
+        """Получает имя, сохраняет его и спрашивает о дате."""
         user_id = message.from_user.id
-        if message.text == '/cancel':
-            del user_states[user_id]
-            return bot.send_message(message.chat.id, "Добавление шаблона отменено.")
-        try:
-            name, text = message.text.split('\n', 1)
-            name, text = name.strip(), text.strip()
-            if not name or not text: raise ValueError
-            state_data = user_states[user_id]
-            brand, city = state_data['brand'], state_data['city']
-            if brand not in ad_templates: ad_templates[brand] = {}
-            if city not in ad_templates[brand]: ad_templates[brand][city] = {}
-            ad_templates[brand][city][name] = text
-            if save_json_data(AD_TEMPLATES_FILE, ad_templates):
-                bot.send_message(message.chat.id, f"✅ Шаблон *'{name}'* успешно добавлен для *{brand.upper()}/{city.capitalize()}*.", parse_mode="Markdown")
-            else:
-                bot.send_message(message.chat.id, "❌ Ошибка сохранения файла шаблонов.")
-            del user_states[user_id]
-        except (ValueError, KeyError):
-            bot.send_message(message.chat.id, "Неверный формат. Пожалуйста, отправьте сообщение в формате:\n\n`Название шаблона`\n`Текст шаблона...`", parse_mode="Markdown")
-            if user_id in user_states: del user_states[user_id]
+        user_booking_data[user_id] = {'name': message.text}
+        msg = bot.send_message(message.chat.id, "Записал. Когда хочешь заглянуть в рюмочную? (Дата)")
+        bot.register_next_step_handler(msg, process_date_step)
+
+    def process_date_step(message):
+        """Получает дату, сохраняет ее и спрашивает о времени."""
+        user_id = message.from_user.id
+        user_booking_data[user_id]['date'] = message.text
+        msg = bot.send_message(message.chat.id, "Принято. Во сколько подходишь? (Время)")
+        bot.register_next_step_handler(msg, process_time_step)
+
+    def process_time_step(message):
+        """Получает время, сохраняет его и спрашивает о количестве гостей."""
+        user_id = message.from_user.id
+        user_booking_data[user_id]['time'] = message.text
+        msg = bot.send_message(message.chat.id, "Сколько вас будет — чтобы чебуреков хватило на всех! (Кол-во гостей)")
+        bot.register_next_step_handler(msg, process_guests_step)
+
+    def process_guests_step(message):
+        """Получает кол-во гостей, сохраняет и спрашивает телефон."""
+        user_id = message.from_user.id
+        user_booking_data[user_id]['guests'] = message.text
+        msg = bot.send_message(message.chat.id, "Телефончик оставь, а то в 80-х без номерка даже кассеты не выдавали.")
+        bot.register_next_step_handler(msg, process_phone_step)
+
+    def process_phone_step(message):
+        """Получает телефон, сохраняет и спрашивает о поводе."""
+        user_id = message.from_user.id
+        user_booking_data[user_id]['phone'] = message.text
+        msg = bot.send_message(message.chat.id, "И последнее: повод душевный или торжественный?")
+        bot.register_next_step_handler(msg, process_reason_step)
+
+    # Последний шаг сбора данных, после которого отправляется заявка
+    def process_reason_step(message):
+        """Получает повод, собирает все данные и отправляет на подтверждение."""
+        user_id = message.from_user.id
+        user_booking_data[user_id]['reason'] = message.text
+        
+        data = user_booking_data.get(user_id, {})
+        
+        # Показываем пользователю собранные данные для подтверждения
+        confirmation_text = (
+            "Всё верно, товарищ?\n\n"
+            f"📌 Имя: {data.get('name', 'не указано')}\n"
+            f"📆 Дата: {data.get('date', 'не указано')}\n"
+            f"🕒 Время: {data.get('time', 'не указано')}\n"
+            f"👥 Гостей: {data.get('guests', 'не указано')}\n"
+            f"☎️ Телефон: {data.get('phone', 'не указано')}\n"
+            f"🎉 Повод: {data.get('reason', 'не указано')}"
+        )
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("✅ Всё верно!", callback_data="confirm_booking"))
+        markup.add(types.InlineKeyboardButton("❌ Начать заново", callback_data="cancel_booking"))
+        
+        bot.send_message(message.chat.id, confirmation_text, reply_markup=markup)
+
+    # Шаг 4: Обработка кнопок подтверждения брони ("Да" / "Нет")
+    @bot.callback_query_handler(func=lambda call: call.data in ["confirm_booking", "cancel_booking"])
+    def handle_booking_confirmation(call: types.CallbackQuery):
+        """Обрабатывает финальное подтверждение или отмену брони."""
+        user_id = call.from_user.id
+        bot.answer_callback_query(call.id)
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+
+        if call.data == "confirm_booking":
+            data = user_booking_data.get(user_id, {})
             
-    @bot.callback_query_handler(func=lambda call: True)
-    def _debug_all_callbacks(call: types.CallbackQuery):
+            final_text = (
+                "🚨 Новая бронь:\n\n"
+                f"Имя: {data.get('name', 'не указано')}\n"
+                f"Дата: {data.get('date', 'не указано')}\n"
+                f"Время: {data.get('time', 'не указано')}\n"
+                f"Гости: {data.get('guests', 'не указано')}\n"
+                f"Телефон: {data.get('phone', 'не указано')}\n"
+                f"Повод: {data.get('reason', 'не указано')}"
+            )
+            # Отправляем заявку в чат админов
+            bot.send_message(REPORT_CHAT_ID, final_text)
+            bot.send_message(user_id, "Я всё записал в блокнот. Передам лично. Ну ты даёшь!")
+
+        elif call.data == "cancel_booking":
+            # Если пользователь нажал "Начать заново", запускаем сбор данных с первого шага
+            msg = bot.send_message(user_id, "Без проблем, товарищ. Начнем сначала. Как тебя звать?")
+            bot.register_next_step_handler(msg, process_name_step)
+
+        # В любом случае очищаем временные данные после завершения
+        if user_id in user_booking_data:
+            del user_booking_data[user_id]
+
+    # =======================================================================
+    # === АДМИН-ПАНЕЛЬ И ПРОЧИЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+    # =======================================================================
+
+    @bot.message_handler(commands=['admin'])
+    def handle_admin(message: types.Message):
+        if message.from_user.id not in ADMIN_IDS:
+            bot.reply_to(message, "⛔️ Доступ запрещен.")
+            return
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+        reports_button = types.InlineKeyboardButton("📊 Стандартные отчеты", callback_data="admin_menu_reports")
+        analytics_button = types.InlineKeyboardButton("📈 Глубокая аналитика", callback_data="admin_menu_analytics")
+        leaderboard_button = types.InlineKeyboardButton("🏆 Доска почета вербовщиков", callback_data="admin_action_leaderboard")
+        keyboard.add(reports_button, analytics_button, leaderboard_button)
+        bot.send_message(message.chat.id, "👑 **Главное меню админ-панели**", reply_markup=keyboard, parse_mode="Markdown")
+
+    @bot.message_handler(commands=['restart'])
+    def handle_restart_command(message: types.Message):
+        if message.from_user.id not in ADMIN_IDS:
+            return
+        user_id = message.from_user.id
+        success, response_message = delete_user(user_id)
+        if success:
+            bot.reply_to(message, f"✅ Успех: {response_message}\nМожете начинать тестирование заново, отправив команду /start.")
+        else:
+            bot.reply_to(message, f"❌ Ошибка при сбросе профиля: {response_message}")
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
+    def handle_admin_callbacks(call: types.CallbackQuery):
+        if call.from_user.id not in ADMIN_IDS:
+            bot.answer_callback_query(call.id, "⛔️ Доступ запрещен.")
+            return
+        
+        action = call.data
+        main_menu_text = "👑 **Главное меню админ-панели**"
+        
+        if action == 'admin_menu_main':
+            keyboard = types.InlineKeyboardMarkup(row_width=1)
+            reports_button = types.InlineKeyboardButton("📊 Стандартные отчеты", callback_data="admin_menu_reports")
+            analytics_button = types.InlineKeyboardButton("📈 Глубокая аналитика", callback_data="admin_menu_analytics")
+            leaderboard_button = types.InlineKeyboardButton("🏆 Доска почета вербовщиков", callback_data="admin_action_leaderboard")
+            keyboard.add(reports_button, analytics_button, leaderboard_button)
+            try: bot.edit_message_text(main_menu_text, call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
+            except: pass
+            return
+        elif action == 'admin_menu_reports':
+            keyboard = types.InlineKeyboardMarkup(row_width=1)
+            today_report_button = types.InlineKeyboardButton("📊 Отчет за текущую смену", callback_data="admin_report_today")
+            week_report_button = types.InlineKeyboardButton("📅 Отчет за неделю", callback_data="admin_report_week")
+            month_report_button = types.InlineKeyboardButton("🗓️ Отчет за месяц", callback_data="admin_report_month")
+            back_button = types.InlineKeyboardButton("⬅️ Назад в главное меню", callback_data="admin_menu_main")
+            keyboard.add(today_report_button, week_report_button, month_report_button, back_button)
+            bot.edit_message_text("**Меню отчетов**", call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
+            return
+        elif action == 'admin_menu_analytics':
+            keyboard = types.InlineKeyboardMarkup(row_width=1)
+            source_button = types.InlineKeyboardButton("По источникам", callback_data="admin_action_sources")
+            cohort_button = types.InlineKeyboardButton("Когорты по неделям", callback_data="admin_action_cohorts")
+            back_button = types.InlineKeyboardButton("⬅️ Назад в главное меню", callback_data="admin_menu_main")
+            keyboard.add(source_button, cohort_button, back_button)
+            bot.edit_message_text("**Меню аналитики**", call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
+            return
+
+        if action == 'admin_action_leaderboard':
+            bot.answer_callback_query(call.id, "Составляю рейтинг...")
+            top_list = get_top_referrers(5)
+            if not top_list:
+                bot.send_message(call.message.chat.id, "Пока никто не привел друзей, которые бы получили настойку.")
+                return
+            response = "**🏆 Доска Почета ударников труда:**\n(учитываются только друзья, которые погасили настойку)\n\n"
+            medals = ["🥇", "🥈", "🥉", "4.", "5."]
+            for i, (name, count) in enumerate(top_list):
+                response += f"{medals[i]} Товарищ **{name}** — {count} чел.\n"
+            bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+        elif action == 'admin_action_sources':
+            bot.answer_callback_query(call.id, "Анализирую источники...")
+            stats = get_stats_by_source()
+            if not stats:
+                bot.send_message(call.message.chat.id, "Нет данных по источникам.")
+                return
+            response = "**📈 Анализ по источникам (за все время):**\n\n"
+            sorted_stats = sorted(stats.items(), key=lambda item: item[1]['issued'], reverse=True)
+            for source, data in sorted_stats:
+                conversion = round((data['redeemed'] / data['issued']) * 100, 1) if data['issued'] > 0 else 0
+                response += f"**{source}:**\n  Подписалось: {data['issued']}\n  Погашено: {data['redeemed']} (Конверсия: {conversion}%)\n\n"
+            bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+        elif action == 'admin_action_cohorts':
+            bot.answer_callback_query(call.id, "Сравниваю когорты...")
+            cohorts = get_weekly_cohort_data()
+            if not cohorts:
+                bot.send_message(call.message.chat.id, "Недостаточно данных для анализа когорт.")
+                return
+            response = "**🗓️ Анализ по недельным когортам:**\n(сравниваем, как хорошо гости разных недель доходят до бара)\n\n"
+            for cohort in cohorts:
+                if cohort['issued'] == 0: continue
+                conversion = round((cohort['redeemed'] / cohort['issued']) * 100, 1)
+                response += f"**Неделя ({cohort['week']}):**\n  Новых: {cohort['issued']}, Погашено: {cohort['redeemed']} (Конверсия: {conversion}%)\n\n"
+            bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+        
+        elif call.data.startswith('admin_report'):
+            period = call.data.split('_')[-1]
+            tz_moscow = pytz.timezone('Europe/Moscow')
+            now_moscow = datetime.datetime.now(tz_moscow)
+            end_time = now_moscow
+            if period == 'today':
+                if now_moscow.hour < 12: start_time = (now_moscow - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+                else: start_time = now_moscow.replace(hour=12, minute=0, second=0, microsecond=0)
+            elif period == 'week': start_time = now_moscow - datetime.timedelta(days=7)
+            elif period == 'month': start_time = now_moscow - datetime.timedelta(days=30)
+            else: return
+            send_report(bot, call.message.chat.id, start_time, end_time)
+
+    # === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+    def issue_coupon(bot, user_id, username, first_name, chat_id):
+        update_status(user_id, 'issued')
+        coupon_text = ("🎉 Гражданин-товарищ, поздравляем!\n\n"
+                       "Тебе досталась фирменная настойка «Евгенич» — почти как путёвка в пионерлагерь, только повеселее.\n\n"
+                       "Что делать — коротко и ясно:\n"
+                       "1. Покажи этот экран бармену-дежурному.\n"
+                       "2. По его сигналу жми кнопку внизу — и сразу получаешь стопку!")
+        redeem_keyboard = types.InlineKeyboardMarkup()
+        redeem_button = types.InlineKeyboardButton(text="🔒 НАЛИТЬ ПРИ БАРМЕНЕ", callback_data="redeem_reward")
+        redeem_keyboard.add(redeem_button)
         try:
-            bot.answer_callback_query(call.id, f"Необработанный колбэк: {call.data}", show_alert=False)
-        except Exception:
-            pass
-        logging.warning(f"Получен необработанный callback_data -> {call.data} от {get_username(call.from_user)} в чате {call.message.chat.id}")
+            bot.send_sticker(chat_id, NASTOYKA_STICKER_ID)
+        except Exception as e:
+            logging.error(f"Не удалось отправить стикер-купон: {e}")
+        bot.send_message(chat_id, coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
+
+    def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds):
+        conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
+        avg_redeem_time_str = "н/д"
+        if redeemed > 0:
+            avg_seconds = total_redeem_time_seconds / redeemed
+            hours, remainder = divmod(int(avg_seconds), 3600)
+            minutes, _ = divmod(remainder, 60)
+            avg_redeem_time_str = f"{hours} ч {minutes} мин"
+        report_date = end_time.strftime('%d.%m.%Y')
+        header = f"**#Настойка_за_Подписку (Аналитика за {report_date})**\n\n"
+        period_str = f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
+        stats = (f"✅ **Выдано купонов:** {issued}\n"
+                 f"🥃 **Погашено настоек:** {redeemed}\n"
+                 f"📈 **Конверсия:** {conversion_rate}%\n"
+                 f"⏱️ **Среднее время до погашения:** {avg_redeem_time_str}\n")
+        sources_str = ""
+        if sources:
+            sources_str += "\n**Источники подписчиков:**\n"
+            sorted_sources = sorted(sources.items(), key=lambda item: item[1], reverse=True)
+            for source, count in sorted_sources:
+                sources_str += f"• {source}: {count}\n"
+        users_str = ""
+        if redeemed_users:
+            users_str += "\n**Настойку получили:**\n"
+            for user in redeemed_users[:10]:
+                users_str += f"• {user}\n"
+            if len(redeemed_users) > 10:
+                users_str += f"...и еще {len(redeemed_users) - 10}."
+        return header + period_str + stats + sources_str + users_str
+
+    def send_report(bot, chat_id, start_time, end_time):
+        try:
+            issued, redeemed, redeemed_users, sources, total_redeem_time = get_report_data_for_period(start_time, end_time)
+            if issued == 0:
+                bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
+                return
+            report_text = generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time)
+            bot.send_message(chat_id, report_text, parse_mode="Markdown")
+        except Exception as e:
+            logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
+
+    # =======================================================================
+    # === ГЛАВНЫЙ ОБРАБОТЧИК СООБЩЕНИЙ К ИИ (ДОЛЖЕН БЫТЬ ПОСЛЕДНИМ) ===
+    # =======================================================================
+    @bot.message_handler(func=lambda message: True, content_types=['text'])
+    def handle_ai_query(message: types.Message):
+        user_id = message.from_user.id
+        user_text = message.text
+
+        # Если пользователь находится в процессе бронирования, не прерываем его
+        if user_booking_data.get(user_id):
+            return
+        
+        # Игнорируем нажатия на известные кнопки
+        known_buttons = ['📖 Меню', '🤝 Привести товарища', '🗣 Спроси у Евгенича', '🥃 Получить настойку по талону', '📍 Забронировать стол']
+        if user_text in known_buttons or user_text.startswith('/'):
+            return 
+        
+        # --- Логика вызова ИИ ---
+        log_conversation_turn(user_id, "user", user_text)
+        history = get_conversation_history(user_id, limit=6)
+        
+        bot.send_chat_action(message.chat.id, 'typing')
+
+        # Вызываем ИИ. Он либо вернет совет, либо тег для начала бронирования
+        ai_response = get_ai_recommendation(user_text, history)
+        
+        if "[START_BOOKING_FLOW]" in ai_response:
+            # Если ИИ распознал намерение бронировать, показываем кнопки
+            _show_booking_options(message)
+            log_conversation_turn(user_id, "assistant", "Предложил варианты бронирования.")
+        else:
+            # Иначе это обычный ответ, который мы просто отправляем
+            log_conversation_turn(user_id, "assistant", ai_response)
+            bot.reply_to(message, ai_response, parse_mode="Markdown")
