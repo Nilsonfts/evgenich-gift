@@ -4,12 +4,13 @@ from telebot import types
 import pytz
 from config import (
     CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID,
-    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID
+    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID, GOOGLE_SHEET_KEY
 )
 from g_sheets import (
     get_reward_status, add_new_user, redeem_reward, delete_user,
     get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed,
-    get_report_data_for_period
+    get_report_data_for_period, get_stats_by_source, get_weekly_cohort_data, get_top_referrers,
+    get_sheet
 )
 
 def register_handlers(bot):
@@ -19,31 +20,10 @@ def register_handlers(bot):
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
         user_id = message.from_user.id
-        referrer_id = None
-        source = 'direct'
-
-        args = message.text.split()
-        if len(args) > 1:
-            payload = args[1]
-            if payload.startswith('ref_'):
-                try:
-                    referrer_id = int(payload.replace('ref_', ''))
-                    source = 'Реферал'
-                except (ValueError, IndexError):
-                    pass
-            else:
-                allowed_sources = {'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 'qr_toilet': 'QR в туалете', 'vk': 'VK', 'inst': 'Instagram', 'flyer': 'Листовки', 'site': 'Сайт'}
-                if payload in allowed_sources:
-                    source = allowed_sources[payload]
-
-        if get_reward_status(user_id) == 'not_found':
-            add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
-            if referrer_id:
-                bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся. У нас тут почти коммунизм — первая бесплатно.")
-
         status = get_reward_status(user_id)
         
         if status in ['issued', 'redeemed']:
+            # Клавиатура для ВЕРНУВШЕГОСЯ пользователя
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
@@ -53,6 +33,28 @@ def register_handlers(bot):
                 keyboard.row(restart_button)
             bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉", reply_markup=keyboard)
         else:
+            # Клавиатура для НОВОГО пользователя
+            referrer_id = None
+            source = 'direct'
+            args = message.text.split()
+            if len(args) > 1:
+                payload = args[1]
+                if payload.startswith('ref_'):
+                    try:
+                        referrer_id = int(payload.replace('ref_', ''))
+                        source = 'Реферал'
+                    except (ValueError, IndexError): pass
+                else:
+                    allowed_sources = {'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 'qr_toilet': 'QR в туалете', 'vk': 'VK', 'inst': 'Instagram', 'flyer': 'Листовки', 'site': 'Сайт'}
+                    if payload in allowed_sources:
+                        source = allowed_sources[payload]
+            
+            # Добавляем пользователя только если его нет, чтобы не дублировать при перезапуске
+            if get_reward_status(user_id) == 'not_found':
+                add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
+                if referrer_id:
+                    bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся. У нас тут почти коммунизм — первая бесплатно.")
+            
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
             gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
             keyboard.add(gift_button)
@@ -88,6 +90,28 @@ def register_handlers(bot):
         url_button = types.InlineKeyboardButton(text="📖 Открыть меню бара", url="https://spb.evgenich.bar/menu")
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Наше меню всегда доступно по кнопке ниже:", reply_markup=keyboard)
+    
+    @bot.message_handler(commands=['help'])
+    def handle_help_command(message: types.Message):
+        user_id = message.from_user.id
+        help_text = (
+            "**Инструкция по боту «Евгенич Настаивает»**\n\n"
+            "Я — ваш партийный товарищ, который выдает дефицитный продукт (фирменную настойку) за подписку на наш канал.\n\n"
+            "**Основные команды:**\n"
+            "• `/start` - Начать диалог и получить талон на настойку.\n"
+            "• `/menu` - Посмотреть меню нашего заведения.\n"
+            "• `/channel` - Получить ссылку на наш основной Telegram-канал.\n"
+            "• `/friend` - Получить персональную ссылку, чтобы пригласить друга и получить за это бонус.\n"
+            "• `/help` - Показать это сообщение."
+        )
+        if user_id in ADMIN_IDS:
+            admin_help_text = (
+                "\n\n**👑 Административные команды:**\n"
+                "• `/admin` - Открыть панель управления с отчетами.\n"
+                "• `/restart` - Сбросить свой профиль для тестирования бота (осторожно!)."
+            )
+            help_text += admin_help_text
+        bot.send_message(user_id, help_text, parse_mode="Markdown")
 
     @bot.message_handler(func=lambda message: message.text == "🥃 Получить настойку по талону")
     def handle_get_gift_press(message: types.Message):
@@ -108,7 +132,7 @@ def register_handlers(bot):
                         "Чтобы получить настойку, подпишись на наш телеграм-канал. Это займет всего секунду.\n\n"
                         "Когда подпишешься — нажимай на кнопку «Я подписался» здесь же.")
         inline_keyboard = types.InlineKeyboardMarkup(row_width=1)
-        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
         subscribe_button = types.InlineKeyboardButton(text="➡️ Перейти к каналу", url=channel_url)
         check_button = types.InlineKeyboardButton(text="✅ Я подписался, проверить!", callback_data="check_subscription")
         inline_keyboard.add(subscribe_button, check_button)
@@ -160,14 +184,14 @@ def register_handlers(bot):
             bot.reply_to(message, "⛔️ Доступ запрещен.")
             return
         keyboard = types.InlineKeyboardMarkup(row_width=1)
-        today_report_button = types.InlineKeyboardButton("📊 Отчет за текущую смену", callback_data="admin_report_today")
-        week_report_button = types.InlineKeyboardButton("📅 Отчет за неделю", callback_data="admin_report_week")
-        month_report_button = types.InlineKeyboardButton("🗓️ Отчет за месяц", callback_data="admin_report_month")
-        diag_button = types.InlineKeyboardButton("⚙️ Диагностика таблицы", callback_data="admin_diag")
-        keyboard.add(today_report_button, week_report_button, month_report_button, diag_button)
-        bot.send_message(message.chat.id, "👑 Админ-панель", reply_markup=keyboard)
+        reports_button = types.InlineKeyboardButton("📊 Стандартные отчеты", callback_data="admin_menu_reports")
+        analytics_button = types.InlineKeyboardButton("📈 Глубокая аналитика", callback_data="admin_menu_analytics")
+        leaderboard_button = types.InlineKeyboardButton("🏆 Доска почета вербовщиков", callback_data="admin_action_leaderboard")
+        keyboard.add(reports_button, analytics_button, leaderboard_button)
+        bot.send_message(message.chat.id, "👑 **Главное меню админ-панели**", reply_markup=keyboard, parse_mode="Markdown")
 
     @bot.message_handler(commands=['restart'])
+    @bot.message_handler(func=lambda message: message.text == "/restart")
     def handle_restart_command(message: types.Message):
         if message.from_user.id not in ADMIN_IDS:
             return
@@ -178,46 +202,85 @@ def register_handlers(bot):
         else:
             bot.reply_to(message, f"❌ Ошибка при сбросе профиля: {response_message}")
 
-    @bot.message_handler(commands=['diag'])
-    def handle_diag_command(message: types.Message):
-        if message.from_user.id not in ADMIN_IDS:
-            return
-        bot.reply_to(message, "⚙️ Запускаю диагностику подключения к Google Таблице...")
-        try:
-            worksheet = get_sheet()
-            if not worksheet:
-                bot.send_message(message.chat.id, "❌ Не удалось подключиться к таблице. Проверьте креды и ключ.")
-                return
-            
-            cell_a1 = worksheet.cell(1, 1).value
-            bot.send_message(message.chat.id, 
-                             f"✅ Успешно подключился к таблице!\n\n"
-                             f"🔑 **Ключ таблицы (последние 5 симв.):** `...{GOOGLE_SHEET_KEY[-5:]}`\n"
-                             f"📄 **Содержимое ячейки A1:** `{cell_a1}`",
-                             parse_mode="Markdown")
-        except Exception as e:
-            bot.send_message(message.chat.id, f"❌ Произошла ошибка при чтении таблицы: {e}")
-
     @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
     def handle_admin_callbacks(call: types.CallbackQuery):
         if call.from_user.id not in ADMIN_IDS:
             bot.answer_callback_query(call.id, "⛔️ Доступ запрещен.")
             return
         
-        if call.data == 'admin_diag':
-            bot.answer_callback_query(call.id, "Запускаю диагностику...")
-            # Создаем фейковое сообщение, чтобы переиспользовать код
-            diag_message = types.Message(message_id=call.message.message_id, from_user=call.from_user, date=call.message.date, chat=call.message.chat, content_type='text', options={}, json_string='')
-            handle_diag_command(diag_message)
+        action = call.data
+        main_menu_text = "👑 **Главное меню админ-панели**"
+        
+        # Навигация по меню
+        if action == 'admin_menu_main':
+            keyboard = types.InlineKeyboardMarkup(row_width=1)
+            reports_button = types.InlineKeyboardButton("📊 Стандартные отчеты", callback_data="admin_menu_reports")
+            analytics_button = types.InlineKeyboardButton("📈 Глубокая аналитика", callback_data="admin_menu_analytics")
+            leaderboard_button = types.InlineKeyboardButton("🏆 Доска почета вербовщиков", callback_data="admin_action_leaderboard")
+            keyboard.add(reports_button, analytics_button, leaderboard_button)
+            bot.edit_message_text(main_menu_text, call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
+            return
+        elif action == 'admin_menu_reports':
+            keyboard = types.InlineKeyboardMarkup(row_width=1)
+            today_report_button = types.InlineKeyboardButton("📊 Отчет за текущую смену", callback_data="admin_report_today")
+            week_report_button = types.InlineKeyboardButton("📅 Отчет за неделю", callback_data="admin_report_week")
+            month_report_button = types.InlineKeyboardButton("🗓️ Отчет за месяц", callback_data="admin_report_month")
+            back_button = types.InlineKeyboardButton("⬅️ Назад в главное меню", callback_data="admin_menu_main")
+            keyboard.add(today_report_button, week_report_button, month_report_button, back_button)
+            bot.edit_message_text("**Меню отчетов**", call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
+            return
+        elif action == 'admin_menu_analytics':
+            keyboard = types.InlineKeyboardMarkup(row_width=1)
+            source_button = types.InlineKeyboardButton("По источникам", callback_data="admin_action_sources")
+            cohort_button = types.InlineKeyboardButton("Когорты по неделям", callback_data="admin_action_cohorts")
+            back_button = types.InlineKeyboardButton("⬅️ Назад в главное меню", callback_data="admin_menu_main")
+            keyboard.add(source_button, cohort_button, back_button)
+            bot.edit_message_text("**Меню аналитики**", call.message.chat.id, call.message.message_id, reply_markup=keyboard, parse_mode="Markdown")
             return
 
-        if call.data.startswith('admin_report'):
+        # Выполнение действий
+        if action == 'admin_action_leaderboard':
+            bot.answer_callback_query(call.id, "Составляю рейтинг...")
+            top_list = get_top_referrers(5)
+            if not top_list:
+                bot.send_message(call.message.chat.id, "Пока никто не привел друзей, которые бы получили настойку.")
+                return
+            response = "**🏆 Доска Почета ударников труда:**\n(учитываются только друзья, которые погасили настойку)\n\n"
+            medals = ["🥇", "🥈", "🥉", "4.", "5."]
+            for i, (name, count) in enumerate(top_list):
+                response += f"{medals[i]} Товарищ **{name}** — {count} чел.\n"
+            bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+        elif action == 'admin_action_sources':
+            bot.answer_callback_query(call.id, "Анализирую источники...")
+            stats = get_stats_by_source()
+            if not stats:
+                bot.send_message(call.message.chat.id, "Нет данных по источникам.")
+                return
+            response = "**📈 Анализ по источникам (за все время):**\n\n"
+            sorted_stats = sorted(stats.items(), key=lambda item: item[1]['issued'], reverse=True)
+            for source, data in sorted_stats:
+                conversion = round((data['redeemed'] / data['issued']) * 100, 1) if data['issued'] > 0 else 0
+                response += f"**{source}:**\n  Подписалось: {data['issued']}\n  Погашено: {data['redeemed']} (Конверсия: {conversion}%)\n\n"
+            bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+        elif action == 'admin_action_cohorts':
+            bot.answer_callback_query(call.id, "Сравниваю когорты...")
+            cohorts = get_weekly_cohort_data()
+            if not cohorts:
+                bot.send_message(call.message.chat.id, "Недостаточно данных для анализа когорт.")
+                return
+            response = "**🗓️ Анализ по недельным когортам:**\n(сравниваем, как хорошо гости разных недель доходят до бара)\n\n"
+            for cohort in cohorts:
+                if cohort['issued'] == 0: continue
+                conversion = round((cohort['redeemed'] / cohort['issued']) * 100, 1)
+                response += f"**Неделя ({cohort['week']}):**\n  Новых: {cohort['issued']}, Погашено: {cohort['redeemed']} (Конверсия: {conversion}%)\n\n"
+            bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+        
+        # Обработка стандартных отчетов
+        elif call.data.startswith('admin_report'):
             period = call.data.split('_')[-1]
-            bot.answer_callback_query(call.id, f"Формирую отчет...")
             tz_moscow = pytz.timezone('Europe/Moscow')
             now_moscow = datetime.datetime.now(tz_moscow)
             end_time = now_moscow
-
             if period == 'today':
                 if now_moscow.hour < 12: start_time = (now_moscow - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
                 else: start_time = now_moscow.replace(hour=12, minute=0, second=0, microsecond=0)
@@ -259,7 +322,7 @@ def register_handlers(bot):
         except Exception as e:
             logging.error(f"Ошибка при выполнении отложенной задачи по рефералам: {e}")
 
-# === Вспомогательные функции ===
+# === Вспомогательные функции (вынесены за пределы register_handlers) ===
 def issue_coupon(bot, user_id, username, first_name, chat_id):
     status = get_reward_status(user_id)
     if status in ['issued', 'redeemed']: return
