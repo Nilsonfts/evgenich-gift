@@ -21,6 +21,12 @@ def register_handlers(bot):
             bot.send_message(message.chat.id, 
                              "Привет! 👋 Нажми на кнопку ниже, чтобы получить свой подарок.", 
                              reply_markup=keyboard)
+            
+            # ВРЕМЕННЫЙ КОД для получения ID стикера
+@bot.message_handler(content_types=['sticker'])
+def handle_sticker_id(message):
+    print(f"Sticker ID: {message.sticker.file_id}")
+    bot.send_message(message.chat.id, f"ID этого стикера:\n\n`{message.sticker.file_id}`", parse_mode="Markdown")
 
     @bot.message_handler(func=lambda message: message.text == "🎁 ПОЛУЧИТЬ НАСТОЙКУ")
     def handle_get_gift_press(message: types.Message):
