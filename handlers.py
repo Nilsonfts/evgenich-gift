@@ -79,7 +79,7 @@ def register_handlers(bot):
         """
         Обрабатывает команду /start.
         """
-        logging.info(f"Пользователь {message.from_user.id} нажал /start")
+        logging.info(f"Пользователь {message.from_user.id} нажал /start с текстом: {message.text}")
         user_id = message.from_user.id
         status = get_reward_status(user_id)
         
@@ -110,9 +110,12 @@ def register_handlers(bot):
             logging.info(f"Новый пользователь {user_id}. Регистрируем...")
             referrer_id = None
             source = 'direct'
-            args = message.text.split()
+            
+            args = message.text.split(' ', 1)
+            
             if len(args) > 1:
                 payload = args[1]
+                logging.info(f"Обнаружена нагрузка (payload): {payload}")
                 if payload.startswith('ref_'):
                     try:
                         referrer_id = int(payload.replace('ref_', ''))
@@ -158,17 +161,33 @@ def register_handlers(bot):
 
         logging.info(f"Пользователь {message.from_user.id} запросил реферальную ссылку.")
         user_id = message.from_user.id
-        bot_username = bot.get_me().username
-        ref_link = f"https.me/{bot_username}?start=ref_{user_id}"
+        
+        try:
+            bot_username = bot.get_me().username
+            if not bot_username:
+                logging.error("Не удалось получить username бота. Реферальная ссылка не может быть создана.")
+                bot.send_message(user_id, "Произошла ошибка, не могу создать вашу ссылку. Пожалуйста, попробуйте позже.")
+                return
 
-        text = (
-            "💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
-            "Вот твоя персональная директива на привлечение нового бойца. Скопируй ссылку ниже и отправь её другу:\n\n"
-            f"`{ref_link}`\n\n"
-            "Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит **еще одной дефицитной настойкой**! 🥃\n\n"
-            "*Помни, план — не более 5 товарищей.*"
-        )
-        bot.send_message(user_id, text, parse_mode="Markdown")
+            ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
+
+            text_before = (
+                "💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
+                "Вот твоя персональная директива на привлечение нового бойца. Отправь эту ссылку другу:"
+            )
+            bot.send_message(user_id, text_before, parse_mode="Markdown")
+
+            bot.send_message(user_id, ref_link, disable_web_page_preview=True)
+
+            text_after = (
+                "Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит **еще одной дефицитной настойкой**! 🥃\n\n"
+                "*Помни, план — не более 5 товарищей.*"
+            )
+            bot.send_message(user_id, text_after, parse_mode="Markdown")
+
+        except Exception as e:
+            logging.error(f"Ошибка при создании реферальной ссылки для {user_id}: {e}")
+            bot.send_message(user_id, "Что-то пошло не так при создании ссылки. Попробуйте еще раз.")
 
     @bot.message_handler(commands=['channel'])
     def handle_channel_command(message: types.Message):
