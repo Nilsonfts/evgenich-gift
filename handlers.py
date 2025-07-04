@@ -7,7 +7,7 @@ from config import (
     FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID, GOOGLE_SHEET_KEY
 )
 from g_sheets import (
-    get_reward_status, add_new_user, redeem_reward, delete_user,
+    get_reward_status, add_new_user, update_status, delete_user,
     get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed,
     get_report_data_for_period, get_stats_by_source, get_weekly_cohort_data, get_top_referrers,
     get_sheet
@@ -22,8 +22,8 @@ def register_handlers(bot):
         user_id = message.from_user.id
         status = get_reward_status(user_id)
         
-        if status in ['issued', 'redeemed']:
-            # Клавиатура для ВЕРНУВШЕГОСЯ пользователя
+        # Сценарий для пользователя, который УЖЕ получил настойку
+        if status == 'redeemed':
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
@@ -32,8 +32,11 @@ def register_handlers(bot):
                 restart_button = types.KeyboardButton("/restart")
                 keyboard.row(restart_button)
             bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉", reply_markup=keyboard)
-        else:
-            # Клавиатура для НОВОГО пользователя
+            return
+
+        # Сценарий для пользователя, который еще НЕ получал настойку (not_found, registered, issued)
+        # Если пользователь совсем новый, регистрируем его
+        if status == 'not_found':
             referrer_id = None
             source = 'direct'
             args = message.text.split()
@@ -49,23 +52,22 @@ def register_handlers(bot):
                     if payload in allowed_sources:
                         source = allowed_sources[payload]
             
-            # Добавляем пользователя только если его нет, чтобы не дублировать при перезапуске
-            if get_reward_status(user_id) == 'not_found':
-                add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
-                if referrer_id:
-                    bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся. У нас тут почти коммунизм — первая бесплатно.")
-            
-            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
-            keyboard.add(gift_button)
-            bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
+            add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
+            if referrer_id:
+                bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся.")
+
+        # Показываем приветствие и кнопку для начала квеста
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
+        keyboard.add(gift_button)
+        bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
 
     @bot.message_handler(commands=['friend'])
     @bot.message_handler(func=lambda message: message.text == "🤝 Привести товарища")
     def handle_friend_command(message: types.Message):
         user_id = message.from_user.id
         bot_username = bot.get_me().username
-        ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
+        ref_link = f"[https://t.me/](https://t.me/){bot_username}?start=ref_{user_id}"
         text = (
             "💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
             "Вот твоя персональная директива на привлечение нового бойца. Нажми на ссылку ниже, чтобы скопировать:\n"
@@ -78,7 +80,7 @@ def register_handlers(bot):
     @bot.message_handler(commands=['channel'])
     def handle_channel_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
-        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
         url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
@@ -87,7 +89,7 @@ def register_handlers(bot):
     @bot.message_handler(func=lambda message: message.text == "📖 Меню")
     def handle_menu_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
-        url_button = types.InlineKeyboardButton(text="📖 Открыть меню бара", url="https://spb.evgenich.bar/menu")
+        url_button = types.InlineKeyboardButton(text="📖 Открыть меню бара", url="[https://spb.evgenich.bar/menu](https://spb.evgenich.bar/menu)")
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Наше меню всегда доступно по кнопке ниже:", reply_markup=keyboard)
     
@@ -160,7 +162,7 @@ def register_handlers(bot):
     @bot.callback_query_handler(func=lambda call: call.data == "redeem_reward")
     def handle_redeem_reward(call: types.CallbackQuery):
         user_id = call.from_user.id
-        if redeem_reward(user_id):
+        if update_status(user_id, 'redeemed'):
             final_text = ("✅ Ну вот и бахнули!\n\n"
                           "Между первой и второй, как известно, перерывчик небольшой…\n"
                           "🍷 Ждём тебя за следующей!")
@@ -171,6 +173,16 @@ def register_handlers(bot):
             except Exception as e:
                 logging.error(f"Не удалось отправить прощальный стикер: {e}")
             
+            # Показываем финальную клавиатуру после получения подарка
+            final_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            menu_button = types.KeyboardButton("📖 Меню")
+            friend_button = types.KeyboardButton("🤝 Привести товарища")
+            final_keyboard.row(menu_button, friend_button)
+            if user_id in ADMIN_IDS:
+                restart_button = types.KeyboardButton("/restart")
+                final_keyboard.row(restart_button)
+            bot.send_message(user_id, "Теперь в главном меню тебе доступны новые команды!", reply_markup=final_keyboard)
+
             referrer_id = get_referrer_id_from_user(user_id)
             if referrer_id:
                 logging.info(f"Пользователь {user_id} погасил награду. Внешний планировщик должен будет его проверить для реферера {referrer_id} через 24ч.")
