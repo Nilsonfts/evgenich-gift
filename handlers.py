@@ -15,7 +15,6 @@ from g_sheets import (
 def register_handlers(bot):
     """Регистрирует все обработчики сообщений и кнопок."""
 
-    # === ПОЛЬЗОВАТЕЛЬСКИЕ КОМАНДЫ ===
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
         user_id = message.from_user.id
@@ -44,7 +43,6 @@ def register_handlers(bot):
         status = get_reward_status(user_id)
         
         if status in ['issued', 'redeemed']:
-            # Клавиатура для ВЕРНУВШЕГОСЯ пользователя
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             menu_button = types.KeyboardButton("📖 Меню")
             friend_button = types.KeyboardButton("🤝 Привести товарища")
@@ -54,7 +52,6 @@ def register_handlers(bot):
                 keyboard.row(restart_button)
             bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉", reply_markup=keyboard)
         else:
-            # Клавиатура для НОВОГО пользователя
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
             gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
             keyboard.add(gift_button)
@@ -77,7 +74,7 @@ def register_handlers(bot):
     @bot.message_handler(commands=['channel'])
     def handle_channel_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
-        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
         url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
@@ -109,7 +106,7 @@ def register_handlers(bot):
                         "Чтобы получить настойку, подпишись на наш телеграм-канал. Это займет всего секунду.\n\n"
                         "Когда подпишешься — нажимай на кнопку «Я подписался» здесь же.")
         inline_keyboard = types.InlineKeyboardMarkup(row_width=1)
-        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
         subscribe_button = types.InlineKeyboardButton(text="➡️ Перейти к каналу", url=channel_url)
         check_button = types.InlineKeyboardButton(text="✅ Я подписался, проверить!", callback_data="check_subscription")
         inline_keyboard.add(subscribe_button, check_button)
@@ -168,15 +165,15 @@ def register_handlers(bot):
         bot.send_message(message.chat.id, "👑 Админ-панель", reply_markup=keyboard)
 
     @bot.message_handler(commands=['restart'])
-    @bot.message_handler(func=lambda message: message.text == "/restart")
     def handle_restart_command(message: types.Message):
         if message.from_user.id not in ADMIN_IDS:
             return
         user_id = message.from_user.id
-        if delete_user(user_id):
-            bot.reply_to(message, "✅ Ваш профиль в боте сброшен. Можете начинать тестирование заново, отправив команду /start.")
+        success, response_message = delete_user(user_id)
+        if success:
+            bot.reply_to(message, f"✅ Успех: {response_message}\nМожете начинать тестирование заново, отправив команду /start.")
         else:
-            bot.reply_to(message, "🤔 Не удалось найти ваш профиль для сброса. Возможно, вы еще не взаимодействовали с ботом.")
+            bot.reply_to(message, f"❌ Ошибка при сбросе профиля: {response_message}")
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_report'))
     def handle_admin_report_callbacks(call: types.CallbackQuery):
@@ -239,6 +236,7 @@ def register_handlers(bot):
         except Exception as e:
             logging.error(f"Ошибка при выполнении отложенной задачи по рефералам: {e}")
 
+
 # === Вспомогательные функции (вынесены за пределы register_handlers) ===
 def issue_coupon(bot, user_id, username, first_name, chat_id):
     status = get_reward_status(user_id)
@@ -269,7 +267,7 @@ def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users,
         minutes = int((avg_seconds % 3600) // 60)
         avg_redeem_time_str = f"{hours} ч {minutes} мин"
     report_date = end_time.strftime('%d.%m.%Y')
-    header = f"**#Настойка_за_Подписку ({report_date})**\n\n"
+    header = f"**#Настойка_за_Подписку (Аналитика за {report_date})**\n\n"
     period_str = f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
     stats = (f"✅ **Выдано купонов:** {issued}\n"
              f"🥃 **Погашено настоек:** {redeemed}\n"
