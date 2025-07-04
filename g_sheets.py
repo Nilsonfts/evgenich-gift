@@ -1,8 +1,9 @@
 import logging
 import json
 import datetime
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict
 import pytz
+from collections import Counter
 
 try:
     import gspread
@@ -12,15 +13,18 @@ except ImportError:
 
 from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
 
-# Номера колонок
+# Номера колонок для удобства
 COL_USER_ID = 2
 COL_STATUS = 5
+COL_USERNAME = 3
+COL_NAME = 4
 COL_REFERRED_BY = 6
 COL_FRIEND_BONUS = 7
 COL_SOURCE = 8
 COL_REDEEM_DATE = 9
 
 def get_sheet() -> Optional[gspread.Worksheet]:
+    """Аутентифицируется и возвращает рабочий лист Google Таблицы."""
     if not gspread:
         logging.error("Библиотека gspread не установлена.")
         return None
@@ -38,6 +42,7 @@ def get_sheet() -> Optional[gspread.Worksheet]:
         return None
 
 def find_user_by_id(user_id: int) -> Optional[gspread.Cell]:
+    """Находит пользователя в таблице по ID и возвращает ячейку."""
     try:
         worksheet = get_sheet()
         if not worksheet: return None
@@ -49,6 +54,7 @@ def find_user_by_id(user_id: int) -> Optional[gspread.Cell]:
         return None
 
 def get_reward_status(user_id: int) -> str:
+    """Проверяет статус награды пользователя в таблице."""
     cell = find_user_by_id(user_id)
     if not cell:
         return 'not_found'
@@ -58,7 +64,12 @@ def get_reward_status(user_id: int) -> str:
     return status or 'not_found'
 
 def add_new_user(user_id: int, username: str, first_name: str, source: str, referrer_id: Optional[int] = None):
+    """Добавляет нового пользователя с источником и реферером."""
     try:
+        if find_user_by_id(user_id):
+            logging.info(f"Попытка добавить существующего пользователя {user_id}. Операция пропущена.")
+            return
+            
         worksheet = get_sheet()
         if not worksheet: return
         current_time_utc = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
@@ -74,6 +85,7 @@ def add_new_user(user_id: int, username: str, first_name: str, source: str, refe
         logging.error(f"Не удалось добавить пользователя {user_id} в Google Таблицу: {e}")
 
 def redeem_reward(user_id: int) -> bool:
+    """Погашает награду и записывает дату погашения."""
     cell = find_user_by_id(user_id)
     if not cell: return False
     worksheet = get_sheet()
@@ -91,34 +103,28 @@ def delete_user(user_id: int) -> Tuple[bool, str]:
     """Удаляет пользователя и проверяет, что он действительно удален."""
     try:
         worksheet = get_sheet()
-        if not worksheet:
-            return False, "Не удалось получить доступ к таблице."
-
+        if not worksheet: return False, "Не удалось получить доступ к таблице."
         all_records = worksheet.get_all_records()
         row_to_delete = -1
-
         for index, record in enumerate(all_records):
             if str(record.get('ID Пользователя')) == str(user_id):
                 row_to_delete = index + 2
                 break
-        
         if row_to_delete != -1:
             worksheet.delete_rows(row_to_delete)
-            # Двойная проверка
             cell_after_delete = find_user_by_id(user_id)
             if cell_after_delete is None:
                 msg = f"Пользователь {user_id} успешно удален. Проверка подтвердила."
                 logging.info(msg)
                 return True, msg
             else:
-                msg = "Команда на удаление отправлена, но пользователь все еще в базе. Вероятно, проблема с правами доступа или кэшем Google."
+                msg = "Команда на удаление отправлена, но пользователь все еще в базе. Проверьте права 'Редактора' у сервисного аккаунта."
                 logging.error(msg)
                 return False, msg
         else:
             msg = f"Пользователь {user_id} не найден в таблице для удаления."
             logging.info(msg)
             return False, msg
-
     except Exception as e:
         error_msg = f"Ошибка при удалении пользователя {user_id}: {e}"
         logging.error(error_msg)
@@ -155,23 +161,15 @@ def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime
         worksheet = get_sheet()
         if not worksheet: return 0, 0, [], {}, 0
         all_records = worksheet.get_all_records()
-        
-        issued_count = 0
-        redeemed_count = 0
-        redeemed_users = []
-        sources = {}
-        total_redeem_time_seconds = 0
-
+        issued_count, redeemed_count, redeemed_users, sources, total_redeem_time_seconds = 0, 0, [], {}, 0
         for record in all_records:
             try:
                 signup_time_naive = datetime.datetime.strptime(record['Дата подписки (UTC)'], "%Y-%m-%d %H:%M:%S")
                 signup_time_utc = pytz.utc.localize(signup_time_naive)
-
                 if start_time <= signup_time_utc < end_time:
                     issued_count += 1
                     source = record.get('Источник', 'неизвестно')
                     sources[source] = sources.get(source, 0) + 1
-
                     if record['Статус награды'] == 'redeemed' and record.get('Дата погашения (UTC)'):
                         redeemed_count += 1
                         username = record.get('Username')
@@ -179,14 +177,83 @@ def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime
                             redeemed_users.append(f"@{username}")
                         else:
                             redeemed_users.append(record.get('Имя', str(record.get('ID Пользователя'))))
-                        
                         redeem_time_naive = datetime.datetime.strptime(record['Дата погашения (UTC)'], "%Y-%m-%d %H:%M:%S")
                         time_diff = redeem_time_naive - signup_time_naive
                         total_redeem_time_seconds += time_diff.total_seconds()
-
             except (ValueError, TypeError, KeyError):
                 continue
         return issued_count, redeemed_count, redeemed_users, sources, total_redeem_time_seconds
     except Exception as e:
         logging.error(f"Ошибка при сборе данных для отчета: {e}")
         return 0, 0, [], {}, 0
+
+def get_stats_by_source() -> Dict[str, Dict[str, int]]:
+    try:
+        worksheet = get_sheet()
+        if not worksheet: return {}
+        all_records = worksheet.get_all_records()
+        source_stats = {}
+        for record in all_records:
+            source = record.get('Источник', 'неизвестно')
+            if not source: source = 'неизвестно'
+            if source not in source_stats:
+                source_stats[source] = {'issued': 0, 'redeemed': 0}
+            source_stats[source]['issued'] += 1
+            if record.get('Статус награды') == 'redeemed':
+                source_stats[source]['redeemed'] += 1
+        return source_stats
+    except Exception as e:
+        logging.error(f"Ошибка при сборе статистики по источникам: {e}")
+        return {}
+
+def get_weekly_cohort_data() -> List[Dict]:
+    try:
+        worksheet = get_sheet()
+        if not worksheet: return []
+        all_records = worksheet.get_all_records()
+        tz_moscow = pytz.timezone('Europe/Moscow')
+        now_moscow = datetime.datetime.now(tz_moscow)
+        cohorts = {}
+        for i in range(4):
+            end_of_week = (now_moscow - datetime.timedelta(weeks=i)).replace(hour=23, minute=59, second=59)
+            start_of_week = (end_of_week - datetime.timedelta(days=6)).replace(hour=0, minute=0, second=0)
+            week_key = f"{start_of_week.strftime('%d.%m')}-{end_of_week.strftime('%d.%m.%Y')}"
+            cohorts[week_key] = {'start': start_of_week, 'end': end_of_week, 'issued': 0, 'redeemed': 0}
+        for record in all_records:
+            try:
+                signup_time_naive = datetime.datetime.strptime(record['Дата подписки (UTC)'], "%Y-%m-%d %H:%M:%S")
+                signup_time_utc = pytz.utc.localize(signup_time_naive)
+                for week_key, dates in cohorts.items():
+                    if dates['start'] <= signup_time_utc <= dates['end']:
+                        cohorts[week_key]['issued'] += 1
+                        if record.get('Статус награды') == 'redeemed':
+                            cohorts[week_key]['redeemed'] += 1
+                        break
+            except (ValueError, TypeError, KeyError):
+                continue
+        return [{'week': key, **value} for key, value in cohorts.items()]
+    except Exception as e:
+        logging.error(f"Ошибка при сборе когортных данных: {e}")
+        return []
+
+def get_top_referrers(limit: int = 5) -> List[Tuple[str, int]]:
+    try:
+        worksheet = get_sheet()
+        if not worksheet: return []
+        all_records = worksheet.get_all_records()
+        successful_referrals = []
+        for record in all_records:
+            if record.get('Статус награды') == 'redeemed' and record.get('Пригласил (ID)'):
+                successful_referrals.append(str(record['Пригласил (ID)']))
+        if not successful_referrals:
+            return []
+        referrer_counts = Counter(successful_referrals)
+        top_referrers = []
+        user_map = {str(rec.get('ID Пользователя')): f"@{rec['Username']}" if rec.get('Username') else rec.get('Имя', 'Аноним') for rec in all_records if rec.get('ID Пользователя')}
+        for user_id, count in referrer_counts.most_common(limit):
+            name = user_map.get(user_id, f"ID: {user_id}")
+            top_referrers.append((name, count))
+        return top_referrers
+    except Exception as e:
+        logging.error(f"Ошибка при получении топа рефереров: {e}")
+        return []
