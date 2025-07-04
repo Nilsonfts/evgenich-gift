@@ -1,111 +1,199 @@
-import openai
+"""
+Evgenich AI Assistant
+=====================
+Unified module that powers the conversational logic of the
+rюмочная‑квартирник helper «Евгенич».  It merges the earlier intent‑detection
+prototype and the extended recommendation engine into **one** clean API.
+
+Key design points
+-----------------
+* **Single public function** : `get_ai_recommendation()` handles both simple
+  intent detection (booking flow vs dialog) *and* rich menu‑aware
+  recommendations, depending on which optional arguments you pass in.
+* **No code duplication** : All helper routines are factored out once
+  and reused.
+* **Strict typing & logging** : Easier to debug, easier to extend.
+"""
+
+from __future__ import annotations
+
 import logging
+from typing import List, Dict, Any
+
+import openai
 from config import OPENAI_API_KEY
 
-# Устанавливаем ключ API при загрузке модуля
+# ---------------------------------------------------------------------------
+# OpenAI initialisation & logging
+# ---------------------------------------------------------------------------
+
 openai.api_key = OPENAI_API_KEY
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s — %(levelname)s — %(name)s — %(message)s",
+)
+logger = logging.getLogger("evgenich_ai")
 
-# =======================================================================
-# === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ДЛЯ ЧИСТОТЫ КОДА) ===
-# =======================================================================
+# ---------------------------------------------------------------------------
+# Helper‑formatting functions
+# ---------------------------------------------------------------------------
 
-def _format_drink_menu(menu_data: list) -> str:
-    """Форматирует меню настоек в одну строку для передачи ИИ."""
-    logging.info("Форматирование меню настоек...")
-    menu_string = ""
+def _format_drink_menu(menu_data: List[Dict[str, Any]] | None) -> str:
+    """Return drink menu in a markdown‑like string expected by the prompt."""
+    if not menu_data:
+        return ""
+
+    parts: list[str] = []
     for category in menu_data:
-        menu_string += f"\n## Категория: {category['title']}\n"
-        for item in category['items']:
-            menu_string += f"\n### Настойка: {item['name']} ({item['price']})\n"
-            menu_string += f"История и атмосфера: {item.get('narrative_desc', 'Нет описания.')}\n"
-            details_str = ", ".join([f"{k}: {v}" for k, v in item.get('details', {}).items()])
-            menu_string += f"Технические детали: {details_str}\n"
-    return menu_string
+        parts.append(f"\n## Категория: {category['title']}")
+        for item in category.get("items", []):
+            parts.append(
+                f"\n### Настойка: {item['name']} ({item['price']})\n"
+                f"История и атмосфера: {item.get('narrative_desc', 'Нет описания.')}\n"
+                f"Технические детали: {', '.join(f"{k}: {v}" for k, v in item.get('details', {}).items())}"
+            )
+    return "\n".join(parts)
 
-def _format_food_menu(food_menu_data: dict) -> str:
-    """Форматирует меню кухни в одну строку для передачи ИИ."""
-    logging.info("Форматирование меню кухни...")
-    food_string = ""
+
+def _format_food_menu(food_menu_data: Dict[str, Any] | None) -> str:
+    """Return food menu in a markdown‑like string expected by the prompt."""
+    if not food_menu_data:
+        return ""
+
+    parts: list[str] = []
     for category, items in food_menu_data.items():
-        food_string += f"\n## {category}\n"
+        parts.append(f"\n## {category}")
         for item in items:
-            food_string += f"- {item['name']} ({item['price']}р)\n"
-    return food_string
+            parts.append(f"- {item['name']} ({item['price']}р)")
+    return "\n".join(parts)
+
 
 def _create_system_prompt(updates_string: str, context_string: str) -> str:
-    """Создает финальную, детализированную инструкцию (промпт) для нейросети."""
-    logging.info("Создание системного промпта...")
-    
-    system_prompt = (
-        "# РОЛЬ И ХАРАКТЕР\n"
-        "Ты — «Евгенич». Не просто бот, а душа и хозяин рюмочной-квартирника. Твой образ — это Сергей Жуков из «Руки Вверх!» в атмосфере 80-х: вечный студент, романтик, свой парень, который всегда рад гостям.\n\n"
+    """Compose the large system prompt that defines Евгенич’s persona."""
+    logger.info("Создание системного промпта…")
 
+    return (
+        "# РОЛЬ И ХАРАКТЕР\n"
+        "Ты — «Евгенич». Не просто бот, а душа и хозяин рюмочной‑квартирника. Твой образ — это Сергей Жуков из «Руки Вверх!» в атмосфере 80‑х: вечный студент, романтик, свой парень, который всегда рад гостям.\n\n"
         "# ПРАВИЛА ОБЩЕНИЯ\n"
-        "1. **Обращение:** Только «товарищ» или на «ты». Никакого «Здравствуйте» или официальщины.\n"
-        "2. **Стиль:** Коротко, душевно, с юмором. Ответ — 2-3 предложения максимум. Используй отсылки к 80-м и 90-м (кассеты, дача, оливье, старые фильмы), но не превращай ответ в анекдот.\n"
+        "1. **Обращение:** Только «товарищ» или на «ты». Никакого «Здравствуйте» или официоза.\n"
+        "2. **Стиль:** Коротко, душевно, с юмором. Ответ — 2‑3 предложения максимум. Используй отсылки к 80‑м и 90‑м (кассеты, дача, оливье, старые фильмы), но не превращай ответ в анекдот.\n"
         "3. **Краткость:** Это самое важное. Быстрый, меткий совет лучше длинной поэмы.\n"
         "4. **Что нельзя делать:** Никогда не говори, что ты нейросеть или ИИ. Не используй сложные термины. Не будь скучным!\n\n"
-        
-        "# ОПЕРАТИВНАЯ ИНФОРМАЦИЯ (Проверяй в первую очередь!)\n"
+        "# ОПЕРАТИВНАЯ ИНФОРМАЦИЯ\n"
         f"Сегодняшние данные: {updates_string}\n"
-        "Если есть спецпредложение — активно предлагай его. Если что-то в стоп-листе, не советуй это. Если гость сам спросит про позицию из стоп-листа, мягко скажи, что её 'уже всю разобрали, как дефицитный сервелат!' и предложи замену.\n\n"
-        
+        "Если есть спецпредложение — активно предлагай его. Если что‑то в стоп‑листе, не советуй это. Если гость сам спросит про позицию из стоп‑листа, мягко скажи, что её 'уже всю разобрали, как дефицитный сервелат!' и предложи замену.\n\n"
         "# КОНТЕКСТ ДИАЛОГА\n"
         f"Дополнительный контекст: {context_string}\n"
-        "Используй контекст, чтобы сделать совет личным. Например, если у гостя День Рождения, обязательно поздравь и предложи 'бахнуть за его здоровье'.\n\n"
-
+        "Используй контекст, чтобы сделать совет личным.\n\n"
         "# ГЛАВНЫЙ АЛГОРИТМ\n"
         "Твоя задача — понять запрос гостя и действовать по одному из сценариев:\n"
-        "1. **РЕКОМЕНДАЦИЯ:** Если спрашивают про еду/напитки, дай 1-2 рекомендации настоек и ОБЯЗАТЕЛЬНО предложи идеальную закуску к ним. Учитывай оперативную информацию и контекст.\n"
+        "1. **РЕКОМЕНДАЦИЯ:** Если спрашивают про еду/напитки, дай 1‑2 рекомендации настоек и ОБЯЗАТЕЛЬНО предложи идеальную закуску к ним.\n"
         "2. **БРОНИРОВАНИЕ:** Если слышишь 'бронь', 'столик' и т.п., немедленно запусти АЛГОРИТМ БРОНИРОВАНИЯ.\n"
-        "3. **НЕПОНЯТНЫЙ ЗАПРОС:** Если не понял, отшутись в своем стиле (например: 'Так, товарищ, давай по порядку, а то у меня пленку зажевало...') и предложи помочь с выбором настойки.\n\n"
-        
-        "# АЛГОРИТМ БРОНИРОВАНИЯ (Выполнять строго по шагам)\n"
-        "**ШАГ 1: ПРЕДЛОЖИ ВАРИАНТЫ.** Сразу предложи все способы брони (чат, телефон, сайт, через тебя), как описано в шаблоне.\n"
-        "**ШАГ 2: СОБЕРИ ДАННЫЕ.** ТОЛЬКО если гость попросил тебя, начинай сбор информации. Задавай по одному вопросу за раз. Список данных для сбора: Имя, Контактный номер телефона (ОБЯЗАТЕЛЬНО!), Количество гостей, Дата, Время, Повод.\n"
-        "**ШАГ 3: ПОДТВЕРДИ И ОТПРАВЬ.** Когда все данные собраны, покажи их гостю для подтверждения ('Всё верно, товарищ?'). После его 'да', сгенерируй финальный ответ с тегом `[BOOKING_REQUEST]`, например: 'Принято! [BOOKING_REQUEST]Имя: Сергей, Телефон: 89211234567, Гостей: 4, Дата: 15.07, Время: 20:00, Повод: посидеть с друзьями'"
+        "3. **НЕПОНЯТНЫЙ ЗАПРОС:** Если не понял, отшутись: 'Так, товарищ, давай по порядку, а то у меня плёнку зажевало…'.\n\n"
+        "# АЛГОРИТМ БРОНИРОВАНИЯ (строго по шагам)\n"
+        "**ШАГ 1:** Предложи варианты брони (чат, телефон, сайт, через тебя).\n"
+        "**ШАГ 2:** Если гость согласен, собирай данные: Имя → Телефон → Кол‑во гостей → Дата → Время → Повод. Один вопрос за раз.\n"
+        "**ШАГ 3:** Подтверди данные и верни '[BOOKING_REQUEST]…'\n"
     )
-    return system_prompt
 
-# =======================================================================
-# === ОСНОВНАЯ ФУНКЦИЯ, ВЫЗЫВАЕМАЯ ИЗ HANDLERS.PY ===
-# =======================================================================
+# ---------------------------------------------------------------------------
+# PUBLIC API
+# ---------------------------------------------------------------------------
 
-def get_ai_recommendation(user_query: str, menu_data: list, food_menu_data: dict, conversation_history: list, daily_updates: dict, context_info: dict) -> str:
+def get_ai_recommendation(
+    user_query: str,
+    conversation_history: List[Dict[str, str]] | None = None,
+    *,
+    menu_data: List[Dict[str, Any]] | None = None,
+    food_menu_data: Dict[str, Any] | None = None,
+    daily_updates: Dict[str, str] | None = None,
+    context_info: Dict[str, str] | None = None,
+    model: str = "gpt-4o",
+    temperature: float = 0.8,
+    max_tokens: int = 300,
+) -> str:
+    """High‑level entry point used by the FastAPI/Telegram layer.
+
+    The signature is intentionally flexible:  if you only need intent detection,
+    call it with *just* ``user_query`` (and optionally ``conversation_history``).
+    For the full recommendation engine, supply menus, daily updates, etc.
+
+    Returns
+    -------
+    str
+        Raw assistant message content.  For a booking flow you may receive the
+        special tags ``[START_BOOKING_FLOW]`` or ``[BOOKING_REQUEST]…``.
     """
-    Основная функция, которая собирает все данные, вызывает вспомогательные функции
-    и отправляет финальный запрос в OpenAI.
-    """
-    logging.info(f"Получен новый запрос к ИИ от пользователя: {user_query}")
 
-    # Шаг 1: Форматируем все наши данные в удобные строки
+    logger.info("Получен запрос: %s", user_query)
+
+    # -------------------------------------------------------------------
+    # Prepare contextual strings
+    # -------------------------------------------------------------------
     menu_string = _format_drink_menu(menu_data)
     food_string = _format_food_menu(food_menu_data)
-    updates_string = f"Спецпредложение сегодня: {daily_updates.get('special', 'нет')}. В стоп-листе: {daily_updates.get('stop-list', 'ничего')}"
-    context_string = f"Время суток - {context_info.get('time_of_day', 'неизвестно')}, Повод визита - {context_info.get('occasion', 'неизвестен')}."
 
-    # Шаг 2: Создаем детализированную инструкцию для ИИ
-    system_prompt = _create_system_prompt(updates_string, context_string)
-    
-    # Шаг 3: Собираем все сообщения для отправки, включая историю
-    messages_to_send = []
-    messages_to_send.append({"role": "system", "content": system_prompt})
+    if daily_updates:
+        updates_string = (
+            f"Спецпредложение сегодня: {daily_updates.get('special', 'нет')}. "
+            f"В стоп‑листе: {daily_updates.get('stop-list', 'ничего')}"
+        )
+    else:
+        updates_string = "нет оперативных данных"
+
+    if context_info:
+        context_string = (
+            f"Время суток — {context_info.get('time_of_day', 'неизвестно')}, "
+            f"Повод визита — {context_info.get('occasion', 'неизвестен')}"
+        )
+    else:
+        context_string = "контекст неизвестен"
+
+    # -------------------------------------------------------------------
+    # Build message list
+    # -------------------------------------------------------------------
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": _create_system_prompt(updates_string, context_string)}
+    ]
+
     if conversation_history:
-        messages_to_send.extend(conversation_history)
-    messages_to_send.append({"role": "user", "content": f"Вот меню для справки:\nНастойки:\n{menu_string}\n\nЕда:\n{food_string}\n\nМой запрос: {user_query}"})
+        messages.extend(conversation_history)
 
-    logging.info("Отправка запроса в OpenAI API...")
+    if menu_string or food_string:
+        user_content = (
+            f"Вот меню для справки:\nНастойки:\n{menu_string}\n\nЕда:\n{food_string}\n\nМой запрос: {user_query}"
+        )
+    else:
+        user_content = user_query
+
+    messages.append({"role": "user", "content": user_content})
+
+    # -------------------------------------------------------------------
+    # Call OpenAI
+    # -------------------------------------------------------------------
     try:
-        # Шаг 4: Отправляем запрос
+        logger.info("Отправка запроса в OpenAI API…")
         completion = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=messages_to_send,
-            temperature=0.8,
-            max_tokens=300
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
         response_text = completion.choices[0].message.content
-        logging.info("Ответ от OpenAI успешно получен.")
+        logger.info("Ответ получен успешно.")
         return response_text
-    except Exception as e:
-        logging.error(f"Ошибка при обращении к OpenAI API: {e}")
-        return "Товарищ, мой мыслительный аппарат дал сбой. Провода, видать, заискрили. Попробуй обратиться ко мне чуть позже."
+
+    except Exception as exc:  # pragma: no cover — network / quota errors
+        logger.error("Ошибка при обращении к OpenAI API: %s", exc)
+        return (
+            "Товарищ, мой мыслительный аппарат дал сбой. Провода, видать, заискрили. "
+            "Попробуй обратиться ко мне чуть позже."
+        )
+
+# ---------------------------------------------------------------------------
+# Convenience alias for legacy imports (backward compatibility)
+# ---------------------------------------------------------------------------
+# Old code may still import the simpler function name; expose it here so that
+# no refactor is required.
+legacy_get_ai_recommendation = get_ai_recommendation
