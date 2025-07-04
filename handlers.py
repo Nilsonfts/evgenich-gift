@@ -42,18 +42,24 @@ def register_handlers(bot):
                 bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся. У нас тут почти коммунизм — первая бесплатно.")
 
         status = get_reward_status(user_id)
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        menu_button = types.KeyboardButton("📖 Меню")
-        friend_button = types.KeyboardButton("🤝 Привести товарища")
-
+        
+        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
         if status in ['issued', 'redeemed']:
-            keyboard.row(menu_button, friend_button)
+            # Клавиатура для ВЕРНУВШЕГОСЯ пользователя
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            menu_button = types.KeyboardButton("📖 Меню")
+            friend_button = types.KeyboardButton("🤝 Привести товарища")
+            keyboard.row(menu_button, friend_button) # Четко указываем, что кнопки в одном ряду
             bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉", reply_markup=keyboard)
         else:
+            # Клавиатура для НОВОГО пользователя
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
             gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
-            keyboard.row(gift_button)
-            keyboard.row(menu_button, friend_button)
+            keyboard.add(gift_button) # Только одна кнопка
             bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
+
+    # ... (остальной код файла остается без изменений) ...
+    # ... (я привожу его полностью ниже для твоего удобства) ...
 
     @bot.message_handler(commands=['friend'])
     @bot.message_handler(func=lambda message: message.text == "🤝 Привести товарища")
@@ -214,30 +220,24 @@ def register_handlers(bot):
             if len(parts) < 3: return
             referred_user_id = int(parts[1])
             referrer_id = int(parts[2])
-
             member = bot.get_chat_member(CHANNEL_ID, referred_user_id)
             if member.status not in ['member', 'administrator', 'creator']:
                 logging.info(f"Реферал {referred_user_id} отписался. Бонус для {referrer_id} не выдан.")
                 return
-
             ref_count = count_successful_referrals(referrer_id)
             if ref_count >= 5:
                 logging.info(f"Реферер {referrer_id} достиг лимита бонусов.")
                 return
-
             bonus_text = ("✊ Товарищ! Твой друг проявил сознательность и остался в наших рядах. Партия тобой гордится!\n\n"
                           "Вот твой заслуженный бонус. Покажи это сообщение бармену, чтобы получить **фирменные гренки**.")
-            
             if FRIEND_BONUS_STICKER_ID:
                 try: bot.send_sticker(referrer_id, FRIEND_BONUS_STICKER_ID)
                 except Exception as e: logging.error(f"Не удалось отправить стикер за друга: {e}")
-            
             bot.send_message(referrer_id, bonus_text)
             mark_referral_bonus_claimed(referred_user_id)
             logging.info(f"Бонус за реферала {referred_user_id} успешно выдан {referrer_id}.")
         except Exception as e:
             logging.error(f"Ошибка при выполнении отложенной задачи по рефералам: {e}")
-
 
 # === Вспомогательные функции (вынесены за пределы register_handlers) ===
 def issue_coupon(bot, user_id, username, first_name, chat_id):
@@ -263,29 +263,25 @@ def issue_coupon(bot, user_id, username, first_name, chat_id):
 def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds):
     """Генерирует текст 'супер-отчета' на основе данных."""
     conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
-    
     avg_redeem_time_str = "н/д"
     if redeemed > 0:
         avg_seconds = total_redeem_time_seconds / redeemed
         hours = int(avg_seconds // 3600)
         minutes = int((avg_seconds % 3600) // 60)
         avg_redeem_time_str = f"{hours} ч {minutes} мин"
-
     report_date = end_time.strftime('%d.%m.%Y')
-    header = f"**#Настойка_за_Подписку (Аналитика за {report_date})**\n\n"
+    header = f"**#Настойка_за_Подписку ({report_date})**\n\n"
     period_str = f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
     stats = (f"✅ **Выдано купонов:** {issued}\n"
              f"🥃 **Погашено настоек:** {redeemed}\n"
              f"📈 **Конверсия:** {conversion_rate}%\n"
              f"⏱️ **Среднее время до погашения:** {avg_redeem_time_str}\n")
-    
     sources_str = ""
     if sources:
         sources_str += "\n**Источники подписчиков:**\n"
         sorted_sources = sorted(sources.items(), key=lambda item: item[1], reverse=True)
         for source, count in sorted_sources:
             sources_str += f"• {source}: {count}\n"
-    
     users_str = ""
     if redeemed_users:
         users_str += "\n**Настойку получили:**\n"
@@ -293,20 +289,15 @@ def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users,
             users_str += f"• {user}\n"
         if len(redeemed_users) > 10:
             users_str += f"...и еще {len(redeemed_users) - 10}."
-            
     return header + period_str + stats + sources_str + users_str
 
 def send_report(bot, chat_id, start_time, end_time):
     """Универсальная функция для отправки отчета."""
     try:
-        # ИСПРАВЛЕНИЕ ЗДЕСЬ: вызываем правильную функцию и правильно распаковываем данные
         issued, redeemed, redeemed_users, sources, total_redeem_time = get_report_data_for_period(start_time, end_time)
-
         if issued == 0:
             bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
             return
-
-        # ИСПРАВЛЕНИЕ ЗДЕСЬ: передаем правильные аргументы
         report_text = generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time)
         bot.send_message(chat_id, report_text, parse_mode="Markdown")
     except Exception as e:
