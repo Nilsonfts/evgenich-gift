@@ -609,37 +609,70 @@ def register_handlers(bot):
         except Exception as e:
             logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
 
-    # =======================================================================
-    # === ГЛАВНЫЙ ОБРАБОТЧИК СООБЩЕНИЙ К ИИ (ДОЛЖЕН БЫТЬ ПОСЛЕДНИМ) ===
-    # =======================================================================
-    @bot.message_handler(func=lambda message: True, content_types=['text'])
-    def handle_ai_query(message: types.Message):
-        user_id = message.from_user.id
-        user_text = message.text
+# =======================================================================
+# === ГЛАВНЫЙ ОБРАБОТЧИК СООБЩЕНИЙ К ИИ (ДОЛЖЕН БЫТЬ ПОСЛЕДНИМ) ===
+# =======================================================================
+@bot.message_handler(func=lambda message: True, content_types=['text'])
+def handle_ai_query(message: types.Message):
+    # --- Собираем данные о пользователе и его сообщении ---
+    user_id = message.from_user.id
+    user_text = message.text
 
-        # Проверяем, не находится ли пользователь в процессе бронирования
-        if user_booking_data.get(user_id):
-            return
-        
-        # Проверяем, не является ли сообщение нажатием на одну из известных кнопок
-        known_buttons = ['📖 Меню', '🤝 Привести товарища', '🗣 Спроси у Евгенича', '🥃 Получить настойку по талону', '📍 Забронировать стол']
-        if user_text in known_buttons or user_text.startswith('/'):
-            return 
-        
-        # --- Логика вызова ИИ ---
-        log_conversation_turn(user_id, "user", user_text)
-        history = get_conversation_history(user_id, limit=6)
-        
-        bot.send_chat_action(message.chat.id, 'typing')
+    # --- Проверяем, не находится ли пользователь в процессе бронирования ---
+    if user_booking_data.get(user_id):
+        # Если да, то бот не будет реагировать на другие сообщения, пока бронь не завершится
+        return
+    
+    # --- Проверяем, не является ли сообщение нажатием на одну из кнопок ---
+    known_buttons = ['📖 Меню', '🤝 Привести товарища', '🗣 Спроси у Евгенича', '📍 Забронировать стол', '🥃 Получить настойку по талону']
+    if user_text in known_buttons or user_text.startswith('/'):
+        return 
+    
+    # --- Подготовка всех данных для вызова "умного" ИИ ---
+    log_conversation_turn(user_id, "user", user_text)
+    history = get_conversation_history(user_id, limit=6)
+    daily_updates = get_daily_updates()
+    
+    context_info = {
+        "time_of_day": datetime.datetime.now(pytz.timezone('Europe/Moscow')).strftime('%H:%M'),
+        "occasion": "неизвестен" # В будущем это можно будет брать из аналитики
+    }
 
-        # Вызываем ИИ. Он либо вернет совет, либо тег для начала бронирования
-        ai_response = get_ai_recommendation(user_text, history)
+    # Показываем пользователю, что мы "думаем"
+    bot.send_chat_action(message.chat.id, 'typing')
+
+    # --- ИСПРАВЛЕННЫЙ ВЫЗОВ ФУНКЦИИ ---
+    # Вызываем новую, гибкую функцию со всеми данными, передавая их по имени
+    ai_response = get_ai_recommendation(
+        user_query=user_text,
+        conversation_history=history,
+        menu_data=MENU_DATA,
+        food_menu_data=FOOD_MENU_DATA,
+        daily_updates=daily_updates,
+        context_info=context_info
+    )
+    
+    # --- Обработка ответа от ИИ ---
+    booking_chat_id = -1002574697415
+
+    if "[START_BOOKING_FLOW]" in ai_response:
+        # Если ИИ распознал намерение бронировать, показываем кнопки
+        _show_booking_options(message)
+        log_conversation_turn(user_id, "assistant", "Предложил варианты бронирования.")
+        return # Важно завершить выполнение здесь
+
+    if "[BOOKING_REQUEST]" in ai_response:
+        # Этот блок сработает, если ИИ соберет заявку (на случай, если мы вернем эту логику в ИИ)
+        parts = ai_response.split("[BOOKING_REQUEST]")
+        response_to_user = parts[0].strip()
+        booking_details = parts[1].strip()
         
-        if "[START_BOOKING_FLOW]" in ai_response:
-            # Если ИИ распознал намерение бронировать, показываем кнопки
-            _show_booking_options(message)
-            log_conversation_turn(user_id, "assistant", "Предложил варианты бронирования.")
-        else:
-            # Иначе это обычный ответ, который мы просто отправляем
-            log_conversation_turn(user_id, "assistant", ai_response)
-            bot.reply_to(message, ai_response, parse_mode="Markdown")
+        admin_notification = f"🚨 **НОВАЯ ЗАЯВКА НА БРОНЬ** 🚨\n\nОт: @{message.from_user.username} (ID: `{user_id}`)\n\n**Детали:** `{booking_details}`\n\nПожалуйста, свяжитесь с гостем для подтверждения."
+        bot.send_message(booking_chat_id, admin_notification, parse_mode="Markdown")
+        
+        log_conversation_turn(user_id, "assistant", response_to_user)
+        bot.reply_to(message, response_to_user, parse_mode="Markdown")
+    else:
+        # Если это обычный ответ, отправляем его и записываем в лог
+        log_conversation_turn(user_id, "assistant", ai_response)
+        bot.reply_to(message, ai_response, parse_mode="Markdown")
