@@ -116,9 +116,11 @@ def register_handlers(bot):
     # === СКРЫТАЯ КОМАНДА ДЛЯ ПЛАНИРОВЩИКА ===
     @bot.message_handler(commands=['send_daily_report'])
     def handle_send_report_command(message):
+        # Здесь можно добавить проверку, что команду вызвал "доверенный" источник, если нужно
         send_scheduled_report(bot)
 
-# === Вспомогательные функции ===
+
+# === Вспомогательные функции (вынесены за пределы register_handlers) ===
 def issue_coupon(bot, user_id, username, first_name, chat_id):
     status = get_reward_status(user_id)
     if status in ['issued', 'redeemed']: return
@@ -138,33 +140,42 @@ def issue_coupon(bot, user_id, username, first_name, chat_id):
     bot.send_message(chat_id, coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
 
 def generate_report_text(start_time, end_time, issued, redeemed):
-    # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+    """Генерирует текст отчета на основе данных."""
     return (f"**#Отчет_ТГ_Настойка_за_Подписку**\n\n"
             f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
             f"✅ **Выдано купонов (подписалось):** {issued}\n"
             f"🥃 **Погашено (выпито настоек):** {redeemed}")
 
 def send_scheduled_report(bot):
-    """Формирует и отправляет отчет за прошедшую смену."""
+    """Формирует и отправляет отчет за прошедшую смену по расписанию."""
     tz_moscow = pytz.timezone('Europe/Moscow')
     now_moscow = datetime.datetime.now(tz_moscow)
+    # Отчет всегда за вчерашнюю смену, которая закончилась сегодня в 6 утра
     end_time = now_moscow.replace(hour=6, minute=0, second=0, microsecond=0)
     start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
     
     issued, redeemed = get_report_data_for_period(start_time, end_time)
     report_text = generate_report_text(start_time, end_time, issued, redeemed)
-    bot.send_message(REPORT_CHAT_ID, report_text, parse_mode="Markdown")
+    try:
+        bot.send_message(REPORT_CHAT_ID, report_text, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Не удалось отправить плановый отчет в чат {REPORT_CHAT_ID}: {e}")
 
 def send_manual_report(bot, chat_id):
-    """Формирует и отправляет отчет за текущую смену."""
+    """Формирует и отправляет отчет за текущую смену вручную."""
     tz_moscow = pytz.timezone('Europe/Moscow')
     now_moscow = datetime.datetime.now(tz_moscow)
-    end_time = now_moscow
-    if now_moscow.hour < 12:
+    end_time = now_moscow # Отчет до текущего момента
+    
+    # Определяем начало текущей смены
+    if now_moscow.hour < 12: # Если сейчас утро до полудня
         start_time = (now_moscow - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
-    else:
+    else: # Если сейчас день/вечер
         start_time = now_moscow.replace(hour=12, minute=0, second=0, microsecond=0)
 
     issued, redeemed = get_report_data_for_period(start_time, end_time)
     report_text = generate_report_text(start_time, end_time, issued, redeemed)
-    bot.send_message(chat_id, report_text, parse_mode="Markdown")
+    try:
+        bot.send_message(chat_id, report_text, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Не удалось отправить ручной отчет в чат {chat_id}: {e}")
