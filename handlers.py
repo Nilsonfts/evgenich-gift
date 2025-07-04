@@ -522,7 +522,11 @@ def register_handlers(bot):
             bot.send_message(user_id, "Я всё записал в блокнот. Передам лично. Ну ты даёшь!")
 
         elif call.data == "cancel_booking":
-            msg = bot.send_message(user_id, "Без проблем, товарищ. Начнем сначала. Как тебя звать?\n\n*Чтобы отменить, в любой момент напиши /cancel*", parse_mode="Markdown")
+            prompt_text = (
+                "Без проблем, товарищ. Начнем сначала. Как тебя звать?\n\n"
+                "*Чтобы отменить, в любой момент напиши /cancel*"
+            )
+            msg = bot.send_message(user_id, prompt_text, parse_mode="Markdown")
             bot.register_next_step_handler(msg, process_name_step)
 
         if user_id in user_booking_data and call.data == "confirm_booking":
