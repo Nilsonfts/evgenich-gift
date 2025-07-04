@@ -34,6 +34,13 @@ def register_handlers(bot):
         keyboard.add(url_button)
         bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
 
+    @bot.message_handler(commands=['menu'])
+    def handle_menu_command(message):
+        keyboard = types.InlineKeyboardMarkup()
+        url_button = types.InlineKeyboardButton(text="📖 Открыть меню бара", url="https://spb.evgenich.bar/menu")
+        keyboard.add(url_button)
+        bot.send_message(message.chat.id, "Наше меню всегда доступно по кнопке ниже:", reply_markup=keyboard)
+
     @bot.message_handler(func=lambda message: message.text == "🥃 Получить настойку по талону")
     def handle_get_gift_press(message: types.Message):
         user_id = message.from_user.id
@@ -82,7 +89,6 @@ def register_handlers(bot):
     def handle_redeem_reward(call: types.CallbackQuery):
         user_id = call.from_user.id
         if redeem_reward(user_id):
-            # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
             final_text = ("✅ Ну вот и бахнули!\n\n"
                           "Между первой и второй, как известно, перерывчик небольшой…\n"
                           "🍷 Ждём тебя за следующей!")
@@ -101,27 +107,50 @@ def register_handlers(bot):
         if message.from_user.id not in ADMIN_IDS:
             bot.reply_to(message, "⛔️ Доступ запрещен.")
             return
-        keyboard = types.InlineKeyboardMarkup()
-        report_button = types.InlineKeyboardButton("📊 Сформировать отчет за текущую смену", callback_data="admin_report")
-        keyboard.add(report_button)
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+        today_report_button = types.InlineKeyboardButton("📊 Отчет за текущую смену", callback_data="admin_report_today")
+        week_report_button = types.InlineKeyboardButton("📅 Отчет за неделю", callback_data="admin_report_week")
+        month_report_button = types.InlineKeyboardButton("🗓️ Отчет за месяц", callback_data="admin_report_month")
+        keyboard.add(today_report_button, week_report_button, month_report_button)
         bot.send_message(message.chat.id, "👑 Админ-панель", reply_markup=keyboard)
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
-    def handle_admin_callbacks(call: types.CallbackQuery):
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_report'))
+    def handle_admin_report_callbacks(call: types.CallbackQuery):
         if call.from_user.id not in ADMIN_IDS:
             bot.answer_callback_query(call.id, "⛔️ Доступ запрещен.")
             return
-        action = call.data.split('_')[1]
-        if action == 'report':
-            bot.answer_callback_query(call.id, "Формирую отчет...")
-            send_manual_report(bot, call.message.chat.id)
+        
+        period = call.data.split('_')[-1]
+        bot.answer_callback_query(call.id, f"Формирую отчет...")
+        
+        tz_moscow = pytz.timezone('Europe/Moscow')
+        now_moscow = datetime.datetime.now(tz_moscow)
+        end_time = now_moscow
+
+        if period == 'today':
+            if now_moscow.hour < 12:
+                start_time = (now_moscow - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+            else:
+                start_time = now_moscow.replace(hour=12, minute=0, second=0, microsecond=0)
+        elif period == 'week':
+            start_time = now_moscow - datetime.timedelta(days=7)
+        elif period == 'month':
+            start_time = now_moscow - datetime.timedelta(days=30)
+        else:
+            return
+
+        send_report(bot, call.message.chat.id, start_time, end_time)
 
     # === СКРЫТАЯ КОМАНДА ДЛЯ ПЛАНИРОВЩИКА ===
     @bot.message_handler(commands=['send_daily_report'])
     def handle_send_report_command(message):
-        send_scheduled_report(bot)
+        tz_moscow = pytz.timezone('Europe/Moscow')
+        now_moscow = datetime.datetime.now(tz_moscow)
+        end_time = now_moscow.replace(hour=6, minute=0, second=0, microsecond=0)
+        start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+        send_report(bot, REPORT_CHAT_ID, start_time, end_time)
 
-# === Вспомогательные функции ===
+# === Вспомогательные функции (вынесены за пределы register_handlers) ===
 def issue_coupon(bot, user_id, username, first_name, chat_id):
     status = get_reward_status(user_id)
     if status in ['issued', 'redeemed']: return
@@ -140,40 +169,34 @@ def issue_coupon(bot, user_id, username, first_name, chat_id):
         logging.error(f"Не удалось отправить стикер-купон: {e}")
     bot.send_message(chat_id, coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
 
-def generate_report_text(start_time, end_time, issued, redeemed):
+def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users):
     """Генерирует текст отчета на основе данных."""
-    # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
-    report_date = end_time.strftime('%d.%m.%Y')
-    return (f"**#Настойка_за_Подписку ({report_date})**\n\n"
-            f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
-            f"✅ **Выдано купонов (подписалось):** {issued}\n"
-            f"🥃 **Погашено (выпито настоек):** {redeemed}")
-
-def send_scheduled_report(bot):
-    """Формирует и отправляет отчет за прошедшую смену по расписанию."""
-    tz_moscow = pytz.timezone('Europe/Moscow')
-    now_moscow = datetime.datetime.now(tz_moscow)
-    end_time = now_moscow.replace(hour=6, minute=0, second=0, microsecond=0)
-    start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
-    issued, redeemed = get_report_data_for_period(start_time, end_time)
-    report_text = generate_report_text(start_time, end_time, issued, redeemed)
-    try:
-        bot.send_message(REPORT_CHAT_ID, report_text, parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Не удалось отправить плановый отчет в чат {REPORT_CHAT_ID}: {e}")
-
-def send_manual_report(bot, chat_id):
-    """Формирует и отправляет отчет за текущую смену вручную."""
-    tz_moscow = pytz.timezone('Europe/Moscow')
-    now_moscow = datetime.datetime.now(tz_moscow)
-    end_time = now_moscow
-    if now_moscow.hour < 12:
-        start_time = (now_moscow - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+    if issued > 0:
+        conversion_rate = round((redeemed / issued) * 100, 1)
     else:
-        start_time = now_moscow.replace(hour=12, minute=0, second=0, microsecond=0)
-    issued, redeemed = get_report_data_for_period(start_time, end_time)
-    report_text = generate_report_text(start_time, end_time, issued, redeemed)
+        conversion_rate = 0
+    
+    report_date = end_time.strftime('%d.%m.%Y')
+    header = f"**#Настойка_за_Подписку ({report_date})**\n\n"
+    period_str = f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
+    stats = (f"✅ **Выдано купонов:** {issued}\n"
+             f"🥃 **Погашено настоек:** {redeemed}\n"
+             f"📈 **Конверсия:** {conversion_rate}%\n")
+    
+    users_str = ""
+    if redeemed_users:
+        users_str += "\n**Настойку получили:**\n"
+        for user in redeemed_users[:10]:
+            users_str += f"• {user}\n"
+        if len(redeemed_users) > 10:
+            users_str += f"...и еще {len(redeemed_users) - 10}."
+    return header + period_str + stats + users_str
+
+def send_report(bot, chat_id, start_time, end_time):
+    """Формирует и отправляет отчет в указанный чат."""
     try:
+        issued, redeemed, redeemed_users = get_report_data_for_period(start_time, end_time)
+        report_text = generate_report_text(start_time, end_time, issued, redeemed, redeemed_users)
         bot.send_message(chat_id, report_text, parse_mode="Markdown")
     except Exception as e:
-        logging.error(f"Не удалось отправить ручной отчет в чат {chat_id}: {e}")
+        logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
