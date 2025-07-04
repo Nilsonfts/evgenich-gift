@@ -87,6 +87,24 @@ def redeem_reward(user_id: int) -> bool:
         return True
     return False
 
+def delete_user(user_id: int) -> bool:
+    """Удаляет пользователя из таблицы по ID."""
+    try:
+        cell = find_user_by_id(user_id)
+        if not cell:
+            logging.info(f"Попытка удалить пользователя {user_id}, но он не найден.")
+            return False
+        
+        worksheet = get_sheet()
+        if not worksheet: return False
+        
+        worksheet.delete_rows(cell.row)
+        logging.info(f"Пользователь {user_id} успешно удален из таблицы для перезапуска.")
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка при удалении пользователя {user_id}: {e}")
+        return False
+
 def get_referrer_id_from_user(user_id: int) -> Optional[int]:
     cell = find_user_by_id(user_id)
     if not cell: return None
@@ -113,11 +131,11 @@ def mark_referral_bonus_claimed(referred_user_id: int):
     if not worksheet: return
     worksheet.update_cell(cell.row, COL_FRIEND_BONUS, 'claimed')
 
-def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime.datetime) -> Tuple[int, int, List[str], dict]:
-    """Собирает данные за период: выдано, погашено, список username'ов и источники."""
+def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime.datetime) -> Tuple[int, int, List[str], dict, float]:
+    """Собирает данные за период: выдано, погашено, список username'ов, источники и время."""
     try:
         worksheet = get_sheet()
-        if not worksheet: return 0, 0, [], {}
+        if not worksheet: return 0, 0, [], {}, 0
         all_records = worksheet.get_all_records()
         
         issued_count = 0
