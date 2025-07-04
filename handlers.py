@@ -19,32 +19,39 @@ def register_handlers(bot):
     def handle_start(message: types.Message):
         user_id = message.from_user.id
         referrer_id = None
-        
+        source = 'direct'  # Источник по умолчанию
+
         args = message.text.split()
-        if len(args) > 1 and args[1].startswith('ref_'):
-            try:
-                referrer_id = int(args[1].replace('ref_', ''))
-            except (ValueError, IndexError):
-                pass
-        
+        if len(args) > 1:
+            payload = args[1]
+            if payload.startswith('ref_'):
+                try:
+                    referrer_id = int(payload.replace('ref_', ''))
+                    source = 'Реферал'
+                except (ValueError, IndexError):
+                    pass
+            else:
+                allowed_sources = {'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 'qr_toilet': 'QR в туалете', 'vk': 'VK', 'inst': 'Instagram', 'flyer': 'Листовки', 'site': 'Сайт'}
+                if payload in allowed_sources:
+                    source = allowed_sources[payload]
+
         if get_reward_status(user_id) == 'not_found':
-            add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, referrer_id)
+            add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
             if referrer_id:
                 bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся. У нас тут почти коммунизм — первая бесплатно.")
 
         status = get_reward_status(user_id)
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        menu_button = types.KeyboardButton("📖 Меню")
+        friend_button = types.KeyboardButton("🤝 Привести товарища")
+
         if status in ['issued', 'redeemed']:
-            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-            gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
-            menu_button = types.KeyboardButton("📖 Меню")
-            friend_button = types.KeyboardButton("🤝 Привести товарища")
-            keyboard.row(gift_button, menu_button)
-            keyboard.row(friend_button)
+            keyboard.row(menu_button, friend_button)
             bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉", reply_markup=keyboard)
         else:
-            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            get_gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
-            keyboard.add(get_gift_button)
+            gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
+            keyboard.row(gift_button)
+            keyboard.row(menu_button, friend_button)
             bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
 
     @bot.message_handler(commands=['friend'])
@@ -137,7 +144,6 @@ def register_handlers(bot):
             
             referrer_id = get_referrer_id_from_user(user_id)
             if referrer_id:
-                # Просто логируем. Внешний планировщик вызовет команду /check_referral_and_give_bonus
                 logging.info(f"Пользователь {user_id} погасил награду. Планировщик должен будет его проверить для реферера {referrer_id} через 24ч.")
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
@@ -179,7 +185,6 @@ def register_handlers(bot):
             start_time = now_moscow - datetime.timedelta(days=30)
         else:
             return
-
         send_report(bot, call.message.chat.id, start_time, end_time)
 
     # === СКРЫТЫЕ КОМАНДЫ ДЛЯ ПЛАНИРОВЩИКА ===
@@ -195,7 +200,7 @@ def register_handlers(bot):
     def handle_check_referral_command(message):
         try:
             parts = message.text.split()
-            if len(parts) < 3: return # Проверка на корректность команды
+            if len(parts) < 3: return
             referred_user_id = int(parts[1])
             referrer_id = int(parts[2])
 
@@ -228,7 +233,7 @@ def issue_coupon(bot, user_id, username, first_name, chat_id):
     status = get_reward_status(user_id)
     if status in ['issued', 'redeemed']: return
     if status == 'not_found':
-        add_new_user(user_id, username or "N/A", first_name)
+        add_new_user(user_id, username or "N/A", first_name, 'direct')
     
     coupon_text = ("🎉 Гражданин-товарищ, поздравляем!\n\n"
                    "Тебе досталась фирменная настойка «Евгенич» — почти как путёвка в пионерлагерь, только повеселее.\n\n"
@@ -244,18 +249,38 @@ def issue_coupon(bot, user_id, username, first_name, chat_id):
         logging.error(f"Не удалось отправить стикер-купон: {e}")
     bot.send_message(chat_id, coupon_text, parse_mode="Markdown", reply_markup=redeem_keyboard)
 
-def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users):
-    """Генерирует текст отчета на основе данных."""
-    if issued > 0:
-        conversion_rate = round((redeemed / issued) * 100, 1)
-    else:
-        conversion_rate = 0
+def generate_super_report_text(start_time, end_time, report_data):
+    """Генерирует текст нового 'супер-отчета'."""
+    issued = report_data.get("issued", 0)
+    redeemed = report_data.get("redeemed", 0)
+    redeemed_users = report_data.get("redeemed_users", [])
+    sources = report_data.get("sources", {})
+    total_redeem_time = report_data.get("total_redeem_time_seconds", 0)
+
+    conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
+    
+    avg_redeem_time_str = "н/д"
+    if redeemed > 0:
+        avg_seconds = total_redeem_time / redeemed
+        hours = int(avg_seconds // 3600)
+        minutes = int((avg_seconds % 3600) // 60)
+        avg_redeem_time_str = f"{hours} ч {minutes} мин"
+
     report_date = end_time.strftime('%d.%m.%Y')
-    header = f"**#Настойка_за_Подписку ({report_date})**\n\n"
+    header = f"**#Настойка_за_Подписку (Аналитика за {report_date})**\n\n"
     period_str = f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
     stats = (f"✅ **Выдано купонов:** {issued}\n"
              f"🥃 **Погашено настоек:** {redeemed}\n"
-             f"📈 **Конверсия:** {conversion_rate}%\n")
+             f"📈 **Конверсия:** {conversion_rate}%\n"
+             f"⏱️ **Среднее время до погашения:** {avg_redeem_time_str}\n")
+    
+    sources_str = ""
+    if sources:
+        sources_str += "\n**Источники подписчиков:**\n"
+        sorted_sources = sorted(sources.items(), key=lambda item: item[1], reverse=True)
+        for source, count in sorted_sources:
+            sources_str += f"• {source}: {count}\n"
+    
     users_str = ""
     if redeemed_users:
         users_str += "\n**Настойку получили:**\n"
@@ -263,13 +288,17 @@ def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users)
             users_str += f"• {user}\n"
         if len(redeemed_users) > 10:
             users_str += f"...и еще {len(redeemed_users) - 10}."
-    return header + period_str + stats + users_str
+            
+    return header + period_str + stats + sources_str + users_str
 
 def send_report(bot, chat_id, start_time, end_time):
-    """Формирует и отправляет отчет в указанный чат."""
+    """Универсальная функция для отправки отчета."""
     try:
-        issued, redeemed, redeemed_users = get_report_data_for_period(start_time, end_time)
-        report_text = generate_report_text(start_time, end_time, issued, redeemed, redeemed_users)
+        report_data = get_super_report_data(start_time, end_time)
+        if not report_data or report_data.get("issued", 0) == 0:
+            bot.send_message(chat_id, "За указанный период нет данных для отчета.")
+            return
+        report_text = generate_super_report_text(start_time, end_time, report_data)
         bot.send_message(chat_id, report_text, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
