@@ -4,9 +4,13 @@ from telebot import types
 import pytz
 from config import (
     CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID,
-    ADMIN_IDS, REPORT_CHAT_ID
+    FRIEND_BONUS_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID
 )
-from g_sheets import get_reward_status, add_new_user, redeem_reward, get_report_data_for_period
+from g_sheets import (
+    get_reward_status, add_new_user, redeem_reward, get_report_data_for_period,
+    get_referrer_id_from_user, count_successful_referrals, mark_referral_bonus_claimed
+)
+from scheduler import scheduler
 
 def register_handlers(bot):
     """Регистрирует все обработчики сообщений и кнопок."""
@@ -15,19 +19,55 @@ def register_handlers(bot):
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
         user_id = message.from_user.id
+        referrer_id = None
+        
+        # Логика для реферальных ссылок
+        args = message.text.split()
+        if len(args) > 1 and args[1].startswith('ref_'):
+            try:
+                referrer_id = int(args[1].replace('ref_', ''))
+            except (ValueError, IndexError):
+                pass
+        
+        # Проверяем, есть ли юзер в базе. Если нет - добавляем.
+        if get_reward_status(user_id) == 'not_found':
+            add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, referrer_id)
+            if referrer_id:
+                bot.send_message(user_id, "🤝 Привет, товарищ! Вижу, тебя направил сознательный гражданин. Проходи, не стесняйся. У нас тут почти коммунизм — первая бесплатно.")
+
         status = get_reward_status(user_id)
         if status in ['issued', 'redeemed']:
-            bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉\n\nЕсли ищешь ссылку на наш канал, просто отправь команду /channel.")
+            # Для старых юзеров просто покажем постоянную клавиатуру без приветствия
+            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
+            menu_button = types.KeyboardButton("📖 Меню")
+            friend_button = types.KeyboardButton("🤝 Привести товарища")
+            keyboard.row(gift_button, menu_button)
+            keyboard.row(friend_button)
+            bot.send_message(user_id, "С возвращением! Рады видеть вас снова. 😉", reply_markup=keyboard)
         else:
+            # Для новых - одноразовую
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
             get_gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
             keyboard.add(get_gift_button)
-            bot.send_message(message.chat.id,
-                             "Привет, товарищ! Готов обменять подписку на вкус детства?",
-                             reply_markup=keyboard)
+            bot.send_message(message.chat.id, "👋 Здравствуй, товарищ! Партия дает тебе уникальный шанс: обменять подписку на дефицитный продукт — фирменную настойку «Евгенич»! Жми на кнопку, не тяни.", reply_markup=keyboard)
+
+    @bot.message_handler(commands=['friend'])
+    @bot.message_handler(func=lambda message: message.text == "🤝 Привести товарища")
+    def handle_friend_command(message: types.Message):
+        user_id = message.from_user.id
+        bot_username = bot.get_me().username
+        ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
+        text = (
+            "💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
+            f"Вот твоя персональная директива на привлечение нового бойца:\n`{ref_link}`\n\n"
+            "Отправь ее другу. Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит дефицитной закуской! 🥖\n\n"
+            "*Помни, план — не более 5 товарищей.*"
+        )
+        bot.send_message(user_id, text, parse_mode="Markdown")
 
     @bot.message_handler(commands=['channel'])
-    def handle_channel_command(message):
+    def handle_channel_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
         channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
         url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
@@ -35,7 +75,8 @@ def register_handlers(bot):
         bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
 
     @bot.message_handler(commands=['menu'])
-    def handle_menu_command(message):
+    @bot.message_handler(func=lambda message: message.text == "📖 Меню")
+    def handle_menu_command(message: types.Message):
         keyboard = types.InlineKeyboardMarkup()
         url_button = types.InlineKeyboardButton(text="📖 Открыть меню бара", url="https://spb.evgenich.bar/menu")
         keyboard.add(url_button)
@@ -98,6 +139,12 @@ def register_handlers(bot):
                 bot.send_sticker(call.message.chat.id, THANK_YOU_STICKER_ID)
             except Exception as e:
                 logging.error(f"Не удалось отправить прощальный стикер: {e}")
+            
+            referrer_id = get_referrer_id_from_user(user_id)
+            if referrer_id:
+                query = f'/check_referral_and_give_bonus {user_id} {referrer_id}'
+                scheduler.schedule(query=query, run_after_seconds=86400) # 24 часа
+                logging.info(f"Запланирована проверка реферала {user_id} для пригласившего {referrer_id}.")
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
 
@@ -138,10 +185,9 @@ def register_handlers(bot):
             start_time = now_moscow - datetime.timedelta(days=30)
         else:
             return
-
         send_report(bot, call.message.chat.id, start_time, end_time)
 
-    # === СКРЫТАЯ КОМАНДА ДЛЯ ПЛАНИРОВЩИКА ===
+    # === СКРЫТЫЕ КОМАНДЫ ДЛЯ ПЛАНИРОВЩИКА ===
     @bot.message_handler(commands=['send_daily_report'])
     def handle_send_report_command(message):
         tz_moscow = pytz.timezone('Europe/Moscow')
@@ -150,11 +196,45 @@ def register_handlers(bot):
         start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
         send_report(bot, REPORT_CHAT_ID, start_time, end_time)
 
+    @bot.message_handler(commands=['check_referral_and_give_bonus'])
+    def handle_check_referral_command(message):
+        try:
+            parts = message.text.split()
+            referred_user_id = int(parts[1])
+            referrer_id = int(parts[2])
+
+            member = bot.get_chat_member(CHANNEL_ID, referred_user_id)
+            if member.status not in ['member', 'administrator', 'creator']:
+                logging.info(f"Реферал {referred_user_id} отписался. Бонус для {referrer_id} не выдан.")
+                return
+
+            ref_count = count_successful_referrals(referrer_id)
+            if ref_count >= 5:
+                logging.info(f"Реферер {referrer_id} достиг лимита бонусов.")
+                return
+
+            bonus_text = ("✊ Товарищ! Твой друг проявил сознательность и остался в наших рядах. Партия тобой гордится!\n\n"
+                          "Вот твой заслуженный бонус. Покажи это сообщение бармену, чтобы получить **фирменные гренки**.")
+            
+            if FRIEND_BONUS_STICKER_ID:
+                try: bot.send_sticker(referrer_id, FRIEND_BONUS_STICKER_ID)
+                except Exception: pass
+            
+            bot.send_message(referrer_id, bonus_text)
+            mark_referral_bonus_claimed(referred_user_id)
+            logging.info(f"Бонус за реферала {referred_user_id} успешно выдан {referrer_id}.")
+        except Exception as e:
+            logging.error(f"Ошибка при выполнении отложенной задачи по рефералам: {e}")
+
+
 # === Вспомогательные функции (вынесены за пределы register_handlers) ===
 def issue_coupon(bot, user_id, username, first_name, chat_id):
     status = get_reward_status(user_id)
     if status in ['issued', 'redeemed']: return
-    add_new_user(user_id, username or "N/A", first_name)
+    # Если пользователь еще не в базе (например, пришел не по реф. ссылке), добавляем его
+    if status == 'not_found':
+        add_new_user(user_id, username or "N/A", first_name)
+    
     coupon_text = ("🎉 Гражданин-товарищ, поздравляем!\n\n"
                    "Тебе досталась фирменная настойка «Евгенич» — почти как путёвка в пионерлагерь, только повеселее.\n\n"
                    "Что делать — коротко и ясно:\n"
@@ -175,14 +255,12 @@ def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users)
         conversion_rate = round((redeemed / issued) * 100, 1)
     else:
         conversion_rate = 0
-    
     report_date = end_time.strftime('%d.%m.%Y')
     header = f"**#Настойка_за_Подписку ({report_date})**\n\n"
     period_str = f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
     stats = (f"✅ **Выдано купонов:** {issued}\n"
              f"🥃 **Погашено настоек:** {redeemed}\n"
              f"📈 **Конверсия:** {conversion_rate}%\n")
-    
     users_str = ""
     if redeemed_users:
         users_str += "\n**Настойку получили:**\n"
