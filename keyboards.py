@@ -18,8 +18,8 @@ def get_main_menu_keyboard(user_id):
     keyboard.row(ai_help_button, book_button)
     
     if user_id in ADMIN_IDS:
-        restart_button = types.KeyboardButton("/restart")
-        keyboard.row(restart_button)
+        admin_button = types.KeyboardButton("/admin")
+        keyboard.row(admin_button)
         
     return keyboard
 
@@ -122,33 +122,46 @@ def get_secret_chat_keyboard():
     return keyboard
 
 # === INLINE-КЛАВИАТУРЫ ДЛЯ РЕФЕРАЛЬНОЙ ССЫЛКИ ===
+# Эта функция больше не нужна, так как ссылка отправляется текстом
 
-def get_referral_link_keyboard(ref_link):
-    """Клавиатура с кнопкой-ссылкой для друга."""
-    keyboard = types.InlineKeyboardMarkup()
-    url_button = types.InlineKeyboardButton(text="🔗 Ссылка для товарища", url=ref_link)
-    keyboard.add(url_button)
+# === INLINE-КЛАВИАТУРЫ ДЛЯ AI-ОБРАТНОЙ СВЯЗИ ===
+
+def get_ai_feedback_keyboard():
+    """Клавиатура для оценки ответа AI."""
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    like_button = types.InlineKeyboardButton("👍 Отлично", callback_data="ai_feedback_good")
+    dislike_button = types.InlineKeyboardButton("👎 Не то", callback_data="ai_feedback_bad")
+    keyboard.add(like_button, dislike_button)
     return keyboard
 
-# === INLINE-КЛАВИАТУРЫ ДЛЯ АДМИН-ПАНЕЛИ ===
+# === INLINE-КЛАВИАТУРЫ ДЛЯ АДМИН-ПАНЕЛИ (ПЕРЕРАБОТКА) ===
 
-def get_admin_main_keyboard():
-    """Главное меню админ-панели."""
+def get_boss_main_keyboard():
+    """Главное меню для БОССА."""
     keyboard = types.InlineKeyboardMarkup(row_width=1)
+    features_button = types.InlineKeyboardButton("⚙️ Управление фичами", callback_data="boss_menu_features")
     reports_button = types.InlineKeyboardButton("📊 Стандартные отчеты", callback_data="admin_menu_reports")
     analytics_button = types.InlineKeyboardButton("📈 Глубокая аналитика", callback_data="admin_menu_analytics")
-    leaderboard_button = types.InlineKeyboardButton("🏆 Доска почета вербовщиков", callback_data="admin_action_leaderboard")
-    keyboard.add(reports_button, analytics_button, leaderboard_button)
+    keyboard.add(features_button, reports_button, analytics_button)
+    return keyboard
+
+def get_boss_features_keyboard():
+    """Меню управления фичами."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    secret_word_button = types.InlineKeyboardButton("🤫 Изменить секретное слово", callback_data="boss_action_change_secret")
+    back_button = types.InlineKeyboardButton("⬅️ Назад в главное меню", callback_data="admin_menu_main")
+    keyboard.add(secret_word_button, back_button)
     return keyboard
 
 def get_admin_reports_keyboard():
-    """Меню стандартных отчетов."""
+    """Меню стандартных отчетов (добавили Ударника месяца)."""
     keyboard = types.InlineKeyboardMarkup(row_width=1)
+    leaderboard_button = types.InlineKeyboardButton("🏆 Ударник месяца", callback_data="admin_report_leaderboard")
     today_report_button = types.InlineKeyboardButton("📊 Отчет за текущую смену", callback_data="admin_report_today")
     week_report_button = types.InlineKeyboardButton("📅 Отчет за неделю", callback_data="admin_report_week")
     month_report_button = types.InlineKeyboardButton("🗓️ Отчет за месяц", callback_data="admin_report_month")
     back_button = types.InlineKeyboardButton("⬅️ Назад в главное меню", callback_data="admin_menu_main")
-    keyboard.add(today_report_button, week_report_button, month_report_button, back_button)
+    keyboard.add(leaderboard_button, today_report_button, week_report_button, month_report_button, back_button)
     return keyboard
 
 def get_admin_analytics_keyboard():
