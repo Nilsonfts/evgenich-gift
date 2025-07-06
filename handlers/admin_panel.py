@@ -1,173 +1,213 @@
-# /handlers/callback_query.py
+# /handlers/admin_panel.py
 
 import logging
+import datetime
 from telebot import types
 from telebot.apihelper import ApiTelegramException
+import pytz
 
-# Импортируем конфиги, утилиты, тексты и клавиатуры
-from config import CHANNEL_ID, THANK_YOU_STICKER_ID
+# Импортируем всё необходимое
+from config import ADMIN_IDS
 import g_sheets
-from menu_nastoiki import MENU_DATA
-from food_menu import FOOD_MENU_DATA
 import texts
 import keyboards
 
-# Импортируем вспомогательную функцию из другого файла нашего хендлера
-from .user_commands import issue_coupon
-
-def register_callback_handlers(bot):
-    """Регистрирует обработчики для всех inline-кнопок."""
-
-    @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
-    def handle_check_subscription(call: types.CallbackQuery):
-        """
-        Проверяет подписку на канал после нажатия кнопки.
-        """
-        user_id = call.from_user.id
-        bot.answer_callback_query(call.id, text="Проверяю вашу подписку...")
+# --- Вспомогательные функции для отчетов ---
+def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds):
+    """Формирует текстовое представление отчета."""
+    conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
+    avg_redeem_time_str = "н/д"
+    
+    if redeemed > 0:
+        avg_seconds = total_redeem_time_seconds / redeemed
+        hours, remainder = divmod(int(avg_seconds), 3600)
+        minutes, _ = divmod(remainder, 60)
+        avg_redeem_time_str = f"{hours} ч {minutes} мин"
         
-        try:
-            chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
-            if chat_member.status in ['member', 'administrator', 'creator']:
-                try:
-                    bot.delete_message(call.message.chat.id, call.message.message_id)
-                except ApiTelegramException as e:
-                    logging.warning(f"Не удалось удалить сообщение при проверке подписки (возможно, двойное нажатие): {e}")
-
-                bot.send_message(user_id, texts.SUBSCRIPTION_SUCCESS_TEXT)
-                issue_coupon(bot, user_id, call.message.chat.id)
-            else:
-                bot.answer_callback_query(call.id, texts.SUBSCRIPTION_FAIL_TEXT, show_alert=True)
-        except Exception as e:
-            logging.error(f"Ошибка при проверке подписки для {user_id}: {e}")
-            bot.answer_callback_query(call.id, "Не удалось проверить подписку. Попробуйте позже.", show_alert=True)
-
-    @bot.callback_query_handler(func=lambda call: call.data == "redeem_reward")
-    def handle_redeem_reward(call: types.CallbackQuery):
-        """
-        Обрабатывает погашение купона на настойку.
-        """
-        user_id = call.from_user.id
-        if g_sheets.update_status(user_id, 'redeemed'):
-            try:
-                bot.delete_message(call.message.chat.id, call.message.message_id)
-            except ApiTelegramException as e:
-                logging.warning(f"Не удалось удалить сообщение при погашении купона (возможно, двойное нажатие): {e}")
-
-            bot.send_message(call.message.chat.id, texts.REDEEM_SUCCESS_TEXT)
+    report_date = end_time.strftime('%d.%m.%Y')
+    header = f"**#Настойка_за_Подписку (Аналитика за {report_date})**\n\n"
+    period_str = f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
+    stats = (f"✅ **Выдано купонов:** {issued}\n"
+             f"🥃 **Погашено настоек:** {redeemed}\n"
+             f"📈 **Конверсия:** {conversion_rate}%\n"
+             f"⏱️ **Среднее время до погашения:** {avg_redeem_time_str}\n")
+             
+    sources_str = ""
+    if sources:
+        sources_str += "\n**Источники подписчиков:**\n"
+        sorted_sources = sorted(sources.items(), key=lambda item: item[1], reverse=True)
+        for source, count in sorted_sources:
+            sources_str += f"• {source}: {count}\n"
             
-            try:
-                bot.send_sticker(call.message.chat.id, THANK_YOU_STICKER_ID)
-            except Exception as e:
-                logging.error(f"Не удалось отправить прощальный стикер: {e}")
+    users_str = ""
+    if redeemed_users:
+        users_str += "\n**Настойку получили:**\n"
+        for user in redeemed_users[:10]:
+            users_str += f"• {user}\n"
+        if len(redeemed_users) > 10:
+            users_str += f"...и еще {len(redeemed_users) - 10}."
             
-            bot.send_message(
-                user_id, 
-                texts.POST_REDEEM_INFO_TEXT,
-                reply_markup=keyboards.get_main_menu_keyboard(user_id),
-                parse_mode="Markdown"
-            )
+    return header + period_str + stats + sources_str + users_str
 
-            referrer_id = g_sheets.get_referrer_id_from_user(user_id)
-            if referrer_id:
-                logging.info(f"Пользователь {user_id} погасил награду. Реферер {referrer_id} получит бонус через 24ч.")
+def send_report(bot, chat_id, start_time, end_time):
+    """Запрашивает данные и отправляет отчет в указанный чат."""
+    try:
+        issued, redeemed, redeemed_users, sources, total_redeem_time = g_sheets.get_report_data_for_period(start_time, end_time)
+        if issued == 0:
+            bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
+            return
+        report_text = generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time)
+        bot.send_message(chat_id, report_text, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
+        bot.send_message(chat_id, "Ошибка при формировании отчета.")
+
+# --- Регистрация обработчиков ---
+
+def register_admin_handlers(bot):
+    """Регистрирует все команды и колбэки для новой админ-панели."""
+
+    def is_admin(user_id):
+        return user_id in ADMIN_IDS
+
+    @bot.message_handler(commands=['admin'])
+    def handle_admin_command(message: types.Message):
+        if not is_admin(message.from_user.id):
+            bot.reply_to(message, texts.ADMIN_ACCESS_DENIED)
+            return
+        bot.send_message(
+            message.chat.id, 
+            texts.BOSS_MAIN_MENU, 
+            reply_markup=keyboards.get_boss_main_keyboard(), 
+            parse_mode="Markdown"
+        )
+
+    @bot.message_handler(commands=['restart'])
+    def handle_restart_command(message: types.Message):
+        if not is_admin(message.from_user.id):
+            return
+        user_id = message.from_user.id
+        success, response_message = g_sheets.delete_user(user_id)
+        if success:
+            bot.reply_to(message, f"✅ Успех: {response_message}\nМожете начинать тестирование заново, отправив команду /start.")
         else:
-            bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
+            bot.reply_to(message, f"❌ Ошибка при сбросе профиля: {response_message}")
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("ai_feedback_"))
-    def handle_ai_feedback_callback(call: types.CallbackQuery):
-        """Обрабатывает оценку ответа AI."""
-        rating = "👍" if call.data == "ai_feedback_good" else "👎"
-        bot.answer_callback_query(call.id)
+    @bot.callback_query_handler(func=lambda call: call.data.startswith(('admin_', 'boss_')))
+    def handle_admin_callbacks(call: types.CallbackQuery):
+        if not is_admin(call.from_user.id):
+            bot.answer_callback_query(call.id, texts.ADMIN_ACCESS_DENIED, show_alert=True)
+            return
         
-        feedback_data_storage = getattr(bot, 'feedback_data', {})
-        log_data = feedback_data_storage.pop(call.message.message_id, None)
+        bot.answer_callback_query(call.id)
+        action = call.data
+        
+        try:
+            # --- Навигация по главному меню БОССА ---
+            if action == 'admin_menu_main':
+                bot.edit_message_text(
+                    texts.BOSS_MAIN_MENU, call.message.chat.id, call.message.message_id, 
+                    reply_markup=keyboards.get_boss_main_keyboard(), parse_mode="Markdown"
+                )
+            elif action == 'boss_menu_features':
+                bot.edit_message_text(
+                    texts.BOSS_FEATURES_MENU, call.message.chat.id, call.message.message_id,
+                    reply_markup=keyboards.get_boss_features_keyboard(), parse_mode="Markdown"
+                )
+            # --- Управление фичами ---
+            elif action == 'boss_action_change_secret':
+                msg = bot.send_message(call.message.chat.id, texts.BOSS_ASK_SECRET_WORD)
+                bot.register_next_step_handler(msg, process_secret_word_step)
+            # --- Навигация по меню отчетов и аналитики ---
+            elif action == 'admin_menu_reports':
+                bot.edit_message_text(
+                    texts.ADMIN_REPORTS_MENU, call.message.chat.id, call.message.message_id,
+                    reply_markup=keyboards.get_admin_reports_keyboard(), parse_mode="Markdown"
+                )
+            elif action == 'admin_menu_analytics':
+                bot.edit_message_text(
+                    texts.ADMIN_ANALYTICS_MENU, call.message.chat.id, call.message.message_id,
+                    reply_markup=keyboards.get_admin_analytics_keyboard(), parse_mode="Markdown"
+                )
+            # --- Вызов отчетов ---
+            elif action == 'admin_report_leaderboard':
+                top_list = g_sheets.get_top_referrers_for_month(5)
+                if not top_list:
+                    bot.send_message(call.message.chat.id, "В этом месяце пока никто не привел друзей, которые бы получили настойку.")
+                    return
+                month_name = datetime.datetime.now(pytz.timezone('Europe/Moscow')).strftime('%B %Y')
+                response = f"🏆 **Ударники труда за {month_name}**:\n(учитываются только друзья, погасившие настойку в этом месяце)\n\n"
+                medals = ["🥇", "🥈", "🥉", "4.", "5."]
+                for i, (name, count) in enumerate(top_list):
+                    response += f"{medals[i]} Товарищ **{name}** — {count} чел.\n"
+                bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
 
-        if log_data:
-            g_sheets.log_ai_feedback(
-                user_id=log_data['user_id'],
-                query=log_data['query'],
-                response=log_data['response'],
-                rating=rating
-            )
+            elif action == 'admin_action_sources':
+                stats = g_sheets.get_stats_by_source()
+                if not stats:
+                    bot.send_message(call.message.chat.id, "Нет данных по источникам.")
+                    return
+                response = "**📈 Анализ по источникам (за все время):**\n\n"
+                sorted_stats = sorted(stats.items(), key=lambda item: item[1]['issued'], reverse=True)
+                for source, data in sorted_stats:
+                    conversion = round((data['redeemed'] / data['issued']) * 100, 1) if data['issued'] > 0 else 0
+                    response += f"**{source}:**\n  Подписалось: {data['issued']}\n  Погашено: {data['redeemed']} (Конверсия: {conversion}%)\n\n"
+                bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+
+            elif action == 'admin_action_cohorts':
+                cohorts = g_sheets.get_weekly_cohort_data()
+                if not cohorts:
+                    bot.send_message(call.message.chat.id, "Недостаточно данных для анализа когорт.")
+                    return
+                response = "**🗓️ Анализ по недельным когортам:**\n(сравниваем, как хорошо гости разных недель доходят до бара)\n\n"
+                for cohort in cohorts:
+                    if cohort['issued'] == 0: continue
+                    conversion = round((cohort['redeemed'] / cohort['issued']) * 100, 1)
+                    response += f"**Неделя ({cohort['week']}):**\n  Новых: {cohort['issued']}, Погашено: {cohort['redeemed']} (Конверсия: {conversion}%)\n\n"
+                bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+
+            elif action.startswith('admin_report_'):
+                period = action.split('_')[-1]
+                tz_moscow = pytz.timezone('Europe/Moscow')
+                now_moscow = datetime.datetime.now(tz_moscow)
+                end_time = now_moscow
+                
+                if period == 'today':
+                    if now_moscow.hour < 12: 
+                        start_time = (now_moscow - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+                    else: 
+                        start_time = now_moscow.replace(hour=12, minute=0, second=0, microsecond=0)
+                elif period == 'week': 
+                    start_time = now_moscow - datetime.timedelta(days=7)
+                elif period == 'month': 
+                    start_time = now_moscow - datetime.timedelta(days=30)
+                else: 
+                    return
+                
+                send_report(bot, call.message.chat.id, start_time, end_time)
+        except ApiTelegramException as e:
+            logging.warning(f"Не удалось отредактировать сообщение в админ-панели (возможно, двойное нажатие): {e}")
+
+    # --- Пошаговый ввод для секретного слова ---
+    def process_secret_word_step(message: types.Message):
+        """Первый шаг: получаем новое секретное слово."""
+        if not is_admin(message.from_user.id): return
+        new_word = message.text
+        msg = bot.send_message(message.chat.id, texts.BOSS_ASK_SECRET_BONUS)
+        bot.register_next_step_handler(msg, process_secret_bonus_step, new_word)
+
+    def process_secret_bonus_step(message: types.Message, word):
+        """Второй шаг: получаем бонус и обновляем данные."""
+        if not is_admin(message.from_user.id): return
+        new_bonus = message.text
+        if g_sheets.update_secret_word(word, new_bonus):
+            bot.send_message(message.chat.id, texts.BOSS_SECRET_WORD_SUCCESS)
         else:
-            logging.warning(f"Не найдены данные для логгирования фидбека по message_id {call.message.message_id}")
-
-        try:
-            bot.edit_message_text(texts.AI_FEEDBACK_THANKS, call.message.chat.id, call.message.message_id)
-        except ApiTelegramException as e:
-            logging.warning(f"Не удалось отредактировать сообщение с фидбеком: {e}")
-
-    @bot.callback_query_handler(func=lambda call: call.data == "menu_nastoiki_main")
-    def callback_menu_nastoiki_main(call: types.CallbackQuery):
-        """Показывает главное меню с категориями настоек."""
-        bot.answer_callback_query(call.id)
-        try:
-            bot.edit_message_text(
-                texts.NASTOIKI_MENU_HEADER,
-                call.message.chat.id, 
-                call.message.message_id, 
-                reply_markup=keyboards.get_nastoiki_categories_keyboard(), 
-                parse_mode="Markdown"
-            )
-        except ApiTelegramException as e:
-             logging.warning(f"Не удалось отредактировать сообщение меню (возможно, двойное нажатие): {e}")
-
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("menu_category_"))
-    def callback_menu_category(call: types.CallbackQuery):
-        """Показывает список настоек в выбранной категории."""
-        bot.answer_callback_query(call.id)
-        category_index = int(call.data.split("_")[2])
-        category = MENU_DATA[category_index]
+            bot.send_message(message.chat.id, "❌ Произошла ошибка при обновлении.")
         
-        text = f"**{category['title']}**\n_{category.get('category_narrative', '')}_\n\n"
-        for item in category['items']:
-            text += f"• **{item['name']}** — {item['price']}\n_{item['narrative_desc']}_\n\n"
-        
-        try:
-            bot.edit_message_text(
-                text, 
-                call.message.chat.id, 
-                call.message.message_id, 
-                reply_markup=keyboards.get_nastoiki_items_keyboard(), 
-                parse_mode="Markdown"
-            )
-        except ApiTelegramException as e:
-            logging.warning(f"Не удалось отредактировать сообщение категории (возможно, двойное нажатие): {e}")
-
-    @bot.callback_query_handler(func=lambda call: call.data == "menu_food_main")
-    def callback_menu_food_main(call: types.CallbackQuery):
-        """Показывает главное меню с категориями кухни."""
-        bot.answer_callback_query(call.id)
-        try:
-            bot.edit_message_text(
-                texts.FOOD_MENU_HEADER,
-                call.message.chat.id, 
-                call.message.message_id, 
-                reply_markup=keyboards.get_food_categories_keyboard(), 
-                parse_mode="Markdown"
-            )
-        except ApiTelegramException as e:
-            logging.warning(f"Не удалось отредактировать сообщение меню еды (возможно, двойное нажатие): {e}")
-
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("food_category_"))
-    def callback_food_category(call: types.CallbackQuery):
-        """Показывает список блюд в выбранной категории."""
-        bot.answer_callback_query(call.id)
-        category_name = call.data.replace("food_category_", "")
-        category_items = FOOD_MENU_DATA.get(category_name, [])
-        
-        text = f"**{category_name}**\n\n"
-        for item in category_items:
-            text += f"• {item['name']} - **{item['price']}₽**\n"
-        
-        try:
-            bot.edit_message_text(
-                text, 
-                call.message.chat.id, 
-                call.message.message_id, 
-                reply_markup=keyboards.get_food_items_keyboard(), 
-                parse_mode="Markdown"
-            )
-        except ApiTelegramException as e:
-            logging.warning(f"Не удалось отредактировать сообщение категории еды (возможно, двойное нажатие): {e}")
+        bot.send_message(
+            message.chat.id, 
+            texts.BOSS_MAIN_MENU, 
+            reply_markup=keyboards.get_boss_main_keyboard(), 
+            parse_mode="Markdown"
+        )
