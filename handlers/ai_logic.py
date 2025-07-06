@@ -2,19 +2,17 @@
 
 import logging
 from telebot import types
+from telebot.apihelper import ApiTelegramException
 from tinydb import TinyDB, Query
 
-# Импортируем "мозг"
 from ai_assistant import get_ai_recommendation
 from menu_nastoiki import MENU_DATA
 from food_menu import FOOD_MENU_DATA
 
-# Импортируем нужные функции, тексты и клавиатуры
 from g_sheets import log_conversation_turn, get_conversation_history, get_daily_updates
 import texts
 import keyboards
 
-# Подключаемся к той же БД, что и в booking_flow, чтобы проверять, не занят ли юзер
 db = TinyDB('booking_data.json')
 User = Query()
 
@@ -26,7 +24,6 @@ def register_ai_handlers(bot):
     @bot.message_handler(func=lambda message: message.text == "🗣 Спроси у Евгенича")
     def handle_ai_prompt_button(message: types.Message):
         """Обрабатывает нажатие на кнопку-подсказку для ИИ."""
-        # Проверяем, не находится ли пользователь в процессе бронирования
         if db.contains(User.user_id == message.from_user.id):
             bot.reply_to(message, texts.BOOKING_IN_PROGRESS_TEXT)
             return
@@ -41,21 +38,16 @@ def register_ai_handlers(bot):
         user_id = message.from_user.id
         user_text = message.text
 
-        # Эта проверка больше не нужна здесь, так как обработчик бронирования
-        # регистрируется раньше и перехватывает сообщения от пользователей в процессе.
-
         # Проверяем, не является ли текст известной кнопкой из главного меню
         known_buttons = [
             '📖 Меню', '🤝 Привести товарища', '🗣 Спроси у Евгенича',
-            '🥃 Получить настойку по талону', '📍 Забронировать стол'
+            '🥃 Получить настойку по талону', '📍 Забронировать стол', '👑 /admin'
         ]
         if user_text.startswith('/') or user_text in known_buttons:
             # Игнорируем, так как это должно быть обработано другими хендлерами
             return
 
-        # Если это обычный текст, запускаем логику AI
         logging.info(f"Пользователь {user_id} отправил текстовый запрос AI: '{user_text}'")
-
         log_conversation_turn(user_id, "user", user_text)
 
         history = get_conversation_history(user_id, limit=6)
@@ -70,38 +62,27 @@ def register_ai_handlers(bot):
             food_menu_data=FOOD_MENU_DATA,
             daily_updates=daily_updates
         )
+        
+        log_conversation_turn(user_id, "assistant", ai_response)
 
-        # Обрабатываем ответ от AI
         if "[START_BOOKING_FLOW]" in ai_response:
             logging.info(f"AI определил намерение бронирования для пользователя {user_id}.")
-            log_conversation_turn(user_id, "assistant", "Предложил варианты бронирования.")
             bot.send_message(
                 message.chat.id,
                 texts.BOOKING_PROMPT_TEXT,
                 reply_markup=keyboards.get_booking_options_keyboard()
             )
         else:
-            log_conversation_turn(user_id, "assistant", ai_response)
-            bot.reply_to(message, ai_response, parse_mode="Markdown")
+            try:
+                # Сначала пытаемся отправить с форматированием Markdown
+                bot.reply_to(message, ai_response, parse_mode="Markdown")
+            except ApiTelegramException as e:
+                if "can't parse entities" in e.description:
+                    # Если ошибка в форматировании - отправляем как простой текст
+                    logging.warning(f"Ошибка парсинга Markdown. Отправляю без форматирования. Текст: {ai_response}")
+                    bot.reply_to(message, ai_response, parse_mode=None)
+                else:
+                    # Если другая ошибка API - логируем и не падаем
+                    logging.error(f"Неизвестная ошибка Telegram API при отправке ответа AI: {e}")
 
-            # --- ИСПРАВЛЕНИЕ: Отправляем кнопки, только если это не ответ-заглушка ---
-            if "плёнку зажевало" not in ai_response:
-                try:
-                    feedback_message = bot.send_message(
-                        message.chat.id,
-                        texts.AI_FEEDBACK_PROMPT,
-                        reply_markup=keyboards.get_ai_feedback_keyboard()
-                    )
-
-                    # Инициализируем хранилище, если его нет
-                    if not hasattr(bot, 'feedback_data'):
-                        bot.feedback_data = {}
-
-                    # Сохраняем данные, нужные для логгирования
-                    bot.feedback_data[feedback_message.message_id] = {
-                        'user_id': user_id,
-                        'query': user_text,
-                        'response': ai_response
-                    }
-                except Exception as e:
-                    logging.error(f"Не удалось отправить кнопки для обратной связи AI: {e}")
+        # БЛОК ОТПРАВКИ КНОПОК ОБРАТНОЙ СВЯЗИ ПОЛНОСТЬЮ УДАЛЕН
