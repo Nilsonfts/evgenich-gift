@@ -70,34 +70,26 @@ def register_callback_handlers(bot):
 
             referrer_id = g_sheets.get_referrer_id_from_user(user_id)
             if referrer_id:
-                logging.info(f"Пользователь {user_id} погасил награду. Реферер {referrer_id} получит бонус через 24ч.")
+                logging.info(f"Пользователь {user_id} погасил награду. Реферер {referrer_id} получит бонус через 48ч.")
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("ai_feedback_"))
-    def handle_ai_feedback_callback(call: types.CallbackQuery):
-        """Обрабатывает оценку ответа AI."""
-        rating = "👍" if call.data == "ai_feedback_good" else "👎"
+    # --- Обработчики для навигации по меню ---
+
+    @bot.callback_query_handler(func=lambda call: call.data == "main_menu_choice")
+    def callback_main_menu_choice(call: types.CallbackQuery):
+        """Возвращает к главному выбору меню (Настойки/Кухня)."""
         bot.answer_callback_query(call.id)
-        
-        feedback_data_storage = getattr(bot, 'feedback_data', {})
-        log_data = feedback_data_storage.pop(call.message.message_id, None)
-
-        if log_data:
-            g_sheets.log_ai_feedback(
-                user_id=log_data['user_id'],
-                query=log_data['query'],
-                response=log_data['response'],
-                rating=rating
-            )
-        else:
-            logging.warning(f"Не найдены данные для логгирования фидбека по message_id {call.message.message_id}")
-
         try:
-            bot.edit_message_text(texts.AI_FEEDBACK_THANKS, call.message.chat.id, call.message.message_id)
+            bot.edit_message_text(
+                texts.MENU_PROMPT_TEXT,
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=keyboards.get_menu_choice_keyboard()
+            )
         except ApiTelegramException as e:
-            logging.warning(f"Не удалось отредактировать сообщение с фидбеком: {e}")
-
+            logging.warning(f"Не удалось вернуться к выбору меню: {e}")
+            
     @bot.callback_query_handler(func=lambda call: call.data == "menu_nastoiki_main")
     def callback_menu_nastoiki_main(call: types.CallbackQuery):
         """Показывает главное меню с категориями настоек."""
