@@ -36,9 +36,8 @@ def register_ai_handlers(bot):
         user_id = message.from_user.id
         user_text = message.text
 
-        # 1. Проверяем, не находится ли пользователь в процессе бронирования
-        if db.contains(User.user_id == user_id):
-            return
+        # 1. Проверяем, не находится ли пользователь в процессе бронирования (ЭТА ЛОГИКА ТЕПЕРЬ В booking_flow.py)
+        # Если да, то этот хендлер не будет вызван, т.к. хендлер бронирования стоит раньше.
         
         # 2. Проверяем, не является ли текст командой или известной кнопкой
         known_buttons = [
@@ -79,23 +78,22 @@ def register_ai_handlers(bot):
             log_conversation_turn(user_id, "assistant", ai_response)
             bot.reply_to(message, ai_response, parse_mode="Markdown")
             
-            # Отправляем сообщение с кнопками для обратной связи
-            try:
-                feedback_message = bot.send_message(
-                    message.chat.id, 
-                    texts.AI_FEEDBACK_PROMPT, 
-                    reply_markup=keyboards.get_ai_feedback_keyboard()
-                )
-                
-                # Инициализируем хранилище, если его нет
-                if not hasattr(bot, 'feedback_data'):
-                    bot.feedback_data = {}
-                
-                # Сохраняем данные, нужные для логгирования, привязывая их к ID сообщения с кнопками
-                bot.feedback_data[feedback_message.message_id] = {
-                    'user_id': user_id,
-                    'query': user_text,
-                    'response': ai_response
-                }
-            except Exception as e:
-                logging.error(f"Не удалось отправить кнопки для обратной связи AI: {e}")
+            # --- ИСПРАВЛЕНИЕ: Отправляем кнопки, только если это не ответ-заглушка ---
+            if "плёнку зажевало" not in ai_response:
+                try:
+                    feedback_message = bot.send_message(
+                        message.chat.id, 
+                        texts.AI_FEEDBACK_PROMPT, 
+                        reply_markup=keyboards.get_ai_feedback_keyboard()
+                    )
+                    
+                    if not hasattr(bot, 'feedback_data'):
+                        bot.feedback_data = {}
+                    
+                    bot.feedback_data[feedback_message.message_id] = {
+                        'user_id': user_id,
+                        'query': user_text,
+                        'response': ai_response
+                    }
+                except Exception as e:
+                    logging.error(f"Не удалось отправить кнопки для обратной связи AI: {e}")
