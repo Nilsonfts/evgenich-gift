@@ -183,7 +183,6 @@ def get_conversation_history(user_id: int, limit: int = 10) -> List[Dict[str, st
         )
         rows = cur.fetchall()
         conn.close()
-        # Возвращаем в правильном хронологическом порядке
         for row in reversed(rows):
             history.append({"role": row['role'], "content": row['text']})
         return history
@@ -192,7 +191,7 @@ def get_conversation_history(user_id: int, limit: int = 10) -> List[Dict[str, st
         return history
 
 def log_ai_feedback(user_id: int, query: str, response: str, rating: str):
-    """Логирует оценку ответа AI. query и response пока не используются, но оставлены для совместимости."""
+    """Логирует оценку ответа AI."""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -205,7 +204,7 @@ def log_ai_feedback(user_id: int, query: str, response: str, rating: str):
     except Exception as e:
         logging.error(f"Ошибка логирования обратной связи для {user_id}: {e}")
         
-# --- Функции для отчетов (аналоги g_sheets) ---
+# --- Функции для отчетов ---
 
 def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime.datetime) -> tuple:
     """Собирает данные для отчета за период."""
@@ -213,14 +212,12 @@ def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Выдано купонов
         cur.execute(
             "SELECT COUNT(*) FROM users WHERE signup_date BETWEEN ? AND ? AND status IN ('issued', 'redeemed')",
             (start_time, end_time)
         )
         issued_count = cur.fetchone()[0]
 
-        # Погашено купонов
         cur.execute(
             "SELECT * FROM users WHERE signup_date BETWEEN ? AND ? AND status = 'redeemed' AND redeem_date IS NOT NULL",
             (start_time, end_time)
@@ -230,11 +227,9 @@ def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime
         
         redeemed_users_list = [f"@{row['username']}" if row['username'] != "N/A" else row['first_name'] for row in redeemed_users_rows]
         
-        # Источники
         cur.execute("SELECT source, COUNT(*) FROM users WHERE signup_date BETWEEN ? AND ? GROUP BY source", (start_time, end_time))
         sources = {row['source']: row['COUNT(*)'] for row in cur.fetchall()}
         
-        # Среднее время до погашения
         total_redeem_time_seconds = 0
         if redeemed_count > 0:
             cur.execute(
@@ -255,7 +250,6 @@ def get_top_referrers_for_month(limit: int = 5) -> List[Tuple[str, int]]:
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Получаем ID и количество успешных рефералов за текущий месяц
         cur.execute("""
             SELECT referrer_id, COUNT(*) as ref_count
             FROM users
@@ -272,12 +266,11 @@ def get_top_referrers_for_month(limit: int = 5) -> List[Tuple[str, int]]:
             conn.close()
             return []
 
-        # Получаем имена для этих ID
         top_list = []
         for row in top_referrers_ids:
             cur.execute("SELECT first_name, username FROM users WHERE user_id = ?", (row['referrer_id'],))
             user_info = cur.fetchone()
-            name = f"@{user_info['username']}" if user_info['username'] != "N/A" else user_info['first_name']
+            name = f"@{user_info['username']}" if user_info and user_info['username'] != "N/A" else (user_info['first_name'] if user_info else f"ID {row['referrer_id']}")
             top_list.append((name, row['ref_count']))
             
         conn.close()
@@ -286,17 +279,10 @@ def get_top_referrers_for_month(limit: int = 5) -> List[Tuple[str, int]]:
         logging.error(f"Ошибка получения топа рефереров из SQLite: {e}")
         return []
 
-# Оперативные данные (заглушка, т.к. их удобнее оставить в GSheets или вынести в админку)
+# Оперативные данные (заглушка)
 def get_daily_updates() -> dict:
     """
     Заглушка. Оперативные данные (стоп-лист, акции) удобнее по-прежнему 
-    читать из простого источника вроде Google Sheets или добавить управление ими в админку бота.
+    читать из простого источника или добавить управление ими в админку бота.
     """
-    try:
-        # Здесь можно оставить код для чтения из g_sheets.get_daily_updates()
-        # или вернуть статичные данные
-        import g_sheets
-        return g_sheets.get_daily_updates()
-    except Exception as e:
-        logging.warning(f"Не удалось получить оперативные данные: {e}")
-        return {'special': 'нет', 'stop-list': 'ничего'}
+    return {'special': 'нет', 'stop-list': 'ничего'}
