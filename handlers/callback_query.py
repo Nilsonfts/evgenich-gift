@@ -6,7 +6,7 @@ from telebot.apihelper import ApiTelegramException
 
 # Импортируем конфиги, утилиты, тексты и клавиатуры
 from config import CHANNEL_ID, THANK_YOU_STICKER_ID
-from g_sheets import update_status, get_referrer_id_from_user
+import g_sheets
 from menu_nastoiki import MENU_DATA
 from food_menu import FOOD_MENU_DATA
 import texts
@@ -29,7 +29,6 @@ def register_callback_handlers(bot):
         try:
             chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
             if chat_member.status in ['member', 'administrator', 'creator']:
-                # Удаляем сообщение с кнопкой проверки, чтобы избежать повторных нажатий
                 try:
                     bot.delete_message(call.message.chat.id, call.message.message_id)
                 except ApiTelegramException as e:
@@ -49,8 +48,7 @@ def register_callback_handlers(bot):
         Обрабатывает погашение купона на настойку.
         """
         user_id = call.from_user.id
-        if update_status(user_id, 'redeemed'):
-            # Пытаемся удалить сообщение с купоном. Если не получится - не страшно.
+        if g_sheets.update_status(user_id, 'redeemed'):
             try:
                 bot.delete_message(call.message.chat.id, call.message.message_id)
             except ApiTelegramException as e:
@@ -63,7 +61,6 @@ def register_callback_handlers(bot):
             except Exception as e:
                 logging.error(f"Не удалось отправить прощальный стикер: {e}")
             
-            # Показываем финальную информацию и главное меню
             bot.send_message(
                 user_id, 
                 texts.POST_REDEEM_INFO_TEXT,
@@ -71,14 +68,35 @@ def register_callback_handlers(bot):
                 parse_mode="Markdown"
             )
 
-            # Проверяем, был ли пользователь приглашен кем-то
-            referrer_id = get_referrer_id_from_user(user_id)
+            referrer_id = g_sheets.get_referrer_id_from_user(user_id)
             if referrer_id:
                 logging.info(f"Пользователь {user_id} погасил награду. Реферер {referrer_id} получит бонус через 24ч.")
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
 
-    # --- Обработчики для навигации по меню ---
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("ai_feedback_"))
+    def handle_ai_feedback_callback(call: types.CallbackQuery):
+        """Обрабатывает оценку ответа AI."""
+        rating = "👍" if call.data == "ai_feedback_good" else "👎"
+        bot.answer_callback_query(call.id)
+        
+        feedback_data_storage = getattr(bot, 'feedback_data', {})
+        log_data = feedback_data_storage.pop(call.message.message_id, None)
+
+        if log_data:
+            g_sheets.log_ai_feedback(
+                user_id=log_data['user_id'],
+                query=log_data['query'],
+                response=log_data['response'],
+                rating=rating
+            )
+        else:
+            logging.warning(f"Не найдены данные для логгирования фидбека по message_id {call.message.message_id}")
+
+        try:
+            bot.edit_message_text(texts.AI_FEEDBACK_THANKS, call.message.chat.id, call.message.message_id)
+        except ApiTelegramException as e:
+            logging.warning(f"Не удалось отредактировать сообщение с фидбеком: {e}")
 
     @bot.callback_query_handler(func=lambda call: call.data == "menu_nastoiki_main")
     def callback_menu_nastoiki_main(call: types.CallbackQuery):
@@ -94,9 +112,6 @@ def register_callback_handlers(bot):
             )
         except ApiTelegramException as e:
              logging.warning(f"Не удалось отредактировать сообщение меню (возможно, двойное нажатие): {e}")
-        except Exception as e:
-            logging.error(f"Непредвиденная ошибка при редактировании меню настоек: {e}")
-
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("menu_category_"))
     def callback_menu_category(call: types.CallbackQuery):
