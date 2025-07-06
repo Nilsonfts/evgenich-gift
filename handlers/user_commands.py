@@ -5,7 +5,7 @@ from telebot import types
 
 # Импортируем конфиги и утилиты
 from config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ADMIN_IDS
-from g_sheets import get_reward_status, add_new_user, update_status, get_referrer_id_from_user
+import g_sheets
 
 # Импортируем наши тексты и клавиатуры
 import texts
@@ -15,7 +15,7 @@ import keyboards
 
 def issue_coupon(bot, user_id, chat_id):
     """Выдает пользователю купон на настойку."""
-    update_status(user_id, 'issued')
+    g_sheets.update_status(user_id, 'issued')
     
     try:
         bot.send_sticker(chat_id, NASTOYKA_STICKER_ID)
@@ -41,7 +41,7 @@ def register_user_command_handlers(bot):
         """
         logging.info(f"Пользователь {message.from_user.id} нажал /start с текстом: {message.text}")
         user_id = message.from_user.id
-        status = get_reward_status(user_id)
+        status = g_sheets.get_reward_status(user_id)
         
         if status == 'redeemed':
             logging.info(f"Пользователь {user_id} уже получал награду. Показываем основное меню.")
@@ -58,7 +58,6 @@ def register_user_command_handlers(bot):
             referrer_id = None
             source = 'direct'
             
-            # Парсинг источника или реферала из deeplink
             args = message.text.split(' ', 1)
             if len(args) > 1:
                 payload = args[1]
@@ -70,7 +69,6 @@ def register_user_command_handlers(bot):
                     except (ValueError, IndexError):
                         logging.warning(f"Не удалось распознать ref_id из {payload}")
                 else:
-                    # Словарь с UTM-метками
                     allowed_sources = {
                         'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 
                         'qr_toilet': 'QR в туалете', 'vk': 'VK', 
@@ -79,11 +77,10 @@ def register_user_command_handlers(bot):
                     if payload in allowed_sources:
                         source = allowed_sources[payload]
             
-            add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
+            g_sheets.add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
             if referrer_id:
                 bot.send_message(user_id, texts.NEW_USER_REFERRED_TEXT)
 
-        # Показываем кнопку для получения подарка
         bot.send_message(
             message.chat.id, 
             texts.WELCOME_TEXT, 
@@ -103,21 +100,15 @@ def register_user_command_handlers(bot):
             bot_username = bot.get_me().username
             ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
 
-            # Формируем единое сообщение с инструкцией и ссылкой
-            text_to_send = (
-                "💪 Решил перевыполнить план, товарищ? Правильно!\n\n"
-                "Вот твоя персональная ссылка. Просто нажми на неё, чтобы скопировать, и отправь другу:\n\n"
-                f"`{ref_link}`\n\n"
-                "Как только он пройдет все инстанции и получит свою настойку (и выдержит 'испытательный срок' в 24 часа), партия тебя отблагодарит **еще одной дефицитной настойкой**! 🥃\n\n"
-                "*Помни, план — не более 5 товарищей.*"
-            )
-            
-            bot.send_message(user_id, text_to_send, parse_mode="Markdown")
+            bot.send_message(user_id, texts.FRIEND_PROMPT_TEXT)
+            # Отправляем ссылку как форматированный код для легкого копирования
+            bot.send_message(user_id, f"`{ref_link}`", parse_mode="Markdown")
+            # Отправляем правила акции
+            bot.send_message(user_id, texts.FRIEND_RULES_TEXT, parse_mode="Markdown")
 
         except Exception as e:
             logging.error(f"Критическая ошибка при создании реферальной ссылки для {user_id}: {e}", exc_info=True)
             bot.send_message(user_id, "Что-то пошло не так. Администратор уже разбирается.")
-
 
     @bot.message_handler(commands=['channel'])
     def handle_channel_command(message: types.Message):
@@ -126,7 +117,6 @@ def register_user_command_handlers(bot):
         """
         logging.info(f"Пользователь {message.from_user.id} запросил ссылку на канал.")
         channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
-        # Для кнопки-ссылки клавиатуру нужно генерировать прямо здесь
         keyboard = types.InlineKeyboardMarkup()
         url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
         keyboard.add(url_button)
@@ -144,6 +134,14 @@ def register_user_command_handlers(bot):
             texts.MENU_PROMPT_TEXT, 
             reply_markup=keyboards.get_menu_choice_keyboard()
         )
+        
+    @bot.message_handler(commands=['secret'])
+    def handle_secret_command(message: types.Message):
+        """Показывает пользователю актуальное секретное слово."""
+        logging.info(f"Пользователь {message.from_user.id} запросил секретное слово.")
+        secret_data = g_sheets.get_secret_word_data()
+        bot.send_message(message.chat.id, texts.SECRET_WORD_PROMPT)
+        bot.send_message(message.chat.id, texts.get_secret_word_text(secret_data), parse_mode="Markdown")
 
     @bot.message_handler(commands=['help'])
     def handle_help_command(message: types.Message):
@@ -162,12 +160,11 @@ def register_user_command_handlers(bot):
         Запускает воронку получения настойки за подписку.
         """
         user_id = message.from_user.id
-        status = get_reward_status(user_id)
+        status = g_sheets.get_reward_status(user_id)
         if status in ['issued', 'redeemed']:
             bot.send_message(user_id, "Вы уже получали свой подарок. Спасибо, что вы с нами! 😉")
             return
         
-        # Предварительная проверка подписки, чтобы не показывать лишний раз кнопку
         try:
             chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
             if chat_member.status in ['member', 'administrator', 'creator']:
@@ -175,10 +172,8 @@ def register_user_command_handlers(bot):
                 issue_coupon(bot, user_id, message.chat.id)
                 return
         except Exception as e:
-            # Не страшно, если проверка не удалась, просто продолжаем стандартный флоу
             logging.warning(f"Ошибка при предварительной проверке подписки для {user_id}: {e}")
         
-        # Стандартный флоу с кнопкой проверки
         channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
         try:
             bot.send_sticker(message.chat.id, HELLO_STICKER_ID)
