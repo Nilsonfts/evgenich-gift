@@ -1,11 +1,14 @@
 # /handlers/user_commands.py
 
 import logging
+import datetime
 from telebot import types
+import pytz
 
 # Импортируем конфиги и утилиты
 from config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ADMIN_IDS
 import g_sheets
+import settings_manager # Наш новый менеджер настроек
 
 # Импортируем наши тексты и клавиатуры
 import texts
@@ -135,13 +138,47 @@ def register_user_command_handlers(bot):
             reply_markup=keyboards.get_menu_choice_keyboard()
         )
         
-    @bot.message_handler(commands=['secret'])
-    def handle_secret_command(message: types.Message):
-        """Показывает пользователю актуальное секретное слово."""
-        logging.info(f"Пользователь {message.from_user.id} запросил секретное слово.")
-        secret_data = g_sheets.get_secret_word_data()
-        bot.send_message(message.chat.id, texts.SECRET_WORD_PROMPT)
-        bot.send_message(message.chat.id, texts.get_secret_word_text(secret_data), parse_mode="Markdown")
+    @bot.message_handler(commands=['happy_hours'])
+    def handle_happy_hours(message: types.Message):
+        """Проверяет, действуют ли сейчас счастливые часы."""
+        promo = settings_manager.get_setting("promotions.happy_hours")
+        if not promo or not promo.get('is_active'):
+            bot.reply_to(message, texts.HAPPY_HOURS_FAIL)
+            return
+
+        now = datetime.datetime.now(pytz.timezone('Europe/Moscow'))
+        is_right_day = now.weekday() in promo.get('days', [])
+        
+        start_time_obj = datetime.datetime.strptime(promo.get('start_time'), '%H:%M').time()
+        end_time_obj = datetime.datetime.strptime(promo.get('end_time'), '%H:%M').time()
+        is_right_time = start_time_obj <= now.time() <= end_time_obj
+
+        if is_right_day and is_right_time:
+            bot.reply_to(message, texts.HAPPY_HOURS_PROMPT)
+            bot.send_message(message.chat.id, texts.get_happy_hours_text(promo.get('bonus_text')), parse_mode="Markdown")
+        else:
+            bot.reply_to(message, texts.HAPPY_HOURS_FAIL)
+
+    @bot.message_handler(commands=['parol'])
+    def handle_password_prompt(message: types.Message):
+        """Запрашивает у пользователя пароль дня."""
+        promo = settings_manager.get_setting("promotions.password_of_the_day")
+        if not promo or not promo.get('is_active'):
+            bot.reply_to(message, "Акция с паролем сегодня не действует, товарищ.")
+            return
+        
+        msg = bot.reply_to(message, texts.PASSWORD_PROMPT)
+        bot.register_next_step_handler(msg, check_password_step)
+
+    def check_password_step(message: types.Message):
+        """Проверяет введенный пользователем пароль."""
+        promo = settings_manager.get_setting("promotions.password_of_the_day")
+        # Сравниваем пароли без учета регистра и пробелов
+        if message.text.strip().lower() == promo.get('password', '').lower():
+            bot.reply_to(message, texts.PASSWORD_SUCCESS)
+            bot.send_message(message.chat.id, texts.get_password_bonus_text(promo.get('bonus_text')), parse_mode="Markdown")
+        else:
+            bot.reply_to(message, texts.PASSWORD_FAIL)
 
     @bot.message_handler(commands=['help'])
     def handle_help_command(message: types.Message):
