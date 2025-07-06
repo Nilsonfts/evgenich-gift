@@ -121,9 +121,6 @@ def get_secret_chat_keyboard():
     keyboard.add(url_button)
     return keyboard
 
-# === INLINE-КЛАВИАТУРЫ ДЛЯ РЕФЕРАЛЬНОЙ ССЫЛКИ ===
-# Эта функция больше не нужна, так как ссылка отправляется текстом
-
 # === INLINE-КЛАВИАТУРЫ ДЛЯ AI-ОБРАТНОЙ СВЯЗИ ===
 
 def get_ai_feedback_keyboard():
@@ -134,48 +131,41 @@ def get_ai_feedback_keyboard():
     keyboard.add(like_button, dislike_button)
     return keyboard
 
-# === INLINE-КЛАВИАТУРЫ ДЛЯ АДМИН-ПАНЕЛИ (ПЕРЕРАБОТКА) ===
+# === INLINE-КЛАВИАТУРЫ ДЛЯ АДМИН-ПАНЕЛИ (ПОЛНАЯ ПЕРЕРАБОТКА) ===
 
-def get_boss_main_keyboard():
-    """Главное меню для БОССА."""
+def get_boss_main_keyboard(settings: dict):
+    """
+    Главное меню для БОССА. Динамически показывает статус акций.
+    """
     keyboard = types.InlineKeyboardMarkup(row_width=1)
-    features_button = types.InlineKeyboardButton("⚙️ Управление фичами", callback_data="boss_menu_features")
-    reports_button = types.InlineKeyboardButton("📊 Стандартные отчеты", callback_data="admin_menu_reports")
-    analytics_button = types.InlineKeyboardButton("📈 Глубокая аналитика", callback_data="admin_menu_analytics")
-    keyboard.add(features_button, reports_button, analytics_button)
-    return keyboard
 
-def get_boss_features_keyboard():
-    """Меню управления фичами."""
-    keyboard = types.InlineKeyboardMarkup(row_width=1)
-    secret_word_button = types.InlineKeyboardButton("🤫 Изменить секретное слово", callback_data="boss_action_change_secret")
-    back_button = types.InlineKeyboardButton("⬅️ Назад в главное меню", callback_data="admin_menu_main")
-    keyboard.add(secret_word_button, back_button)
-    return keyboard
+    # --- Акция "Бонус для компании" ---
+    group_bonus_promo = settings['promotions']['group_bonus']
+    group_bonus_status = "✅ ВКЛ" if group_bonus_promo['is_active'] else "❌ ВЫКЛ"
+    group_bonus_button = types.InlineKeyboardButton(
+        f"Бонус для компании: {group_bonus_status}",
+        callback_data="boss_toggle_promotions.group_bonus.is_active"
+    )
 
-def get_admin_reports_keyboard():
-    """Меню стандартных отчетов (добавили Ударника месяца)."""
-    keyboard = types.InlineKeyboardMarkup(row_width=1)
-    leaderboard_button = types.InlineKeyboardButton("🏆 Ударник месяца", callback_data="admin_report_leaderboard")
-    today_report_button = types.InlineKeyboardButton("📊 Отчет за текущую смену", callback_data="admin_report_today")
-    week_report_button = types.InlineKeyboardButton("📅 Отчет за неделю", callback_data="admin_report_week")
-    month_report_button = types.InlineKeyboardButton("🗓️ Отчет за месяц", callback_data="admin_report_month")
-    back_button = types.InlineKeyboardButton("⬅️ Назад в главное меню", callback_data="admin_menu_main")
-    keyboard.add(leaderboard_button, today_report_button, week_report_button, month_report_button, back_button)
-    return keyboard
+    # --- Акция "Счастливые часы" ---
+    happy_hours_promo = settings['promotions']['happy_hours']
+    happy_hours_status = "✅ ВКЛ" if happy_hours_promo['is_active'] else "❌ ВЫКЛ"
+    happy_hours_button = types.InlineKeyboardButton(
+        f"Счастливые часы: {happy_hours_status}",
+        callback_data="boss_toggle_promotions.happy_hours.is_active"
+    )
 
-def get_admin_analytics_keyboard():
-    """Меню аналитических отчетов."""
-    keyboard = types.InlineKeyboardMarkup(row_width=1)
-    source_button = types.InlineKeyboardButton("По источникам", callback_data="admin_action_sources")
-    cohort_button = types.InlineKeyboardButton("Когорты по неделям", callback_data="admin_action_cohorts")
-    back_button = types.InlineKeyboardButton("⬅️ Назад в главное меню", callback_data="admin_menu_main")
-    keyboard.add(source_button, cohort_button, back_button)
-    return keyboard
+    # --- Акция "Пароль дня" ---
+    password_promo = settings['promotions']['password_of_the_day']
+    password_status = "✅ ВКЛ" if password_promo['is_active'] else "❌ ВЫКЛ"
+    password_toggle_button = types.InlineKeyboardButton(
+        f"Пароль дня: {password_status}",
+        callback_data="boss_toggle_promotions.password_of_the_day.is_active"
+    )
+    password_set_button = types.InlineKeyboardButton(
+        "🤫 Установить пароль и бонус",
+        callback_data="boss_set_password"
+    )
 
-def get_back_to_admin_main_keyboard():
-    """Кнопка возврата в главное меню админки."""
-    keyboard = types.InlineKeyboardMarkup()
-    back_button = types.InlineKeyboardButton("⬅️ Назад в главное меню", callback_data="admin_menu_main")
-    keyboard.add(back_button)
+    keyboard.add(group_bonus_button, happy_hours_button, password_toggle_button, password_set_button)
     return keyboard
