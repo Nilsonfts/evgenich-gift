@@ -113,13 +113,14 @@ def register_admin_handlers(bot):
                     reply_markup=keyboards.get_boss_main_keyboard(current_settings), parse_mode="Markdown"
                 )
             elif action == 'boss_menu_features':
+                current_settings = settings_manager.get_all_settings()
                 bot.edit_message_text(
                     texts.BOSS_FEATURES_MENU, call.message.chat.id, call.message.message_id,
-                    reply_markup=keyboards.get_boss_features_keyboard(), parse_mode="Markdown"
+                    reply_markup=keyboards.get_boss_features_keyboard(current_settings), parse_mode="Markdown"
                 )
             # --- Управление фичами ---
             elif action.startswith('boss_toggle_'):
-                feature_path = action.replace('boss_toggle_', '').replace('_', '.')
+                feature_path = action.replace('boss_toggle_', '')
                 current_value = settings_manager.get_setting(feature_path)
                 settings_manager.update_setting(feature_path, not current_value)
                 
