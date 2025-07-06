@@ -18,7 +18,8 @@ def get_main_menu_keyboard(user_id):
     keyboard.row(ai_help_button, book_button)
     
     if user_id in ADMIN_IDS:
-        admin_button = types.KeyboardButton("👑 админка")
+        # ИЗМЕНЕНО: Теперь кнопка отправляет именно команду /admin
+        admin_button = types.KeyboardButton("👑 /admin")
         keyboard.row(admin_button)
         
     return keyboard
