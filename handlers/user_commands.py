@@ -1,14 +1,12 @@
 # /handlers/user_commands.py
 
 import logging
-import datetime
 from telebot import types
-import pytz
 
 # Импортируем конфиги и утилиты
 from config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ADMIN_IDS
-import g_sheets
-import settings_manager # Наш новый менеджер настроек
+import database  # <--- ГЛАВНОЕ ИЗМЕНЕНИЕ: работаем с локальной БД
+import settings_manager
 
 # Импортируем наши тексты и клавиатуры
 import texts
@@ -18,7 +16,7 @@ import keyboards
 
 def issue_coupon(bot, user_id, chat_id):
     """Выдает пользователю купон на настойку."""
-    g_sheets.update_status(user_id, 'issued')
+    database.update_status(user_id, 'issued')
     
     try:
         bot.send_sticker(chat_id, NASTOYKA_STICKER_ID)
@@ -44,7 +42,7 @@ def register_user_command_handlers(bot):
         """
         logging.info(f"Пользователь {message.from_user.id} нажал /start с текстом: {message.text}")
         user_id = message.from_user.id
-        status = g_sheets.get_reward_status(user_id)
+        status = database.get_reward_status(user_id)
         
         if status == 'redeemed':
             logging.info(f"Пользователь {user_id} уже получал награду. Показываем основное меню.")
@@ -57,7 +55,7 @@ def register_user_command_handlers(bot):
             return
 
         if status == 'not_found':
-            logging.info(f"Новый пользователь {user_id}. Регистрируем...")
+            logging.info(f"Новый пользователь {user_id}. Регистрируем в SQLite...")
             referrer_id = None
             source = 'direct'
             
@@ -80,7 +78,7 @@ def register_user_command_handlers(bot):
                     if payload in allowed_sources:
                         source = allowed_sources[payload]
             
-            g_sheets.add_new_user(user_id, message.from_user.username or "N/A", message.from_user.first_name, source, referrer_id)
+            database.add_new_user(user_id, message.from_user.username, message.from_user.first_name, source, referrer_id)
             if referrer_id:
                 bot.send_message(user_id, texts.NEW_USER_REFERRED_TEXT)
 
@@ -94,7 +92,7 @@ def register_user_command_handlers(bot):
     @bot.message_handler(func=lambda message: message.text == "🤝 Привести товарища")
     def handle_friend_command(message: types.Message):
         """
-        Генерирует и отправляет пользователю его персональную реферальную ссылку в виде текста.
+        Генерирует и отправляет пользователю его персональную реферальную ссылку.
         """
         user_id = message.from_user.id
         logging.info(f"Пользователь {user_id} запросил реферальную ссылку.")
@@ -104,26 +102,12 @@ def register_user_command_handlers(bot):
             ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
 
             bot.send_message(user_id, texts.FRIEND_PROMPT_TEXT)
-            # Отправляем ссылку как форматированный код для легкого копирования
             bot.send_message(user_id, f"`{ref_link}`", parse_mode="Markdown")
-            # Отправляем правила акции
             bot.send_message(user_id, texts.FRIEND_RULES_TEXT, parse_mode="Markdown")
 
         except Exception as e:
             logging.error(f"Критическая ошибка при создании реферальной ссылки для {user_id}: {e}", exc_info=True)
             bot.send_message(user_id, "Что-то пошло не так. Администратор уже разбирается.")
-
-    @bot.message_handler(commands=['channel'])
-    def handle_channel_command(message: types.Message):
-        """
-        Отправляет пользователю ссылку на основной Telegram-канал.
-        """
-        logging.info(f"Пользователь {message.from_user.id} запросил ссылку на канал.")
-        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
-        keyboard = types.InlineKeyboardMarkup()
-        url_button = types.InlineKeyboardButton(text="➡️ Перейти на канал", url=channel_url)
-        keyboard.add(url_button)
-        bot.send_message(message.chat.id, "Вот ссылка на наш основной канал:", reply_markup=keyboard)
 
     @bot.message_handler(commands=['menu'])
     @bot.message_handler(func=lambda message: message.text == "📖 Меню")
@@ -137,48 +121,19 @@ def register_user_command_handlers(bot):
             texts.MENU_PROMPT_TEXT, 
             reply_markup=keyboards.get_menu_choice_keyboard()
         )
-        
-    @bot.message_handler(commands=['happy_hours'])
-    def handle_happy_hours(message: types.Message):
-        """Проверяет, действуют ли сейчас счастливые часы."""
-        promo = settings_manager.get_setting("promotions.happy_hours")
-        if not promo or not promo.get('is_active'):
-            bot.reply_to(message, texts.HAPPY_HOURS_FAIL)
-            return
-
-        now = datetime.datetime.now(pytz.timezone('Europe/Moscow'))
-        is_right_day = now.weekday() in promo.get('days', [])
-        
-        start_time_obj = datetime.datetime.strptime(promo.get('start_time'), '%H:%M').time()
-        end_time_obj = datetime.datetime.strptime(promo.get('end_time'), '%H:%M').time()
-        is_right_time = start_time_obj <= now.time() <= end_time_obj
-
-        if is_right_day and is_right_time:
-            bot.reply_to(message, texts.HAPPY_HOURS_PROMPT)
-            bot.send_message(message.chat.id, texts.get_happy_hours_text(promo.get('bonus_text')), parse_mode="Markdown")
+    
+    @bot.message_handler(commands=['voice'])
+    def handle_voice_command(message: types.Message):
+        """Отправляет сохраненное аудио-приветствие."""
+        audio_id = settings_manager.get_setting("greeting_audio_id")
+        if audio_id:
+            try:
+                bot.send_audio(message.chat.id, audio_id, caption="🎙️ Сообщение от Евгенича!")
+            except Exception as e:
+                logging.error(f"Не удалось отправить аудио-приветствие: {e}")
+                bot.send_message(message.chat.id, "Что-то с плёнкой случилось, не могу найти запись... 😥")
         else:
-            bot.reply_to(message, texts.HAPPY_HOURS_FAIL)
-
-    @bot.message_handler(commands=['parol'])
-    def handle_password_prompt(message: types.Message):
-        """Запрашивает у пользователя пароль дня."""
-        promo = settings_manager.get_setting("promotions.password_of_the_day")
-        if not promo or not promo.get('is_active'):
-            bot.reply_to(message, "Акция с паролем сегодня не действует, товарищ.")
-            return
-        
-        msg = bot.reply_to(message, texts.PASSWORD_PROMPT)
-        bot.register_next_step_handler(msg, check_password_step)
-
-    def check_password_step(message: types.Message):
-        """Проверяет введенный пользователем пароль."""
-        promo = settings_manager.get_setting("promotions.password_of_the_day")
-        # Сравниваем пароли без учета регистра и пробелов
-        if message.text.strip().lower() == promo.get('password', '').lower():
-            bot.reply_to(message, texts.PASSWORD_SUCCESS)
-            bot.send_message(message.chat.id, texts.get_password_bonus_text(promo.get('bonus_text')), parse_mode="Markdown")
-        else:
-            bot.reply_to(message, texts.PASSWORD_FAIL)
+            bot.send_message(message.chat.id, "Евгенич пока не записал для вас обращение, товарищ.")
 
     @bot.message_handler(commands=['help'])
     def handle_help_command(message: types.Message):
@@ -197,7 +152,7 @@ def register_user_command_handlers(bot):
         Запускает воронку получения настойки за подписку.
         """
         user_id = message.from_user.id
-        status = g_sheets.get_reward_status(user_id)
+        status = database.get_reward_status(user_id)
         if status in ['issued', 'redeemed']:
             bot.send_message(user_id, "Вы уже получали свой подарок. Спасибо, что вы с нами! 😉")
             return
@@ -211,7 +166,7 @@ def register_user_command_handlers(bot):
         except Exception as e:
             logging.warning(f"Ошибка при предварительной проверке подписки для {user_id}: {e}")
         
-        channel_url = f"https.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
         try:
             bot.send_sticker(message.chat.id, HELLO_STICKER_ID)
         except Exception as e:
