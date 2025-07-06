@@ -2,6 +2,7 @@
 
 import logging
 from telebot import types
+from telebot.apihelper import ApiTelegramException
 
 # Импортируем конфиги, утилиты, тексты и клавиатуры
 from config import CHANNEL_ID, THANK_YOU_STICKER_ID
@@ -29,7 +30,11 @@ def register_callback_handlers(bot):
             chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
             if chat_member.status in ['member', 'administrator', 'creator']:
                 # Удаляем сообщение с кнопкой проверки, чтобы избежать повторных нажатий
-                bot.delete_message(call.message.chat.id, call.message.message_id)
+                try:
+                    bot.delete_message(call.message.chat.id, call.message.message_id)
+                except ApiTelegramException as e:
+                    logging.warning(f"Не удалось удалить сообщение при проверке подписки (возможно, двойное нажатие): {e}")
+
                 bot.send_message(user_id, texts.SUBSCRIPTION_SUCCESS_TEXT)
                 issue_coupon(bot, user_id, call.message.chat.id)
             else:
@@ -45,7 +50,12 @@ def register_callback_handlers(bot):
         """
         user_id = call.from_user.id
         if update_status(user_id, 'redeemed'):
-            bot.delete_message(call.message.chat.id, call.message.message_id)
+            # Пытаемся удалить сообщение с купоном. Если не получится - не страшно.
+            try:
+                bot.delete_message(call.message.chat.id, call.message.message_id)
+            except ApiTelegramException as e:
+                logging.warning(f"Не удалось удалить сообщение при погашении купона (возможно, двойное нажатие): {e}")
+
             bot.send_message(call.message.chat.id, texts.REDEEM_SUCCESS_TEXT)
             
             try:
@@ -82,14 +92,11 @@ def register_callback_handlers(bot):
                 reply_markup=keyboards.get_nastoiki_categories_keyboard(), 
                 parse_mode="Markdown"
             )
-        except Exception:
-            # Если не удалось отредактировать (например, прошло много времени), отправляем новым сообщением
-            bot.send_message(
-                call.message.chat.id, 
-                texts.NASTOIKI_MENU_HEADER, 
-                reply_markup=keyboards.get_nastoiki_categories_keyboard(),
-                parse_mode="Markdown"
-            )
+        except ApiTelegramException as e:
+             logging.warning(f"Не удалось отредактировать сообщение меню (возможно, двойное нажатие): {e}")
+        except Exception as e:
+            logging.error(f"Непредвиденная ошибка при редактировании меню настоек: {e}")
+
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("menu_category_"))
     def callback_menu_category(call: types.CallbackQuery):
@@ -101,26 +108,32 @@ def register_callback_handlers(bot):
         text = f"**{category['title']}**\n_{category.get('category_narrative', '')}_\n\n"
         for item in category['items']:
             text += f"• **{item['name']}** — {item['price']}\n_{item['narrative_desc']}_\n\n"
-            
-        bot.edit_message_text(
-            text, 
-            call.message.chat.id, 
-            call.message.message_id, 
-            reply_markup=keyboards.get_nastoiki_items_keyboard(), 
-            parse_mode="Markdown"
-        )
+        
+        try:
+            bot.edit_message_text(
+                text, 
+                call.message.chat.id, 
+                call.message.message_id, 
+                reply_markup=keyboards.get_nastoiki_items_keyboard(), 
+                parse_mode="Markdown"
+            )
+        except ApiTelegramException as e:
+            logging.warning(f"Не удалось отредактировать сообщение категории (возможно, двойное нажатие): {e}")
 
     @bot.callback_query_handler(func=lambda call: call.data == "menu_food_main")
     def callback_menu_food_main(call: types.CallbackQuery):
         """Показывает главное меню с категориями кухни."""
         bot.answer_callback_query(call.id)
-        bot.edit_message_text(
-            texts.FOOD_MENU_HEADER,
-            call.message.chat.id, 
-            call.message.message_id, 
-            reply_markup=keyboards.get_food_categories_keyboard(), 
-            parse_mode="Markdown"
-        )
+        try:
+            bot.edit_message_text(
+                texts.FOOD_MENU_HEADER,
+                call.message.chat.id, 
+                call.message.message_id, 
+                reply_markup=keyboards.get_food_categories_keyboard(), 
+                parse_mode="Markdown"
+            )
+        except ApiTelegramException as e:
+            logging.warning(f"Не удалось отредактировать сообщение меню еды (возможно, двойное нажатие): {e}")
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("food_category_"))
     def callback_food_category(call: types.CallbackQuery):
@@ -132,11 +145,14 @@ def register_callback_handlers(bot):
         text = f"**{category_name}**\n\n"
         for item in category_items:
             text += f"• {item['name']} - **{item['price']}₽**\n"
-            
-        bot.edit_message_text(
-            text, 
-            call.message.chat.id, 
-            call.message.message_id, 
-            reply_markup=keyboards.get_food_items_keyboard(), 
-            parse_mode="Markdown"
-        )
+        
+        try:
+            bot.edit_message_text(
+                text, 
+                call.message.chat.id, 
+                call.message.message_id, 
+                reply_markup=keyboards.get_food_items_keyboard(), 
+                parse_mode="Markdown"
+            )
+        except ApiTelegramException as e:
+            logging.warning(f"Не удалось отредактировать сообщение категории еды (возможно, двойное нажатие): {e}")
