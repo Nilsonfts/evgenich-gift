@@ -12,7 +12,7 @@ from typing import List, Dict, Any
 
 import openai
 from config import OPENAI_API_KEY
-from knowledge_base import KNOWLEDGE_BASE_TEXT # <<< Импортируем нашу базу знаний
+from knowledge_base import KNOWLEDGE_BASE_TEXT
 
 # OpenAI initialisation
 openai.api_key = OPENAI_API_KEY
@@ -106,11 +106,11 @@ def _create_system_prompt(updates_string: str) -> str:
 
         "# СТИЛЬ ЯЗЫКА\n"
         "Пиши просто. Без длинных сложноподчинённых. Будто на кухне сидишь. Где-то добавь междометий, уменьшительно-ласкательных, говоров («ну что, дружище», «мягонькая», «сам пробовал — огонь!»)\n"
+        "Никогда не используй жирный шрифт. В конце ответа можешь добавить 1-2 уместных эмодзи (🥃, 🎶, 😉).\n"
         "Главное — теплота, ламповость и свойскость. Пусть гость чувствует: он дома.\n"
     )
 
 # --- PUBLIC API ---
-
 def get_ai_recommendation(
     user_query: str,
     conversation_history: List[Dict[str, str]] | None = None,
@@ -120,7 +120,7 @@ def get_ai_recommendation(
     daily_updates: Dict[str, str] | None = None,
     model: str = "gpt-4o",
     temperature: float = 0.85,
-    max_tokens: int = 300,
+    max_tokens: int = 250,
 ) -> str:
     """High‑level entry point used by the Telegram layer."""
     
@@ -136,10 +136,8 @@ def get_ai_recommendation(
     ]
 
     if conversation_history:
-        # Добавляем только последние 4 сообщения для экономии токенов
         messages.extend(conversation_history[-4:])
 
-    # Упрощаем передачу меню, чтобы оно не мешало основному запросу
     user_content = f"Мой запрос: {user_query}\n\n(Для справки, вот часть меню:\nНастойки:\n{menu_string}\n\nЕда:\n{food_string})"
     messages.append({"role": "user", "content": user_content})
 
