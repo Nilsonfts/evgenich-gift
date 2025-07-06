@@ -59,13 +59,15 @@ def get_menu_choice_keyboard():
     return keyboard
 
 def get_nastoiki_categories_keyboard():
-    """Возвращает клавиатуру с категориями настоек."""
+    """Возвращает клавиатуру с категориями настоек И КНОПКОЙ НАЗАД."""
     keyboard = types.InlineKeyboardMarkup(row_width=2)
     buttons = [
         types.InlineKeyboardButton(text=category['title'], callback_data=f"menu_category_{index}")
         for index, category in enumerate(MENU_DATA)
     ]
     keyboard.add(*buttons)
+    # ИЗМЕНЕНО: Добавлена кнопка "Назад"
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Назад к выбору меню", callback_data="main_menu_choice"))
     return keyboard
 
 def get_nastoiki_items_keyboard():
@@ -76,13 +78,15 @@ def get_nastoiki_items_keyboard():
     return keyboard
 
 def get_food_categories_keyboard():
-    """Возвращает клавиатуру с категориями кухни."""
+    """Возвращает клавиатуру с категориями кухни И КНОПКОЙ НАЗАД."""
     keyboard = types.InlineKeyboardMarkup(row_width=2)
     buttons = [
         types.InlineKeyboardButton(text=category, callback_data=f"food_category_{category}")
         for category in FOOD_MENU_DATA.keys()
     ]
     keyboard.add(*buttons)
+    # ИЗМЕНЕНО: Добавлена кнопка "Назад"
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Назад к выбору меню", callback_data="main_menu_choice"))
     return keyboard
 
 def get_food_items_keyboard():
@@ -131,7 +135,7 @@ def get_ai_feedback_keyboard():
     keyboard.add(like_button, dislike_button)
     return keyboard
 
-# === INLINE-КЛАВИАТУРЫ ДЛЯ АДМИН-ПАНЕЛИ (ПОЛНАЯ ПЕРЕРАБОТКА) ===
+# === INLINE-КЛАВИАТУРЫ ДЛЯ АДМИН-ПАНЕЛИ ===
 
 def get_boss_main_keyboard(settings: dict):
     """
