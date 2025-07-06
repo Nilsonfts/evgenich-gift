@@ -8,12 +8,12 @@ import pytz
 
 # Импортируем всё необходимое
 from config import ADMIN_IDS
-import g_sheets
+import database  # <--- ИЗМЕНЕНИЕ
 import texts
 import keyboards
-import settings_manager # Наш новый менеджер настроек
+import settings_manager
 
-# --- Вспомогательные функции для отчетов ---
+# --- Вспомогательные функции для отчетов (остаются без изменений) ---
 def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds):
     """Формирует текстовое представление отчета."""
     conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
@@ -51,9 +51,10 @@ def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users,
     return header + period_str + stats + sources_str + users_str
 
 def send_report(bot, chat_id, start_time, end_time):
-    """Запрашивает данные и отправляет отчет в указанный чат."""
+    """Запрашивает данные из ЛОКАЛЬНОЙ БД и отправляет отчет."""
     try:
-        issued, redeemed, redeemed_users, sources, total_redeem_time = g_sheets.get_report_data_for_period(start_time, end_time)
+        # ИЗМЕНЕНИЕ: вызываем функцию из database
+        issued, redeemed, redeemed_users, sources, total_redeem_time = database.get_report_data_for_period(start_time, end_time)
         if issued == 0:
             bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
             return
@@ -65,7 +66,7 @@ def send_report(bot, chat_id, start_time, end_time):
 
 # --- Регистрация обработчиков ---
 def register_admin_handlers(bot):
-    """Регистрирует все команды и колбэки для новой админ-панели."""
+    """Регистрирует все команды и колбэки для админ-панели."""
 
     def is_admin(user_id):
         return user_id in ADMIN_IDS
@@ -89,7 +90,8 @@ def register_admin_handlers(bot):
         if not is_admin(message.from_user.id):
             return
         user_id = message.from_user.id
-        success, response_message = g_sheets.delete_user(user_id)
+        # ИЗМЕНЕНИЕ: вызываем функцию из database
+        success, response_message = database.delete_user(user_id)
         if success:
             bot.reply_to(message, f"✅ Успех: {response_message}\nМожете начинать тестирование заново, отправив команду /start.")
         else:
@@ -105,48 +107,20 @@ def register_admin_handlers(bot):
         action = call.data
 
         try:
-            # --- Навигация по главному меню БОССА ---
-            if action == 'boss_admin_menu_main': # Используем новый колбэк для возврата
-                current_settings = settings_manager.get_all_settings()
-                bot.edit_message_text(
-                    texts.BOSS_MAIN_MENU, call.message.chat.id, call.message.message_id, 
-                    reply_markup=keyboards.get_boss_main_keyboard(current_settings), parse_mode="Markdown"
-                )
-            elif action == 'boss_menu_features':
-                current_settings = settings_manager.get_all_settings()
-                bot.edit_message_text(
-                    texts.BOSS_FEATURES_MENU, call.message.chat.id, call.message.message_id,
-                    reply_markup=keyboards.get_boss_features_keyboard(current_settings), parse_mode="Markdown"
-                )
-            # --- Управление фичами ---
-            elif action.startswith('boss_toggle_'):
-                feature_path = action.replace('boss_toggle_', '')
-                current_value = settings_manager.get_setting(feature_path)
-                settings_manager.update_setting(feature_path, not current_value)
-                
-                new_settings = settings_manager.get_all_settings()
-                bot.edit_message_reply_markup(
-                    call.message.chat.id, call.message.message_id,
-                    reply_markup=keyboards.get_boss_features_keyboard(new_settings)
-                )
+            if action == 'boss_upload_audio':
+                bot.delete_message(call.message.chat.id, call.message.message_id)
+                msg = bot.send_message(call.message.chat.id, "Отправь мне аудиофайл (как голосовое сообщение или файл .mp3/.ogg) для приветствия.")
+                bot.register_next_step_handler(msg, process_audio_upload_step)
+
             elif action == 'boss_set_password':
                 bot.delete_message(call.message.chat.id, call.message.message_id)
                 msg = bot.send_message(call.message.chat.id, texts.BOSS_ASK_PASSWORD_WORD)
                 bot.register_next_step_handler(msg, process_password_word_step)
-            # --- Навигация по меню отчетов и аналитики ---
-            elif action == 'admin_menu_reports':
-                bot.edit_message_text(
-                    texts.ADMIN_REPORTS_MENU, call.message.chat.id, call.message.message_id,
-                    reply_markup=keyboards.get_admin_reports_keyboard(), parse_mode="Markdown"
-                )
-            elif action == 'admin_menu_analytics':
-                bot.edit_message_text(
-                    texts.ADMIN_ANALYTICS_MENU, call.message.chat.id, call.message.message_id,
-                    reply_markup=keyboards.get_admin_analytics_keyboard(), parse_mode="Markdown"
-                )
-            # --- Вызов отчетов ---
+            
+            # --- Отчеты ---
             elif action == 'admin_report_leaderboard':
-                top_list = g_sheets.get_top_referrers_for_month(5)
+                # ИЗМЕНЕНИЕ: вызываем функцию из database
+                top_list = database.get_top_referrers_for_month(5)
                 if not top_list:
                     bot.send_message(call.message.chat.id, "В этом месяце пока никто не привел друзей, которые бы получили настойку.")
                     return
@@ -156,31 +130,7 @@ def register_admin_handlers(bot):
                 for i, (name, count) in enumerate(top_list):
                     response += f"{medals[i]} Товарищ **{name}** — {count} чел.\n"
                 bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
-
-            elif action == 'admin_action_sources':
-                stats = g_sheets.get_stats_by_source()
-                if not stats:
-                    bot.send_message(call.message.chat.id, "Нет данных по источникам.")
-                    return
-                response = "**📈 Анализ по источникам (за все время):**\n\n"
-                sorted_stats = sorted(stats.items(), key=lambda item: item[1]['issued'], reverse=True)
-                for source, data in sorted_stats:
-                    conversion = round((data['redeemed'] / data['issued']) * 100, 1) if data['issued'] > 0 else 0
-                    response += f"**{source}:**\n  Подписалось: {data['issued']}\n  Погашено: {data['redeemed']} (Конверсия: {conversion}%)\n\n"
-                bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
-
-            elif action == 'admin_action_cohorts':
-                cohorts = g_sheets.get_weekly_cohort_data()
-                if not cohorts:
-                    bot.send_message(call.message.chat.id, "Недостаточно данных для анализа когорт.")
-                    return
-                response = "**🗓️ Анализ по недельным когортам:**\n(сравниваем, как хорошо гости разных недель доходят до бара)\n\n"
-                for cohort in cohorts:
-                    if cohort['issued'] == 0: continue
-                    conversion = round((cohort['redeemed'] / cohort['issued']) * 100, 1)
-                    response += f"**Неделя ({cohort['week']}):**\n  Новых: {cohort['issued']}, Погашено: {cohort['redeemed']} (Конверсия: {conversion}%)\n\n"
-                bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
-
+            
             elif action.startswith('admin_report_'):
                 period = action.split('_')[-1]
                 tz_moscow = pytz.timezone('Europe/Moscow')
@@ -201,29 +151,28 @@ def register_admin_handlers(bot):
                 
                 send_report(bot, call.message.chat.id, start_time, end_time)
         except ApiTelegramException as e:
-            logging.warning(f"Не удалось отредактировать сообщение в админ-панели (возможно, двойное нажатие): {e}")
+            logging.warning(f"Не удалось обработать колбэк в админ-панели: {e}")
 
-    # --- Пошаговый ввод для секретного слова ---
+    # --- Пошаговые обработчики ---
+    def process_audio_upload_step(message: types.Message):
+        if not is_admin(message.from_user.id): return
+        if message.audio:
+            file_id = message.audio.file_id
+            settings_manager.update_setting("greeting_audio_id", file_id)
+            bot.reply_to(message, "✅ Аудио-приветствие сохранено! Теперь его можно вызывать командой /voice.")
+            logging.info(f"Админ {message.from_user.id} загрузил новое аудио-приветствие. File ID: {file_id}")
+        else:
+            bot.reply_to(message, "Это не аудиофайл. Попробуй еще раз через админ-панель.")
+
     def process_password_word_step(message: types.Message):
-        """Первый шаг: получаем новое секретное слово."""
         if not is_admin(message.from_user.id): return
         new_word = message.text
         msg = bot.send_message(message.chat.id, texts.BOSS_ASK_PASSWORD_BONUS)
         bot.register_next_step_handler(msg, process_password_bonus_step, new_word)
 
     def process_password_bonus_step(message: types.Message, word):
-        """Второй шаг: получаем бонус и обновляем данные в файле настроек."""
         if not is_admin(message.from_user.id): return
         new_bonus = message.text
         settings_manager.update_setting("promotions.password_of_the_day.password", word)
         settings_manager.update_setting("promotions.password_of_the_day.bonus_text", new_bonus)
-        
         bot.send_message(message.chat.id, texts.BOSS_PASSWORD_SUCCESS)
-        
-        current_settings = settings_manager.get_all_settings()
-        bot.send_message(
-            message.chat.id,
-            texts.BOSS_MAIN_MENU,
-            reply_markup=keyboards.get_boss_main_keyboard(current_settings),
-            parse_mode="Markdown"
-        )
