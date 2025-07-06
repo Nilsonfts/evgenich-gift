@@ -6,10 +6,7 @@ from telebot.apihelper import ApiTelegramException
 from tinydb import TinyDB, Query
 
 from ai_assistant import get_ai_recommendation
-from menu_nastoiki import MENU_DATA
-from food_menu import FOOD_MENU_DATA
-
-from g_sheets import log_conversation_turn, get_conversation_history, get_daily_updates
+import g_sheets
 import texts
 import keyboards
 
@@ -41,29 +38,29 @@ def register_ai_handlers(bot):
         # Проверяем, не является ли текст известной кнопкой из главного меню
         known_buttons = [
             '📖 Меню', '🤝 Привести товарища', '🗣 Спроси у Евгенича',
-            '🥃 Получить настойку по талону', '📍 Забронировать стол', '👑 админка'
+            '🥃 Получить настойку по талону', '📍 Забронировать стол', '👑 /admin'
         ]
         if user_text.startswith('/') or user_text in known_buttons:
             # Игнорируем, так как это должно быть обработано другими хендлерами
             return
 
         logging.info(f"Пользователь {user_id} отправил текстовый запрос AI: '{user_text}'")
-        log_conversation_turn(user_id, "user", user_text)
+        g_sheets.log_conversation_turn(user_id, "user", user_text)
 
-        history = get_conversation_history(user_id, limit=6)
-        daily_updates = get_daily_updates()
+        history = g_sheets.get_conversation_history(user_id, limit=6)
+        daily_updates = g_sheets.get_daily_updates()
 
         bot.send_chat_action(message.chat.id, 'typing')
 
+        # ИЗМЕНЕНИЕ: Вызываем AI без передачи меню.
+        # RAG-механизм внутри ai_assistant.py сам найдет нужную информацию.
         ai_response = get_ai_recommendation(
             user_query=user_text,
             conversation_history=history,
-            menu_data=MENU_DATA,
-            food_menu_data=FOOD_MENU_DATA,
             daily_updates=daily_updates
         )
         
-        log_conversation_turn(user_id, "assistant", ai_response)
+        g_sheets.log_conversation_turn(user_id, "assistant", ai_response)
 
         if "[START_BOOKING_FLOW]" in ai_response:
             logging.info(f"AI определил намерение бронирования для пользователя {user_id}.")
@@ -84,5 +81,3 @@ def register_ai_handlers(bot):
                 else:
                     # Если другая ошибка API - логируем и не падаем
                     logging.error(f"Неизвестная ошибка Telegram API при отправке ответа AI: {e}")
-
-        # БЛОК ОТПРАВКИ КНОПОК ОБРАТНОЙ СВЯЗИ ПОЛНОСТЬЮ УДАЛЕН
