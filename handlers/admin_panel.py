@@ -11,6 +11,7 @@ from config import ADMIN_IDS
 import g_sheets
 import texts
 import keyboards
+import settings_manager # Наш новый менеджер настроек
 
 # --- Вспомогательные функции для отчетов ---
 def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds):
@@ -63,7 +64,6 @@ def send_report(bot, chat_id, start_time, end_time):
         bot.send_message(chat_id, "Ошибка при формировании отчета.")
 
 # --- Регистрация обработчиков ---
-
 def register_admin_handlers(bot):
     """Регистрирует все команды и колбэки для новой админ-панели."""
 
@@ -75,10 +75,12 @@ def register_admin_handlers(bot):
         if not is_admin(message.from_user.id):
             bot.reply_to(message, texts.ADMIN_ACCESS_DENIED)
             return
+        
+        current_settings = settings_manager.get_all_settings()
         bot.send_message(
-            message.chat.id, 
-            texts.BOSS_MAIN_MENU, 
-            reply_markup=keyboards.get_boss_main_keyboard(), 
+            message.chat.id,
+            texts.BOSS_MAIN_MENU,
+            reply_markup=keyboards.get_boss_main_keyboard(current_settings),
             parse_mode="Markdown"
         )
 
@@ -101,13 +103,14 @@ def register_admin_handlers(bot):
         
         bot.answer_callback_query(call.id)
         action = call.data
-        
+
         try:
             # --- Навигация по главному меню БОССА ---
-            if action == 'admin_menu_main':
+            if action == 'boss_admin_menu_main': # Используем новый колбэк для возврата
+                current_settings = settings_manager.get_all_settings()
                 bot.edit_message_text(
                     texts.BOSS_MAIN_MENU, call.message.chat.id, call.message.message_id, 
-                    reply_markup=keyboards.get_boss_main_keyboard(), parse_mode="Markdown"
+                    reply_markup=keyboards.get_boss_main_keyboard(current_settings), parse_mode="Markdown"
                 )
             elif action == 'boss_menu_features':
                 bot.edit_message_text(
@@ -115,9 +118,20 @@ def register_admin_handlers(bot):
                     reply_markup=keyboards.get_boss_features_keyboard(), parse_mode="Markdown"
                 )
             # --- Управление фичами ---
-            elif action == 'boss_action_change_secret':
-                msg = bot.send_message(call.message.chat.id, texts.BOSS_ASK_SECRET_WORD)
-                bot.register_next_step_handler(msg, process_secret_word_step)
+            elif action.startswith('boss_toggle_'):
+                feature_path = action.replace('boss_toggle_', '').replace('_', '.')
+                current_value = settings_manager.get_setting(feature_path)
+                settings_manager.update_setting(feature_path, not current_value)
+                
+                new_settings = settings_manager.get_all_settings()
+                bot.edit_message_reply_markup(
+                    call.message.chat.id, call.message.message_id,
+                    reply_markup=keyboards.get_boss_features_keyboard(new_settings)
+                )
+            elif action == 'boss_set_password':
+                bot.delete_message(call.message.chat.id, call.message.message_id)
+                msg = bot.send_message(call.message.chat.id, texts.BOSS_ASK_PASSWORD_WORD)
+                bot.register_next_step_handler(msg, process_password_word_step)
             # --- Навигация по меню отчетов и аналитики ---
             elif action == 'admin_menu_reports':
                 bot.edit_message_text(
@@ -189,25 +203,26 @@ def register_admin_handlers(bot):
             logging.warning(f"Не удалось отредактировать сообщение в админ-панели (возможно, двойное нажатие): {e}")
 
     # --- Пошаговый ввод для секретного слова ---
-    def process_secret_word_step(message: types.Message):
+    def process_password_word_step(message: types.Message):
         """Первый шаг: получаем новое секретное слово."""
         if not is_admin(message.from_user.id): return
         new_word = message.text
-        msg = bot.send_message(message.chat.id, texts.BOSS_ASK_SECRET_BONUS)
-        bot.register_next_step_handler(msg, process_secret_bonus_step, new_word)
+        msg = bot.send_message(message.chat.id, texts.BOSS_ASK_PASSWORD_BONUS)
+        bot.register_next_step_handler(msg, process_password_bonus_step, new_word)
 
-    def process_secret_bonus_step(message: types.Message, word):
-        """Второй шаг: получаем бонус и обновляем данные."""
+    def process_password_bonus_step(message: types.Message, word):
+        """Второй шаг: получаем бонус и обновляем данные в файле настроек."""
         if not is_admin(message.from_user.id): return
         new_bonus = message.text
-        if g_sheets.update_secret_word(word, new_bonus):
-            bot.send_message(message.chat.id, texts.BOSS_SECRET_WORD_SUCCESS)
-        else:
-            bot.send_message(message.chat.id, "❌ Произошла ошибка при обновлении.")
+        settings_manager.update_setting("promotions.password_of_the_day.password", word)
+        settings_manager.update_setting("promotions.password_of_the_day.bonus_text", new_bonus)
         
+        bot.send_message(message.chat.id, texts.BOSS_PASSWORD_SUCCESS)
+        
+        current_settings = settings_manager.get_all_settings()
         bot.send_message(
-            message.chat.id, 
-            texts.BOSS_MAIN_MENU, 
-            reply_markup=keyboards.get_boss_main_keyboard(), 
+            message.chat.id,
+            texts.BOSS_MAIN_MENU,
+            reply_markup=keyboards.get_boss_main_keyboard(current_settings),
             parse_mode="Markdown"
         )
