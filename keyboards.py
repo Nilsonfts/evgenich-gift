@@ -17,9 +17,10 @@ def get_main_menu_keyboard(user_id):
     keyboard.row(menu_button, friend_button)
     keyboard.row(ai_help_button, book_button)
     
+    # Кнопка будет добавлена только если ID пользователя есть в списке ADMIN_IDS
     if user_id in ADMIN_IDS:
-        # ИЗМЕНЕНО: Теперь кнопка отправляет именно команду /admin
-        admin_button = types.KeyboardButton("👑 /admin")
+        # ИЗМЕНЕНИЕ: Убираем / из текста кнопки для надежности
+        admin_button = types.KeyboardButton("👑 Админка")
         keyboard.row(admin_button)
         
     return keyboard
@@ -156,6 +157,16 @@ def get_boss_main_keyboard(settings: dict):
         "🤫 Установить пароль и бонус",
         callback_data="boss_set_password"
     )
+    audio_upload_button = types.InlineKeyboardButton(
+        "🎤 Загрузить аудио-приветствие",
+        callback_data="boss_upload_audio"
+    )
+    report_button = types.InlineKeyboardButton(
+        "📊 Отчет за последние 24 часа",
+        callback_data="admin_report_manual_daily"
+    )
 
     keyboard.add(group_bonus_button, happy_hours_button, password_toggle_button, password_set_button)
+    keyboard.add(audio_upload_button)
+    keyboard.add(report_button)
     return keyboard
