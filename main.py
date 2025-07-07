@@ -37,10 +37,10 @@ scheduler = BackgroundScheduler(timezone="Europe/Moscow")
 
 # --- Функции для отложенных задач ---
 def send_friend_bonus(referrer_id, friend_name):
-    # ... (код этой функции без изменений)
+    pass # ... (код этой функции без изменений)
 
 def request_feedback(user_id):
-    # ... (код этой функции без изменений)
+    pass# ... (код этой функции без изменений)
 
 # --- НОВАЯ ФУНКЦИЯ ДЛЯ ЕЖЕДНЕВНОГО ОТЧЕТА ---
 def send_daily_report_job():
