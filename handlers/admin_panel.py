@@ -8,12 +8,12 @@ import pytz
 
 # Импортируем всё необходимое
 from config import ADMIN_IDS
-import database  # <--- ИЗМЕНЕНИЕ
+import database
 import texts
 import keyboards
 import settings_manager
 
-# --- Вспомогательные функции для отчетов (остаются без изменений) ---
+# --- Вспомогательные функции для отчетов ---
 def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds):
     """Формирует текстовое представление отчета."""
     conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
@@ -24,10 +24,11 @@ def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users,
         hours, remainder = divmod(int(avg_seconds), 3600)
         minutes, _ = divmod(remainder, 60)
         avg_redeem_time_str = f"{hours} ч {minutes} мин"
-        
+    
     report_date = end_time.strftime('%d.%m.%Y')
-    header = f"**#Настойка_за_Подписку (Аналитика за {report_date})**\n\n"
-    period_str = f"**Период:** с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')}\n\n"
+    header = f"📊 **ОтчетПодпискаТГ ({report_date})** 📊\n\n"
+    
+    period_str = f"**Период:** с {start_time.strftime('%H:%M %d.%m')} по {end_time.strftime('%H:%M %d.%m')}\n\n"
     stats = (f"✅ **Выдано купонов:** {issued}\n"
              f"🥃 **Погашено настоек:** {redeemed}\n"
              f"📈 **Конверсия:** {conversion_rate}%\n"
@@ -40,20 +41,12 @@ def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users,
         for source, count in sorted_sources:
             sources_str += f"• {source}: {count}\n"
             
-    users_str = ""
-    if redeemed_users:
-        users_str += "\n**Настойку получили:**\n"
-        for user in redeemed_users[:10]:
-            users_str += f"• {user}\n"
-        if len(redeemed_users) > 10:
-            users_str += f"...и еще {len(redeemed_users) - 10}."
-            
-    return header + period_str + stats + sources_str + users_str
+    return header + period_str + stats + sources_str
+
 
 def send_report(bot, chat_id, start_time, end_time):
     """Запрашивает данные из ЛОКАЛЬНОЙ БД и отправляет отчет."""
     try:
-        # ИЗМЕНЕНИЕ: вызываем функцию из database
         issued, redeemed, redeemed_users, sources, total_redeem_time = database.get_report_data_for_period(start_time, end_time)
         if issued == 0:
             bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
@@ -71,10 +64,11 @@ def register_admin_handlers(bot):
     def is_admin(user_id):
         return user_id in ADMIN_IDS
 
-    @bot.message_handler(commands=['admin'])
+    # --- ИЗМЕНЕНИЕ: Ловим нажатие кнопки по тексту, а не по команде ---
+    @bot.message_handler(func=lambda message: message.text == "👑 Админка")
     def handle_admin_command(message: types.Message):
         if not is_admin(message.from_user.id):
-            bot.reply_to(message, texts.ADMIN_ACCESS_DENIED)
+            # Эта проверка на всякий случай, т.к. кнопку и так видят только админы
             return
         
         current_settings = settings_manager.get_all_settings()
@@ -90,7 +84,6 @@ def register_admin_handlers(bot):
         if not is_admin(message.from_user.id):
             return
         user_id = message.from_user.id
-        # ИЗМЕНЕНИЕ: вызываем функцию из database
         success, response_message = database.delete_user(user_id)
         if success:
             bot.reply_to(message, f"✅ Успех: {response_message}\nМожете начинать тестирование заново, отправив команду /start.")
@@ -103,11 +96,30 @@ def register_admin_handlers(bot):
             bot.answer_callback_query(call.id, texts.ADMIN_ACCESS_DENIED, show_alert=True)
             return
         
-        bot.answer_callback_query(call.id)
         action = call.data
 
         try:
-            if action == 'boss_upload_audio':
+            bot.answer_callback_query(call.id) # Отвечаем на колбэк сразу
+            
+            if action == 'admin_report_manual_daily':
+                bot.answer_callback_query(call.id, text="Формирую отчет за 24 часа...")
+                tz_moscow = pytz.timezone('Europe/Moscow')
+                end_time = datetime.datetime.now(tz_moscow)
+                start_time = end_time - datetime.timedelta(days=1)
+                send_report(bot, call.message.chat.id, start_time, end_time)
+
+            elif action.startswith('boss_toggle_'):
+                feature_path = action.replace('boss_toggle_', '')
+                current_value = settings_manager.get_setting(feature_path)
+                settings_manager.update_setting(feature_path, not current_value)
+                
+                new_settings = settings_manager.get_all_settings()
+                bot.edit_message_reply_markup(
+                    call.message.chat.id, call.message.message_id,
+                    reply_markup=keyboards.get_boss_main_keyboard(new_settings) # Обновляем главное меню
+                )
+
+            elif action == 'boss_upload_audio':
                 bot.delete_message(call.message.chat.id, call.message.message_id)
                 msg = bot.send_message(call.message.chat.id, "Отправь мне аудиофайл (как голосовое сообщение или файл .mp3/.ogg) для приветствия.")
                 bot.register_next_step_handler(msg, process_audio_upload_step)
@@ -117,9 +129,7 @@ def register_admin_handlers(bot):
                 msg = bot.send_message(call.message.chat.id, texts.BOSS_ASK_PASSWORD_WORD)
                 bot.register_next_step_handler(msg, process_password_word_step)
             
-            # --- Отчеты ---
             elif action == 'admin_report_leaderboard':
-                # ИЗМЕНЕНИЕ: вызываем функцию из database
                 top_list = database.get_top_referrers_for_month(5)
                 if not top_list:
                     bot.send_message(call.message.chat.id, "В этом месяце пока никто не привел друзей, которые бы получили настойку.")
@@ -130,26 +140,7 @@ def register_admin_handlers(bot):
                 for i, (name, count) in enumerate(top_list):
                     response += f"{medals[i]} Товарищ **{name}** — {count} чел.\n"
                 bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
-            
-            elif action.startswith('admin_report_'):
-                period = action.split('_')[-1]
-                tz_moscow = pytz.timezone('Europe/Moscow')
-                now_moscow = datetime.datetime.now(tz_moscow)
-                end_time = now_moscow
-                
-                if period == 'today':
-                    if now_moscow.hour < 12: 
-                        start_time = (now_moscow - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
-                    else: 
-                        start_time = now_moscow.replace(hour=12, minute=0, second=0, microsecond=0)
-                elif period == 'week': 
-                    start_time = now_moscow - datetime.timedelta(days=7)
-                elif period == 'month': 
-                    start_time = now_moscow - datetime.timedelta(days=30)
-                else: 
-                    return
-                
-                send_report(bot, call.message.chat.id, start_time, end_time)
+
         except ApiTelegramException as e:
             logging.warning(f"Не удалось обработать колбэк в админ-панели: {e}")
 
