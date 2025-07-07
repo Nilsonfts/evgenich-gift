@@ -17,16 +17,16 @@ import keyboards
 def issue_coupon(bot, user_id, chat_id):
     """Выдает пользователю купон на настойку."""
     database.update_status(user_id, 'issued')
-    
+
     try:
         bot.send_sticker(chat_id, NASTOYKA_STICKER_ID)
     except Exception as e:
         logging.error(f"Не удалось отправить стикер-купон: {e}")
-        
+
     bot.send_message(
-        chat_id, 
-        texts.COUPON_TEXT, 
-        parse_mode="Markdown", 
+        chat_id,
+        texts.COUPON_TEXT,
+        parse_mode="Markdown",
         reply_markup=keyboards.get_redeem_keyboard()
     )
 
@@ -43,13 +43,13 @@ def register_user_command_handlers(bot):
         logging.info(f"Пользователь {message.from_user.id} нажал /start с текстом: {message.text}")
         user_id = message.from_user.id
         status = database.get_reward_status(user_id)
-        
+
         if status == 'redeemed':
             logging.info(f"Пользователь {user_id} уже получал награду. Показываем основное меню.")
             bot.send_message(
-                user_id, 
+                user_id,
                 texts.ALREADY_REDEEMED_TEXT,
-                reply_markup=keyboards.get_main_menu_keyboard(user_id), 
+                reply_markup=keyboards.get_main_menu_keyboard(user_id),
                 parse_mode="Markdown"
             )
             return
@@ -58,7 +58,7 @@ def register_user_command_handlers(bot):
             logging.info(f"Новый пользователь {user_id}. Регистрируем в SQLite...")
             referrer_id = None
             source = 'direct'
-            
+
             args = message.text.split(' ', 1)
             if len(args) > 1:
                 payload = args[1]
@@ -70,21 +70,28 @@ def register_user_command_handlers(bot):
                     except (ValueError, IndexError):
                         logging.warning(f"Не удалось распознать ref_id из {payload}")
                 else:
+                    # --- ИЗМЕНЕНИЯ ЗДЕСЬ ---
                     allowed_sources = {
-                        'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 
-                        'qr_toilet': 'QR в туалете', 'vk': 'VK', 
-                        'inst': 'Instagram', 'flyer': 'Листовки', 'site': 'Сайт'
+                        'qr_tv': 'QR с ТВ',
+                        'qr_bar': 'QR на баре',
+                        'qr_toilet': 'QR в туалете',
+                        'vk': 'VK',
+                        'inst': 'Instagram',
+                        'flyer': 'Листовки',
+                        'site': 'Сайт',
+                        'qr_waiter': 'QR от официанта', # <-- ДОБАВЛЕНО
+                        'taplink': 'Taplink'            # <-- ДОБАВЛЕНО
                     }
                     if payload in allowed_sources:
                         source = allowed_sources[payload]
-            
+
             database.add_new_user(user_id, message.from_user.username, message.from_user.first_name, source, referrer_id)
             if referrer_id:
                 bot.send_message(user_id, texts.NEW_USER_REFERRED_TEXT)
 
         bot.send_message(
-            message.chat.id, 
-            texts.WELCOME_TEXT, 
+            message.chat.id,
+            texts.WELCOME_TEXT,
             reply_markup=keyboards.get_gift_keyboard()
         )
 
@@ -117,11 +124,11 @@ def register_user_command_handlers(bot):
         """
         logging.info(f"Пользователь {message.from_user.id} открыл меню.")
         bot.send_message(
-            message.chat.id, 
-            texts.MENU_PROMPT_TEXT, 
+            message.chat.id,
+            texts.MENU_PROMPT_TEXT,
             reply_markup=keyboards.get_menu_choice_keyboard()
         )
-    
+
     @bot.message_handler(commands=['voice'])
     def handle_voice_command(message: types.Message):
         """Отправляет сохраненное аудио-приветствие."""
@@ -141,8 +148,8 @@ def register_user_command_handlers(bot):
         Отправляет справочное сообщение с описанием команд бота.
         """
         bot.send_message(
-            message.chat.id, 
-            texts.get_help_text(message.from_user.id, ADMIN_IDS), 
+            message.chat.id,
+            texts.get_help_text(message.from_user.id, ADMIN_IDS),
             parse_mode="Markdown"
         )
 
@@ -156,7 +163,7 @@ def register_user_command_handlers(bot):
         if status in ['issued', 'redeemed']:
             bot.send_message(user_id, "Вы уже получали свой подарок. Спасибо, что вы с нами! 😉")
             return
-        
+
         try:
             chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
             if chat_member.status in ['member', 'administrator', 'creator']:
@@ -165,16 +172,16 @@ def register_user_command_handlers(bot):
                 return
         except Exception as e:
             logging.warning(f"Ошибка при предварительной проверке подписки для {user_id}: {e}")
-        
+
         channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
         try:
             bot.send_sticker(message.chat.id, HELLO_STICKER_ID)
         except Exception as e:
             logging.error(f"Не удалось отправить приветственный стикер: {e}")
-            
+
         bot.send_message(
-            message.chat.id, 
-            texts.SUBSCRIBE_PROMPT_TEXT, 
+            message.chat.id,
+            texts.SUBSCRIBE_PROMPT_TEXT,
             reply_markup=keyboards.get_subscription_keyboard(channel_url),
             parse_mode="Markdown"
         )
