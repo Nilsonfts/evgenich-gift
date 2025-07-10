@@ -52,7 +52,6 @@ def _update_status_in_sheets_in_background(user_id: int, new_status: str, redeem
         if worksheet:
             cell = worksheet.find(str(user_id), in_column=2)
             if cell:
-                # Обновляем статус (5-я колонка) и дату погашения (8-я колонка)
                 worksheet.update_cell(cell.row, 5, new_status)
                 if redeem_time:
                     worksheet.update_cell(cell.row, 8, redeem_time.strftime('%Y-%m-%d %H:%M:%S'))
@@ -73,7 +72,6 @@ def init_db():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        # Добавляем новое поле `last_check_date` в таблицу users
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -85,14 +83,12 @@ def init_db():
                 last_check_date TIMESTAMP
             )""")
         conn.commit()
-        # Проверяем, существует ли колонка, и добавляем если нет (для совместимости)
         try:
             cur.execute("SELECT last_check_date FROM users LIMIT 1")
         except sqlite3.OperationalError:
             logging.info("Обновляю структуру таблицы 'users', добавляю 'last_check_date'...")
             cur.execute("ALTER TABLE users ADD COLUMN last_check_date TIMESTAMP")
             conn.commit()
-        # Остальные таблицы без изменений
         cur.execute("""
             CREATE TABLE IF NOT EXISTS conversation_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, role TEXT,
@@ -138,7 +134,6 @@ def update_status(user_id: int, new_status: str) -> bool:
         conn = get_db_connection()
         cur = conn.cursor()
         if redeem_time:
-            # При погашении сразу ставим дату проверки, чтобы аудитор его проверил
             cur.execute("UPDATE users SET status = ?, redeem_date = ?, last_check_date = ? WHERE user_id = ?", (new_status, redeem_time, datetime.datetime.now(pytz.utc), user_id))
         else:
             cur.execute("UPDATE users SET status = ? WHERE user_id = ?", (new_status, user_id))
@@ -154,92 +149,23 @@ def update_status(user_id: int, new_status: str) -> bool:
         threading.Thread(target=_update_status_in_sheets_in_background, args=(user_id, new_status, redeem_time)).start()
     return updated
 
-def get_redeemed_users_for_audit() -> List[sqlite3.Row]:
-    """Возвращает пользователей со статусом 'redeemed' для проверки подписки."""
+def find_user_by_id_or_username(identifier: str) -> Optional[sqlite3.Row]:
+    """Находит пользователя по ID или @username."""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        # Выбираем только тех, кто погасил купон, но еще не отписался
-        cur.execute("SELECT user_id FROM users WHERE status = 'redeemed'")
-        users = cur.fetchall()
+        clean_identifier = identifier.lstrip('@')
+        if clean_identifier.isdigit():
+            user_id = int(clean_identifier)
+            cur.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        else:
+            cur.execute("SELECT * FROM users WHERE username = ?", (clean_identifier,))
+        user = cur.fetchone()
         conn.close()
-        return users
+        return user
     except Exception as e:
-        logging.error(f"Аудитор | Ошибка получения пользователей для проверки: {e}")
-        return []
-
-def mark_user_as_left(user_id: int):
-    """Меняет статус пользователя на 'redeemed_and_left' и обновляет дату проверки."""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        now = datetime.datetime.now(pytz.utc)
-        cur.execute("UPDATE users SET status = ?, last_check_date = ? WHERE user_id = ?", ('redeemed_and_left', now, user_id))
-        conn.commit()
-        conn.close()
-        logging.info(f"Аудитор | Пользователь {user_id} помечен как отписавшийся.")
-    except Exception as e:
-        logging.error(f"Аудитор | Ошибка при обновлении статуса пользователя {user_id}: {e}")
-
-def get_daily_churn_data(start_time: datetime, end_time: datetime) -> Tuple[int, int]:
-    """Возвращает кол-во погашенных и отписавшихся за указанный период."""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        # Считаем, сколько всего погасили за период
-        cur.execute("SELECT COUNT(*) FROM users WHERE redeem_date BETWEEN ? AND ? AND status IN ('redeemed', 'redeemed_and_left')", (start_time, end_time))
-        redeemed_total = cur.fetchone()[0]
-        # Считаем, сколько из них отписались (статус обновился в тот же период)
-        cur.execute(
-            "SELECT COUNT(*) FROM users WHERE redeem_date BETWEEN ? AND ? AND status = 'redeemed_and_left'",
-            (start_time, end_time)
-        )
-        left_count = cur.fetchone()[0]
-        conn.close()
-        return redeemed_total, left_count
-    except Exception as e:
-        logging.error(f"Отчет | Ошибка получения данных о дневном оттоке: {e}")
-        return 0, 0
-
-def get_full_churn_analysis() -> Tuple[int, Dict[str, int]]:
-    """Возвращает полную аналитику по оттоку за все время."""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT redeem_date, last_check_date FROM users WHERE status = 'redeemed_and_left'")
-        left_users = cur.fetchall()
-        conn.close()
-
-        total_left = len(left_users)
-        lifetime_distribution = {
-            "В течение суток": 0,
-            "1-3 дня": 0,
-            "4-7 дней": 0,
-            "Более недели": 0
-        }
-
-        for user in left_users:
-            if not user['redeem_date'] or not user['last_check_date']:
-                continue
-            # Преобразуем строки из БД в объекты datetime
-            redeem_dt = datetime.datetime.fromisoformat(user['redeem_date'])
-            check_dt = datetime.datetime.fromisoformat(user['last_check_date'])
-
-            lifetime_days = (check_dt - redeem_dt).days
-
-            if lifetime_days <= 1:
-                lifetime_distribution["В течение суток"] += 1
-            elif 1 < lifetime_days <= 3:
-                lifetime_distribution["1-3 дня"] += 1
-            elif 3 < lifetime_days <= 7:
-                lifetime_distribution["4-7 дней"] += 1
-            else:
-                lifetime_distribution["Более недели"] += 1
-
-        return total_left, lifetime_distribution
-    except Exception as e:
-        logging.error(f"Отчет | Ошибка получения полной аналитики по оттоку: {e}")
-        return 0, {}
+        logging.error(f"SQLite | Ошибка поиска пользователя по идентификатору '{identifier}': {e}")
+        return None
 
 def find_user_by_id(user_id: int) -> Optional[sqlite3.Row]:
     try:
@@ -257,118 +183,95 @@ def get_reward_status(user_id: int) -> str:
     user = find_user_by_id(user_id)
     return user['status'] if user else 'not_found'
 
-def delete_user(user_id: int) -> Tuple[bool, str]:
+def get_redeemed_users_for_audit() -> List[sqlite3.Row]:
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
-        deleted = cur.rowcount > 0
+        cur.execute("SELECT user_id FROM users WHERE status = 'redeemed'")
+        users = cur.fetchall()
+        conn.close()
+        return users
+    except Exception as e:
+        logging.error(f"Аудитор | Ошибка получения пользователей для проверки: {e}")
+        return []
+
+def mark_user_as_left(user_id: int):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        now = datetime.datetime.now(pytz.utc)
+        cur.execute("UPDATE users SET status = ?, last_check_date = ? WHERE user_id = ?", ('redeemed_and_left', now, user_id))
         conn.commit()
         conn.close()
-        if deleted:
-            msg = f"Пользователь {user_id} успешно удален из SQLite."
-            logging.info(msg)
-            return True, msg
-        else:
-            msg = f"Пользователь {user_id} не найден в SQLite для удаления."
-            return False, msg
+        logging.info(f"Аудитор | Пользователь {user_id} помечен как отписавшийся.")
     except Exception as e:
-        error_msg = f"Ошибка удаления пользователя {user_id} из SQLite: {e}"
-        logging.error(error_msg)
-        return False, error_msg
+        logging.error(f"Аудитор | Ошибка при обновлении статуса пользователя {user_id}: {e}")
 
-def get_referrer_id_from_user(user_id: int) -> Optional[int]:
-    user = find_user_by_id(user_id)
-    if user and user['referrer_id']:
-        return int(user['referrer_id'])
-    return None
+def get_daily_churn_data(start_time: datetime, end_time: datetime) -> Tuple[int, int]:
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM users WHERE redeem_date BETWEEN ? AND ? AND status IN ('redeemed', 'redeemed_and_left')", (start_time, end_time))
+        redeemed_total = cur.fetchone()[0]
+        cur.execute(
+            "SELECT COUNT(*) FROM users WHERE redeem_date BETWEEN ? AND ? AND status = 'redeemed_and_left'",
+            (start_time, end_time)
+        )
+        left_count = cur.fetchone()[0]
+        conn.close()
+        return redeemed_total, left_count
+    except Exception as e:
+        logging.error(f"Отчет | Ошибка получения данных о дневном оттоке: {e}")
+        return 0, 0
+
+def get_full_churn_analysis() -> Tuple[int, Dict[str, int]]:
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT redeem_date, last_check_date FROM users WHERE status = 'redeemed_and_left'")
+        left_users = cur.fetchall()
+        conn.close()
+        total_left = len(left_users)
+        lifetime_distribution = {"В течение суток": 0, "1-3 дня": 0, "4-7 дней": 0, "Более недели": 0}
+        for user in left_users:
+            if not user['redeem_date'] or not user['last_check_date']: continue
+            redeem_dt = datetime.datetime.fromisoformat(user['redeem_date'])
+            check_dt = datetime.datetime.fromisoformat(user['last_check_date'])
+            lifetime_days = (check_dt - redeem_dt).days
+            if lifetime_days <= 1: lifetime_distribution["В течение суток"] += 1
+            elif 1 < lifetime_days <= 3: lifetime_distribution["1-3 дня"] += 1
+            elif 3 < lifetime_days <= 7: lifetime_distribution["4-7 дней"] += 1
+            else: lifetime_distribution["Более недели"] += 1
+        return total_left, lifetime_distribution
+    except Exception as e:
+        logging.error(f"Отчет | Ошибка получения полной аналитики по оттоку: {e}")
+        return 0, {}
 
 def get_report_data_for_period(start_time: datetime, end_time: datetime) -> tuple:
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-
-        cur.execute(
-            "SELECT COUNT(*) FROM users WHERE signup_date BETWEEN ? AND ? AND status IN ('issued', 'redeemed', 'redeemed_and_left')",
-            (start_time, end_time)
-        )
+        cur.execute("SELECT COUNT(*) FROM users WHERE signup_date BETWEEN ? AND ? AND status IN ('issued', 'redeemed', 'redeemed_and_left')", (start_time, end_time))
         issued_count = cur.fetchone()[0]
-
-        cur.execute(
-            "SELECT COUNT(*) FROM users WHERE redeem_date BETWEEN ? AND ?",
-            (start_time, end_time)
-        )
+        cur.execute("SELECT COUNT(*) FROM users WHERE redeem_date BETWEEN ? AND ?", (start_time, end_time))
         redeemed_count = cur.fetchone()[0]
-
         cur.execute("SELECT source, COUNT(*) FROM users WHERE signup_date BETWEEN ? AND ? GROUP BY source", (start_time, end_time))
         sources = {row['source']: row['COUNT(*)'] for row in cur.fetchall()}
-
         total_redeem_time_seconds = 0
         if redeemed_count > 0:
-            cur.execute(
-                "SELECT SUM(strftime('%s', redeem_date) - strftime('%s', signup_date)) FROM users WHERE redeem_date BETWEEN ? AND ? AND status IN ('redeemed', 'redeemed_and_left')",
-                (start_time, end_time)
-            )
+            cur.execute("SELECT SUM(strftime('%s', redeem_date) - strftime('%s', signup_date)) FROM users WHERE redeem_date BETWEEN ? AND ? AND status IN ('redeemed', 'redeemed_and_left')", (start_time, end_time))
             total_redeem_time_seconds_row = cur.fetchone()[0]
             total_redeem_time_seconds = total_redeem_time_seconds_row or 0
-
-
         conn.close()
-        # Возвращаем заглушку для redeemed_users_list, так как она больше не используется
         return issued_count, redeemed_count, [], sources, total_redeem_time_seconds
     except Exception as e:
         logging.error(f"Ошибка сбора данных для отчета в SQLite: {e}")
         return 0, 0, [], {}, 0
 
-def log_conversation_turn(user_id: int, role: str, text: str):
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO conversation_history (user_id, role, text) VALUES (?, ?, ?)",
-            (user_id, role, text)
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logging.error(f"Ошибка логирования диалога для {user_id}: {e}")
-
-def get_conversation_history(user_id: int, limit: int = 10) -> List[Dict[str, str]]:
-    history = []
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT role, text FROM conversation_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
-            (user_id, limit)
-        )
-        rows = cur.fetchall()
-        conn.close()
-        for row in reversed(rows):
-            history.append({"role": row['role'], "content": row['text']})
-        return history
-    except Exception as e:
-        logging.error(f"Ошибка получения истории диалога для {user_id}: {e}")
-        return history
-
-def log_ai_feedback(user_id: int, query: str, response: str, rating: str):
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO feedback (user_id, rating) VALUES (?, ?)",
-            (user_id, int(rating))
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logging.error(f"Ошибка логирования обратной связи для {user_id}: {e}")
-
 def get_top_referrers_for_month(limit: int = 5) -> List[Tuple[str, int]]:
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        
         cur.execute("""
             SELECT referrer_id, COUNT(*) as ref_count
             FROM users
@@ -380,23 +283,17 @@ def get_top_referrers_for_month(limit: int = 5) -> List[Tuple[str, int]]:
             LIMIT ?
         """, (limit,))
         top_referrers_ids = cur.fetchall()
-
         if not top_referrers_ids:
             conn.close()
             return []
-
         top_list = []
         for row in top_referrers_ids:
             cur.execute("SELECT first_name, username FROM users WHERE user_id = ?", (row['referrer_id'],))
             user_info = cur.fetchone()
             name = f"@{user_info['username']}" if user_info and user_info['username'] != "N/A" else (user_info['first_name'] if user_info else f"ID {row['referrer_id']}")
             top_list.append((name, row['ref_count']))
-            
         conn.close()
         return top_list
     except Exception as e:
         logging.error(f"Ошибка получения топа рефереров из SQLite: {e}")
         return []
-
-def get_daily_updates() -> dict:
-    return {'special': 'нет', 'stop-list': 'ничего'}
