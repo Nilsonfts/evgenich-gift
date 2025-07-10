@@ -4,16 +4,17 @@ import gspread
 from google.oauth2.service_account import Credentials
 import json
 import logging
-from typing import Tuple  # <--- ВОТ ЭТО ИСПРАВЛЕНИЕ: Добавили импорт Tuple
-from datetime import datetime  # <--- И ЭТОТ ИМПОРТ ТОЖЕ НУЖЕН для дат
+from typing import Tuple
+from datetime import datetime
+from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
 
+# Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # --- Настройки ---
-# Путь к БД может отличаться, если бот запущен не из корневой папки!
-# Используем относительный путь, который должен работать на Railway
+# Путь к БД должен быть абсолютным, чтобы работать с любого места
 DB_FILE = "/data/evgenich_data.db"
-EXPORT_SHEET_NAME = "Выгрузка Пользователей"
+EXPORT_SHEET_NAME = "Выгрузка Пользователей" 
 
 # --- Конфигурация столбцов ---
 COLUMN_CONFIG = {
@@ -55,7 +56,7 @@ def do_export() -> Tuple[bool, str]:
         creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
         creds = Credentials.from_service_account_info(
             creds_dict,
-            scopes=['https.www.googleapis.com/auth/spreadsheets']
+            scopes=['https://www.googleapis.com/auth/spreadsheets']
         )
         gc = gspread.authorize(creds)
         spreadsheet = gc.open_by_key(GOOGLE_SHEET_KEY)
@@ -82,13 +83,10 @@ def do_export() -> Tuple[bool, str]:
             ordered_row = []
             for key in column_order_keys:
                 value = user_row[key]
-                # Форматируем дату, если она есть
                 if isinstance(value, str) and ('-' in value and ':' in value):
                      try:
-                         # Пытаемся преобразовать строку в дату и обратно в нужный формат
                          value = datetime.fromisoformat(value).strftime('%Y-%m-%d %H:%M:%S')
                      except ValueError:
-                         # Если не получилось, оставляем как есть
                          pass
                 ordered_row.append(value)
             data_to_upload.append(ordered_row)
