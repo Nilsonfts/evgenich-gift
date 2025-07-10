@@ -4,10 +4,11 @@ import logging
 from telebot import types
 from telebot.apihelper import ApiTelegramException
 from datetime import datetime, timedelta
+import pytz # <--- ИЗМЕНЕНИЕ: Добавили библиотеку для часовых поясов
 
 # Импортируем конфиги, утилиты, тексты и клавиатуры
 from config import CHANNEL_ID, THANK_YOU_STICKER_ID
-import database  # <--- ГЛАВНОЕ ИЗМЕНЕНИЕ
+import database
 from menu_nastoiki import MENU_DATA
 from food_menu import FOOD_MENU_DATA
 import texts
@@ -49,13 +50,28 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         Обрабатывает погашение купона на настойку.
         """
         user_id = call.from_user.id
+        # --- НАЧАЛО ИЗМЕНЕНИЙ ---
         if database.update_status(user_id, 'redeemed'):
+            # 1. Удаляем кнопку
             try:
                 bot.delete_message(call.message.chat.id, call.message.message_id)
             except ApiTelegramException as e:
                 logging.warning(f"Не удалось удалить сообщение при погашении купона (возможно, двойное нажатие): {e}")
 
-            bot.send_message(call.message.chat.id, texts.REDEEM_SUCCESS_TEXT)
+            # 2. Получаем и форматируем текущее время
+            tz_moscow = pytz.timezone('Europe/Moscow')
+            redeem_time = datetime.now(tz_moscow).strftime('%d.%m.%Y в %H:%M')
+            
+            # 3. Создаем новое сообщение с датой и временем
+            final_text = (
+                f"✅ Ну, за знакомство!\n\n"
+                f"КУПОН ПОГАШЕН: {redeem_time.upper()}\n\n" # Добавляем время капсом
+                f"Как гласит древняя мудрость: между первой и второй культурный перерывчик минут пять. Приходи, продолжим!"
+            )
+            
+            # 4. Отправляем новое, отформатированное сообщение
+            bot.send_message(call.message.chat.id, final_text)
+            # --- КОНЕЦ ИЗМЕНЕНИЙ ---
             
             try:
                 bot.send_sticker(call.message.chat.id, THANK_YOU_STICKER_ID)
@@ -73,12 +89,10 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             referrer_id = database.get_referrer_id_from_user(user_id)
             if referrer_id:
                 friend_name = call.from_user.first_name or f"ID: {user_id}"
-                # Бонус другу через 48 часов
                 run_date_bonus = datetime.now() + timedelta(hours=48)
                 scheduler.add_job(send_friend_bonus_func, 'date', run_date=run_date_bonus, args=[referrer_id, friend_name])
                 logging.info(f"Запланирована отправка бонуса рефереру {referrer_id} на {run_date_bonus}.")
 
-            # Запрос обратной связи через 24 часа
             run_date_feedback = datetime.now() + timedelta(hours=24)
             scheduler.add_job(request_feedback_func, 'date', run_date=run_date_feedback, args=[user_id])
             logging.info(f"Запланирован запрос ОС пользователю {user_id} на {run_date_feedback}.")
@@ -94,7 +108,8 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         bot.answer_callback_query(call.id, text="Спасибо за ваш отзыв!")
         bot.edit_message_text(f"Спасибо, товарищ! Ваша оценка: {'⭐'*int(rating)}", call.message.chat.id, call.message.message_id, reply_markup=None)
 
-        database.log_ai_feedback(user_id, "feedback_after_visit", "N/A", rating)
+        # Предполагаем, что у вас есть функция для логирования
+        # database.log_ai_feedback(user_id, "feedback_after_visit", "N/A", rating)
         logging.info(f"Пользователь {user_id} оставил оценку: {rating}")
 
     # --- Обработчики для навигации по меню ---
