@@ -249,13 +249,12 @@ def register_admin_handlers(bot):
                     status_icon = "✅ Активен" if staff['status'] == 'active' else "❌ Неактивен"
                     response = f"{staff['full_name']} ({staff['position']})\nСтатус: {status_icon} | ID: `{staff['telegram_id']}`"
                     bot.send_message(call.message.chat.id, response, parse_mode="Markdown", reply_markup=keyboards.get_staff_management_keyboard(staff['staff_id'], staff['status']))
-
+            
             elif action.startswith('admin_toggle_staff_'):
                 parts = action.split('_')
                 staff_id, new_status = int(parts[3]), parts[4]
                 database.update_staff_status(staff_id, new_status)
                 
-                # Обновляем сообщение с кнопкой
                 all_staff = database.get_all_staff()
                 for s in all_staff:
                     if s['staff_id'] == staff_id:
@@ -285,9 +284,26 @@ def register_admin_handlers(bot):
                 start_time = end_time - datetime.timedelta(days=1)
                 send_report(bot, call.message.chat.id, start_time, end_time)
             elif action == 'admin_churn_analysis':
-                # ... (этот и другие отчеты мы добавим на следующем шаге)
-                bot.send_message(call.message.chat.id, "Отчет 'Анализ оттока' в разработке.")
-
+                total_left, distribution = database.get_full_churn_analysis()
+                if total_left == 0:
+                    bot.send_message(call.message.chat.id, "Пока никто из получивших подарок не отписался. Отличная работа!")
+                    return
+                response = f"💔 **Анализ оттока подписчиков (за все время)**\n\nВсего отписалось после подарка: **{total_left}** чел.\n\n**Как быстро они отписываются:**\n"
+                for period, count in distribution.items():
+                    percentage = round((count / total_left) * 100, 1) if total_left > 0 else 0
+                    response += f"• {period}: **{count}** чел. ({percentage}%)\n"
+                bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+            elif action == 'admin_report_leaderboard':
+                top_list = database.get_top_referrers_for_month(5)
+                if not top_list:
+                    bot.send_message(call.message.chat.id, "В этом месяце пока никто не привел друзей, которые бы получили настойку.")
+                    return
+                month_name = datetime.datetime.now(pytz.timezone('Europe/Moscow')).strftime('%B %Y')
+                response = f"🏆 **Ударники труда за {month_name}**:\n(учитываются только друзья, погасившие настойку в этом месяце)\n\n"
+                medals = ["🥇", "🥈", "🥉", "4.", "5."]
+                for i, (name, count) in enumerate(top_list):
+                    response += f"{medals[i]} Товарищ **{name}** — {count} чел.\n"
+                bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
 
             # УПРАВЛЕНИЕ КОНТЕНТОМ И АКЦИЯМИ
             elif action.startswith('boss_toggle_'):
