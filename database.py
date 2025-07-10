@@ -9,8 +9,14 @@ from typing import Optional, Tuple, List, Dict, Any
 import datetime
 import pytz
 from collections import Counter
+import os # <--- ИЗМЕНЕНИЕ: Добавили импорт 'os'
 
-DB_FILE = "evgenich_data.db"
+# --- ИЗМЕНЕНИЕ: Указываем полный путь к файлу в новой папке ---
+# Теперь база данных будет всегда искаться в папке /data
+DATA_DIR = "/data"
+DB_FILE = os.path.join(DATA_DIR, "evgenich_data.db")
+# --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
 
 # --- Инициализация и структура ---
 
@@ -23,6 +29,9 @@ def get_db_connection():
 def init_db():
     """Инициализирует базу данных и создает таблицы, если их нет."""
     try:
+        # --- ИЗМЕНЕНИЕ: Перед созданием БД убедимся, что папка /data существует ---
+        os.makedirs(DATA_DIR, exist_ok=True)
+        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
         conn = get_db_connection()
         cur = conn.cursor()
         
@@ -67,7 +76,7 @@ def init_db():
     except Exception as e:
         logging.critical(f"Не удалось инициализировать базу данных SQLite: {e}")
 
-# --- Функции для работы с пользователями (замена g_sheets) ---
+# ... (остальной код файла без изменений) ...
 
 def find_user_by_id(user_id: int) -> Optional[sqlite3.Row]:
     """Находит пользователя по ID."""
