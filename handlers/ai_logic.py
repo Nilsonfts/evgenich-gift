@@ -6,9 +6,10 @@ from telebot.apihelper import ApiTelegramException
 from tinydb import TinyDB, Query
 
 from ai_assistant import get_ai_recommendation
-import database  # <--- ИЗМЕНЕНИЕ
+import database
 import texts
 import keyboards
+from config import REPORT_CHAT_ID  # <--- ИЗМЕНЕНИЕ: Импортируем ID чата для отчетов
 
 db = TinyDB('booking_data.json')
 User = Query()
@@ -31,21 +32,33 @@ def register_ai_handlers(bot):
         Обрабатывает любой текстовый запрос, который не был перехвачен
         другими обработчиками (командами, шагами бронирования).
         """
+        # --- ИЗМЕНЕНИЕ: Проверяем, что сообщение пришло не из чата для отчетов ---
+        try:
+            # Сравниваем ID текущего чата с ID чата для отчетов из конфига.
+            # Так как REPORT_CHAT_ID - это строка, а message.chat.id - число,
+            # приводим строку к числу перед сравнением.
+            if message.chat.id == int(REPORT_CHAT_ID):
+                return  # Если ID совпадают, просто выходим из функции, ничего не делая.
+        except (ValueError, TypeError):
+            # Эта проверка на случай, если REPORT_CHAT_ID не задан или имеет неверный формат
+            logging.warning("Не удалось сравнить chat_id с REPORT_CHAT_ID. Проверьте переменную окружения.")
+            pass
+        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
         user_id = message.from_user.id
         user_text = message.text
 
         known_buttons = [
             '📖 Меню', '🤝 Привести товарища', '🗣 Спроси у Евгенича',
-            '🥃 Получить настойку по талону', '📍 Забронировать стол', '👑 /admin'
+            '🥃 Получить настойку по талону', '📍 Забронировать стол', '👑 Админка'
         ]
+        # Изменение: убираем проверку на /admin, так как она теперь по тексту кнопки
         if user_text.startswith('/') or user_text in known_buttons:
             return
 
         logging.info(f"Пользователь {user_id} отправил текстовый запрос AI: '{user_text}'")
-        # ИЗМЕНЕНИЕ: Логируем в локальную БД
         database.log_conversation_turn(user_id, "user", user_text)
 
-        # ИЗМЕНЕНИЕ: Получаем историю и данные из локальной БД
         history = database.get_conversation_history(user_id, limit=6)
         daily_updates = database.get_daily_updates()
 
@@ -56,8 +69,7 @@ def register_ai_handlers(bot):
             conversation_history=history,
             daily_updates=daily_updates
         )
-        
-        # ИЗМЕНЕНИЕ: Логируем ответ AI в локальную БД
+
         database.log_conversation_turn(user_id, "assistant", ai_response)
 
         if "[START_BOOKING_FLOW]" in ai_response:
