@@ -4,13 +4,18 @@ import gspread
 from google.oauth2.service_account import Credentials
 import json
 import logging
-from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
+from typing import Tuple  # <--- ВОТ ЭТО ИСПРАВЛЕНИЕ: Добавили импорт Tuple
+from datetime import datetime  # <--- И ЭТОТ ИМПОРТ ТОЖЕ НУЖЕН для дат
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-DB_FILE = "evgenich_data.db"
+# --- Настройки ---
+# Путь к БД может отличаться, если бот запущен не из корневой папки
+# Используем относительный путь, который должен работать на Railway
+DB_FILE = "/data/evgenich_data.db"
 EXPORT_SHEET_NAME = "Выгрузка Пользователей"
 
+# --- Конфигурация столбцов ---
 COLUMN_CONFIG = {
     "signup_date": "Дата Регистрации",
     "user_id": "ID Пользователя",
@@ -78,10 +83,12 @@ def do_export() -> Tuple[bool, str]:
             for key in column_order_keys:
                 value = user_row[key]
                 # Форматируем дату, если она есть
-                if isinstance(value, str) and 'T' in value:
+                if isinstance(value, str) and ('-' in value and ':' in value):
                      try:
+                         # Пытаемся преобразовать строку в дату и обратно в нужный формат
                          value = datetime.fromisoformat(value).strftime('%Y-%m-%d %H:%M:%S')
-                     except:
+                     except ValueError:
+                         # Если не получилось, оставляем как есть
                          pass
                 ordered_row.append(value)
             data_to_upload.append(ordered_row)
@@ -96,7 +103,5 @@ def do_export() -> Tuple[bool, str]:
         return False, msg
 
 if __name__ == '__main__':
-    # Этот блок будет выполняться, только если запустить файл напрямую
-    # python export_to_sheets.py
     success, message = do_export()
     print(message)
