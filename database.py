@@ -1,40 +1,81 @@
 # database.py
 """
-Модуль для управления базой данных SQLite.
-Заменяет g_sheets.py для повышения производительности и надежности.
+Модуль для управления базой данных SQLite с асинхронным дублированием в Google Sheets.
 """
 import sqlite3
 import logging
 from typing import Optional, Tuple, List, Dict, Any
 import datetime
 import pytz
-from collections import Counter
-import os # <--- ИЗМЕНЕНИЕ: Добавили импорт 'os'
+import os
+import json
+import gspread
+import threading  # <--- ДОБАВЛЕНО: Для фоновых задач
+from google.oauth2.service_account import Credentials
+from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
 
-# --- ИЗМЕНЕНИЕ: Указываем полный путь к файлу в новой папке ---
-# Теперь база данных будет всегда искаться в папке /data
+# --- Настройки ---
 DATA_DIR = "/data"
 DB_FILE = os.path.join(DATA_DIR, "evgenich_data.db")
-# --- КОНЕЦ ИЗМЕНЕНИЙ ---
+SHEET_NAME = "Выгрузка Пользователей"
 
+# --- Секция работы с Google Sheets (теперь для фоновых задач) ---
 
-# --- Инициализация и структура ---
+def _get_sheets_worksheet():
+    """Подключается к Google Sheets и возвращает рабочий лист."""
+    try:
+        creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+        creds = Credentials.from_service_account_info(
+            creds_dict,
+            scopes=['https://www.googleapis.com/auth/spreadsheets']
+        )
+        gc = gspread.authorize(creds)
+        spreadsheet = gc.open_by_key(GOOGLE_SHEET_KEY)
+        return spreadsheet.worksheet(SHEET_NAME)
+    except Exception as e:
+        logging.error(f"G-Sheets | Не удалось подключиться к таблице '{SHEET_NAME}': {e}")
+        return None
+
+def _add_user_to_sheets_in_background(row_data: List[Any]):
+    """(Фоновая задача) Добавляет строку с данными пользователя в таблицу."""
+    try:
+        worksheet = _get_sheets_worksheet()
+        if worksheet:
+            worksheet.append_row(row_data)
+            logging.info(f"G-Sheets (фон) | Пользователь с ID {row_data[1]} успешно дублирован.")
+    except Exception as e:
+        logging.error(f"G-Sheets (фон) | Ошибка дублирования пользователя {row_data[1]}: {e}")
+
+def _update_status_in_sheets_in_background(user_id: int, new_status: str, redeem_time: Optional[datetime.datetime]):
+    """(Фоновая задача) Обновляет статус пользователя в таблице."""
+    try:
+        worksheet = _get_sheets_worksheet()
+        if worksheet:
+            cell = worksheet.find(str(user_id), in_column=2)
+            if cell:
+                worksheet.update_cell(cell.row, 5, new_status)
+                if redeem_time:
+                    worksheet.update_cell(cell.row, 8, redeem_time.strftime('%Y-%m-%d %H:%M:%S'))
+                logging.info(f"G-Sheets (фон) | Статус пользователя {user_id} успешно обновлен.")
+            else:
+                logging.warning(f"G-Sheets (фон) | Не удалось найти пользователя {user_id} для обновления.")
+    except Exception as e:
+        logging.error(f"G-Sheets (фон) | Ошибка обновления статуса для {user_id}: {e}")
+
+# --- Секция работы с локальной базой SQLite ---
 
 def get_db_connection():
-    """Возвращает соединение с БД."""
+    """Возвращает соединение с локальной БД."""
+    os.makedirs(DATA_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row  # Позволяет обращаться к колонкам по имени
+    conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
-    """Инициализирует базу данных и создает таблицы, если их нет."""
+    """Инициализирует локальную базу данных и создает таблицы."""
     try:
-        # --- ИЗМЕНЕНИЕ: Перед созданием БД убедимся, что папка /data существует ---
-        os.makedirs(DATA_DIR, exist_ok=True)
-        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
         conn = get_db_connection()
         cur = conn.cursor()
-        
         # Таблица пользователей
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -48,7 +89,6 @@ def init_db():
                 redeem_date TIMESTAMP
             )
         """)
-
         # Таблица для истории диалогов AI
         cur.execute("""
             CREATE TABLE IF NOT EXISTS conversation_history (
@@ -59,7 +99,6 @@ def init_db():
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
         # Таблица для обратной связи
         cur.execute("""
             CREATE TABLE IF NOT EXISTS feedback (
@@ -69,17 +108,77 @@ def init_db():
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-
         conn.commit()
         conn.close()
         logging.info("База данных SQLite успешно инициализирована.")
     except Exception as e:
         logging.critical(f"Не удалось инициализировать базу данных SQLite: {e}")
 
-# ... (остальной код файла без изменений) ...
+# --- Функции с асинхронным дублированием ---
+
+def add_new_user(user_id: int, username: str, first_name: str, source: str, referrer_id: Optional[int] = None):
+    """
+    Добавляет нового пользователя в SQLite и запускает фоновую выгрузку в Google Sheets.
+    """
+    signup_time = datetime.datetime.now(pytz.utc)
+    
+    # 1. Быстрая запись в локальную базу
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR IGNORE INTO users (user_id, username, first_name, source, referrer_id, signup_date) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, username or "N/A", first_name, source, referrer_id, signup_time)
+        )
+        conn.commit()
+        conn.close()
+        logging.info(f"SQLite | Пользователь {user_id} добавлен. Источник: {source}")
+    except Exception as e:
+        logging.error(f"SQLite | Ошибка добавления пользователя {user_id}: {e}")
+        return
+
+    # 2. Подготовка данных и запуск медленной выгрузки в фоне
+    row_data = [
+        signup_time.strftime('%Y-%m-%d %H:%M:%S'), user_id, first_name,
+        username or "N/A", 'registered', source,
+        referrer_id if referrer_id else "", ""
+    ]
+    # Создаем и запускаем фоновый поток
+    threading.Thread(target=_add_user_to_sheets_in_background, args=(row_data,)).start()
+
+def update_status(user_id: int, new_status: str) -> bool:
+    """
+    Обновляет статус в SQLite и запускает фоновое обновление в Google Sheets.
+    """
+    redeem_time = datetime.datetime.now(pytz.utc) if new_status == 'redeemed' else None
+    updated = False
+    
+    # 1. Быстрое обновление в локальной базе
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        if redeem_time:
+            cur.execute("UPDATE users SET status = ?, redeem_date = ? WHERE user_id = ?", (new_status, redeem_time, user_id))
+        else:
+            cur.execute("UPDATE users SET status = ? WHERE user_id = ?", (new_status, user_id))
+        updated = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        if updated:
+            logging.info(f"SQLite | Статус пользователя {user_id} обновлен на {new_status}.")
+    except Exception as e:
+        logging.error(f"SQLite | Ошибка обновления статуса для {user_id}: {e}")
+        return False
+
+    # 2. Запуск медленного обновления в фоне, только если локальное прошло успешно
+    if updated:
+        threading.Thread(target=_update_status_in_sheets_in_background, args=(user_id, new_status, redeem_time)).start()
+            
+    return updated
+
+# --- Остальные функции (работают только с быстрой локальной базой) ---
 
 def find_user_by_id(user_id: int) -> Optional[sqlite3.Row]:
-    """Находит пользователя по ID."""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -88,56 +187,14 @@ def find_user_by_id(user_id: int) -> Optional[sqlite3.Row]:
         conn.close()
         return user
     except Exception as e:
-        logging.error(f"Ошибка поиска пользователя {user_id} в SQLite: {e}")
+        logging.error(f"SQLite | Ошибка поиска пользователя {user_id}: {e}")
         return None
 
 def get_reward_status(user_id: int) -> str:
-    """Получает статус награды пользователя."""
     user = find_user_by_id(user_id)
-    if user:
-        return user['status']
-    return 'not_found'
-
-def add_new_user(user_id: int, username: str, first_name: str, source: str, referrer_id: Optional[int] = None):
-    """Добавляет нового пользователя в SQLite."""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT OR IGNORE INTO users (user_id, username, first_name, source, referrer_id, signup_date) VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, username or "N/A", first_name, source, referrer_id, datetime.datetime.now(pytz.utc))
-        )
-        conn.commit()
-        conn.close()
-        logging.info(f"Пользователь {user_id} добавлен в SQLite. Источник: {source}")
-    except Exception as e:
-        logging.error(f"Ошибка добавления пользователя {user_id} в SQLite: {e}")
-
-def update_status(user_id: int, new_status: str) -> bool:
-    """Обновляет статус пользователя и дату погашения."""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        if new_status == 'redeemed':
-            cur.execute(
-                "UPDATE users SET status = ?, redeem_date = ? WHERE user_id = ?",
-                (new_status, datetime.datetime.now(pytz.utc), user_id)
-            )
-        else:
-            cur.execute("UPDATE users SET status = ? WHERE user_id = ?", (new_status, user_id))
-        
-        updated = cur.rowcount > 0
-        conn.commit()
-        conn.close()
-        if updated:
-            logging.info(f"Статус пользователя {user_id} обновлен на {new_status}.")
-        return updated
-    except Exception as e:
-        logging.error(f"Ошибка обновления статуса для {user_id}: {e}")
-        return False
+    return user['status'] if user else 'not_found'
 
 def delete_user(user_id: int) -> Tuple[bool, str]:
-    """Удаляет пользователя из базы данных."""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -158,16 +215,12 @@ def delete_user(user_id: int) -> Tuple[bool, str]:
         return False, error_msg
 
 def get_referrer_id_from_user(user_id: int) -> Optional[int]:
-    """Получает ID реферера для данного пользователя."""
     user = find_user_by_id(user_id)
     if user and user['referrer_id']:
         return int(user['referrer_id'])
     return None
 
-# --- Функции для AI ---
-
 def log_conversation_turn(user_id: int, role: str, text: str):
-    """Логирует один шаг диалога в базу данных."""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -181,7 +234,6 @@ def log_conversation_turn(user_id: int, role: str, text: str):
         logging.error(f"Ошибка логирования диалога для {user_id}: {e}")
 
 def get_conversation_history(user_id: int, limit: int = 10) -> List[Dict[str, str]]:
-    """Извлекает историю диалога для пользователя."""
     history = []
     try:
         conn = get_db_connection()
@@ -200,7 +252,6 @@ def get_conversation_history(user_id: int, limit: int = 10) -> List[Dict[str, st
         return history
 
 def log_ai_feedback(user_id: int, query: str, response: str, rating: str):
-    """Логирует оценку ответа AI."""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -213,10 +264,7 @@ def log_ai_feedback(user_id: int, query: str, response: str, rating: str):
     except Exception as e:
         logging.error(f"Ошибка логирования обратной связи для {user_id}: {e}")
         
-# --- Функции для отчетов ---
-
 def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime.datetime) -> tuple:
-    """Собирает данные для отчета за период."""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -254,7 +302,6 @@ def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime
         return 0, 0, [], {}, 0
 
 def get_top_referrers_for_month(limit: int = 5) -> List[Tuple[str, int]]:
-    """Возвращает топ рефереров за текущий месяц."""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -288,10 +335,5 @@ def get_top_referrers_for_month(limit: int = 5) -> List[Tuple[str, int]]:
         logging.error(f"Ошибка получения топа рефереров из SQLite: {e}")
         return []
 
-# Оперативные данные (заглушка)
 def get_daily_updates() -> dict:
-    """
-    Заглушка. Оперативные данные (стоп-лист, акции) удобнее по-прежнему 
-    читать из простого источника или добавить управление ими в админку бота.
-    """
     return {'special': 'нет', 'stop-list': 'ничего'}
