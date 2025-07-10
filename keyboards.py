@@ -4,7 +4,7 @@ from config import ADMIN_IDS, MENU_URL
 from menu_nastoiki import MENU_DATA
 from food_menu import FOOD_MENU_DATA
 
-# === ОСНОВНЫЕ REPLY-КЛАВИАТУРЫ ===
+# ===!ОСНОВНЫЕ REPLY-КЛАВИАТУРЫ!===
 
 def get_main_menu_keyboard(user_id):
     """Возвращает главную клавиатуру для основного меню."""
