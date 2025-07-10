@@ -72,6 +72,7 @@ def init_db():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+        # Добавляем новое поле `last_check_date` в таблицу users
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -83,12 +84,14 @@ def init_db():
                 last_check_date TIMESTAMP
             )""")
         conn.commit()
+        # Проверяем, существует ли колонка, и добавляем если нет (для совместимости)
         try:
             cur.execute("SELECT last_check_date FROM users LIMIT 1")
         except sqlite3.OperationalError:
             logging.info("Обновляю структуру таблицы 'users', добавляю 'last_check_date'...")
             cur.execute("ALTER TABLE users ADD COLUMN last_check_date TIMESTAMP")
             conn.commit()
+        # Остальные таблицы без изменений
         cur.execute("""
             CREATE TABLE IF NOT EXISTS conversation_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, role TEXT,
@@ -134,6 +137,7 @@ def update_status(user_id: int, new_status: str) -> bool:
         conn = get_db_connection()
         cur = conn.cursor()
         if redeem_time:
+            # При погашении сразу ставим дату проверки, чтобы аудитор его проверил
             cur.execute("UPDATE users SET status = ?, redeem_date = ?, last_check_date = ? WHERE user_id = ?", (new_status, redeem_time, datetime.datetime.now(pytz.utc), user_id))
         else:
             cur.execute("UPDATE users SET status = ? WHERE user_id = ?", (new_status, user_id))
