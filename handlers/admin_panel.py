@@ -6,41 +6,47 @@ from telebot import types
 from telebot.apihelper import ApiTelegramException
 import pytz
 
-# Импортируем всё необходимое
 from config import ADMIN_IDS
 import database
 import texts
 import keyboards
 import settings_manager
 
-# --- Вспомогательные функции для отчетов ---
-def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds):
+def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds, left_count):
     """Формирует текстовое представление отчета."""
     conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
     avg_redeem_time_str = "н/д"
-    
+
     if redeemed > 0:
         avg_seconds = total_redeem_time_seconds / redeemed
         hours, remainder = divmod(int(avg_seconds), 3600)
         minutes, _ = divmod(remainder, 60)
         avg_redeem_time_str = f"{hours} ч {minutes} мин"
-    
+
+    retention_rate_str = "н/д"
+    if redeemed > 0:
+        retention_rate = round(((redeemed - left_count) / redeemed) * 100, 1)
+        retention_rate_str = f"{retention_rate}%"
+
     report_date = end_time.strftime('%d.%m.%Y')
     header = f"📊 **ОтчетПодпискаТГ ({report_date})** 📊\n\n"
-    
+
     period_str = f"**Период:** с {start_time.strftime('%H:%M %d.%m')} по {end_time.strftime('%H:%M %d.%m')}\n\n"
     stats = (f"✅ **Выдано купонов:** {issued}\n"
              f"🥃 **Погашено настоек:** {redeemed}\n"
-             f"📈 **Конверсия:** {conversion_rate}%\n"
-             f"⏱️ **Среднее время до погашения:** {avg_redeem_time_str}\n")
-             
+             f"📈 **Конверсия в погашение:** {conversion_rate}%\n"
+             f"⏱️ **Среднее время до погашения:** {avg_redeem_time_str}\n"
+             f"💔 **Отписалось за сутки:** {left_count} чел.\n"
+             f"🎯 **Удержание за сутки:** {retention_rate_str}\n"
+            )
+
     sources_str = ""
     if sources:
         sources_str += "\n**Источники подписчиков:**\n"
         sorted_sources = sorted(sources.items(), key=lambda item: item[1], reverse=True)
         for source, count in sorted_sources:
             sources_str += f"• {source}: {count}\n"
-            
+
     return header + period_str + stats + sources_str
 
 
@@ -48,27 +54,27 @@ def send_report(bot, chat_id, start_time, end_time):
     """Запрашивает данные из ЛОКАЛЬНОЙ БД и отправляет отчет."""
     try:
         issued, redeemed, redeemed_users, sources, total_redeem_time = database.get_report_data_for_period(start_time, end_time)
+        redeemed_in_period, left_count = database.get_daily_churn_data(start_time, end_time)
+
         if issued == 0:
             bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
             return
-        report_text = generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time)
+
+        report_text = generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time, left_count)
         bot.send_message(chat_id, report_text, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
         bot.send_message(chat_id, "Ошибка при формировании отчета.")
 
-# --- Регистрация обработчиков ---
 def register_admin_handlers(bot):
     """Регистрирует все команды и колбэки для админ-панели."""
 
     def is_admin(user_id):
         return user_id in ADMIN_IDS
 
-    # --- ИЗМЕНЕНИЕ: Ловим нажатие кнопки по тексту, а не по команде ---
     @bot.message_handler(func=lambda message: message.text == "👑 Админка")
     def handle_admin_command(message: types.Message):
         if not is_admin(message.from_user.id):
-            # Эта проверка на всякий случай, т.к. кнопку и так видят только админы
             return
         
         current_settings = settings_manager.get_all_settings()
@@ -97,7 +103,7 @@ def register_admin_handlers(bot):
             return
         
         action = call.data
-
+        
         try:
             bot.answer_callback_query(call.id) # Отвечаем на колбэк сразу
             
@@ -108,6 +114,23 @@ def register_admin_handlers(bot):
                 start_time = end_time - datetime.timedelta(days=1)
                 send_report(bot, call.message.chat.id, start_time, end_time)
 
+            elif action == 'admin_churn_analysis':
+                bot.answer_callback_query(call.id, text="Анализирую всю базу... Это может занять несколько секунд.")
+                total_left, distribution = database.get_full_churn_analysis()
+                if total_left == 0:
+                    bot.send_message(call.message.chat.id, "Пока никто из получивших подарок не отписался. Отличная работа!")
+                    return
+                
+                response = f"💔 **Анализ оттока подписчиков (за все время)**\n\n"
+                response += f"Всего отписалось после подарка: **{total_left}** чел.\n\n"
+                response += "**Как быстро они отписываются:**\n"
+                
+                for period, count in distribution.items():
+                    percentage = round((count / total_left) * 100, 1) if total_left > 0 else 0
+                    response += f"• {period}: **{count}** чел. ({percentage}%)\n"
+                
+                bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+            
             elif action.startswith('boss_toggle_'):
                 feature_path = action.replace('boss_toggle_', '')
                 current_value = settings_manager.get_setting(feature_path)
@@ -116,7 +139,7 @@ def register_admin_handlers(bot):
                 new_settings = settings_manager.get_all_settings()
                 bot.edit_message_reply_markup(
                     call.message.chat.id, call.message.message_id,
-                    reply_markup=keyboards.get_boss_main_keyboard(new_settings) # Обновляем главное меню
+                    reply_markup=keyboards.get_boss_main_keyboard(new_settings)
                 )
 
             elif action == 'boss_upload_audio':
@@ -144,7 +167,7 @@ def register_admin_handlers(bot):
         except ApiTelegramException as e:
             logging.warning(f"Не удалось обработать колбэк в админ-панели: {e}")
 
-    # --- Пошаговые обработчики ---
+    # Пошаговые обработчики
     def process_audio_upload_step(message: types.Message):
         if not is_admin(message.from_user.id): return
         if message.audio:
