@@ -17,9 +17,7 @@ def get_main_menu_keyboard(user_id):
     keyboard.row(menu_button, friend_button)
     keyboard.row(ai_help_button, book_button)
     
-    # Кнопка будет добавлена только если ID пользователя есть в списке ADMIN_IDS
     if user_id in ADMIN_IDS:
-        # ИЗМЕНЕНИЕ: Убираем / из текста кнопки для надежности
         admin_button = types.KeyboardButton("👑 Админка")
         keyboard.row(admin_button)
         
@@ -131,12 +129,12 @@ def get_boss_main_keyboard(settings: dict):
     """
     Главное меню для БОССА. Динамически показывает статус акций.
     """
-    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
 
     group_bonus_promo = settings['promotions']['group_bonus']
     group_bonus_status = "✅ ВКЛ" if group_bonus_promo.get('is_active') else "❌ ВЫКЛ"
     group_bonus_button = types.InlineKeyboardButton(
-        f"Бонус для компании: {group_bonus_status}",
+        f"Бонус компании: {group_bonus_status}",
         callback_data="boss_toggle_promotions.group_bonus.is_active"
     )
 
@@ -154,19 +152,32 @@ def get_boss_main_keyboard(settings: dict):
         callback_data="boss_toggle_promotions.password_of_the_day.is_active"
     )
     password_set_button = types.InlineKeyboardButton(
-        "🤫 Установить пароль и бонус",
+        "🤫 Установить пароль",
         callback_data="boss_set_password"
     )
     audio_upload_button = types.InlineKeyboardButton(
-        "🎤 Загрузить аудио-приветствие",
+        "🎤 Загрузить аудио",
         callback_data="boss_upload_audio"
     )
-    report_button = types.InlineKeyboardButton(
-        "📊 Отчет за последние 24 часа",
+    
+    report_daily_button = types.InlineKeyboardButton(
+        "📊 Отчет за 24ч",
         callback_data="admin_report_manual_daily"
     )
+    
+    report_leaderboard_button = types.InlineKeyboardButton(
+        "🏆 Ударники труда",
+        callback_data="admin_report_leaderboard"
+    )
+    
+    report_churn_button = types.InlineKeyboardButton(
+        "💔 Анализ оттока",
+        callback_data="admin_churn_analysis"
+    )
 
-    keyboard.add(group_bonus_button, happy_hours_button, password_toggle_button, password_set_button)
+    keyboard.add(group_bonus_button, happy_hours_button)
+    keyboard.add(password_toggle_button, password_set_button)
     keyboard.add(audio_upload_button)
-    keyboard.add(report_button)
+    keyboard.add(report_daily_button, report_leaderboard_button)
+    keyboard.add(report_churn_button)
     return keyboard
