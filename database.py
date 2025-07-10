@@ -183,6 +183,32 @@ def get_reward_status(user_id: int) -> str:
     user = find_user_by_id(user_id)
     return user['status'] if user else 'not_found'
 
+def delete_user(user_id: int) -> Tuple[bool, str]:
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+        deleted = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        if deleted:
+            msg = f"Пользователь {user_id} успешно удален из SQLite."
+            logging.info(msg)
+            return True, msg
+        else:
+            msg = f"Пользователь {user_id} не найден в SQLite для удаления."
+            return False, msg
+    except Exception as e:
+        error_msg = f"Ошибка удаления пользователя {user_id} из SQLite: {e}"
+        logging.error(error_msg)
+        return False, error_msg
+
+def get_referrer_id_from_user(user_id: int) -> Optional[int]:
+    user = find_user_by_id(user_id)
+    if user and user['referrer_id']:
+        return int(user['referrer_id'])
+    return None
+
 def get_redeemed_users_for_audit() -> List[sqlite3.Row]:
     try:
         conn = get_db_connection()
@@ -268,6 +294,50 @@ def get_report_data_for_period(start_time: datetime, end_time: datetime) -> tupl
         logging.error(f"Ошибка сбора данных для отчета в SQLite: {e}")
         return 0, 0, [], {}, 0
 
+def log_conversation_turn(user_id: int, role: str, text: str):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO conversation_history (user_id, role, text) VALUES (?, ?, ?)",
+            (user_id, role, text)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logging.error(f"Ошибка логирования диалога для {user_id}: {e}")
+
+def get_conversation_history(user_id: int, limit: int = 10) -> List[Dict[str, str]]:
+    history = []
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT role, text FROM conversation_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
+            (user_id, limit)
+        )
+        rows = cur.fetchall()
+        conn.close()
+        for row in reversed(rows):
+            history.append({"role": row['role'], "content": row['text']})
+        return history
+    except Exception as e:
+        logging.error(f"Ошибка получения истории диалога для {user_id}: {e}")
+        return history
+
+def log_ai_feedback(user_id: int, query: str, response: str, rating: str):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO feedback (user_id, rating) VALUES (?, ?)",
+            (user_id, int(rating))
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logging.error(f"Ошибка логирования обратной связи для {user_id}: {e}")
+        
 def get_top_referrers_for_month(limit: int = 5) -> List[Tuple[str, int]]:
     try:
         conn = get_db_connection()
@@ -297,3 +367,6 @@ def get_top_referrers_for_month(limit: int = 5) -> List[Tuple[str, int]]:
     except Exception as e:
         logging.error(f"Ошибка получения топа рефереров из SQLite: {e}")
         return []
+
+def get_daily_updates() -> dict:
+    return {'special': 'нет', 'stop-list': 'ничего'}
