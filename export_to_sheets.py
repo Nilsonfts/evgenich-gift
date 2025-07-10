@@ -10,7 +10,7 @@ from datetime import datetime  # <--- И ЭТОТ ИМПОРТ ТОЖЕ НУЖЕ
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # --- Настройки ---
-# Путь к БД может отличаться, если бот запущен не из корневой папки
+# Путь к БД может отличаться, если бот запущен не из корневой папки!
 # Используем относительный путь, который должен работать на Railway
 DB_FILE = "/data/evgenich_data.db"
 EXPORT_SHEET_NAME = "Выгрузка Пользователей"
