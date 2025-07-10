@@ -1,242 +1,233 @@
-# /handlers/admin_panel.py
-
-import logging
-import datetime
+# keyboards.py
 from telebot import types
-from telebot.apihelper import ApiTelegramException
-import pytz
+from config import ADMIN_IDS, MENU_URL
+from menu_nastoiki import MENU_DATA
+from food_menu import FOOD_MENU_DATA
 
-from config import ADMIN_IDS
-import database
-import texts
-import keyboards
-import settings_manager
-from export_to_sheets import do_export
-from handlers.user_commands import issue_coupon
+# === ОСНОВНЫЕ REPLY-КЛАВИАТУРЫ ===
 
-def generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time_seconds, left_count):
-    """Формирует текстовое представление отчета."""
-    conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
-    avg_redeem_time_str = "н/д"
-    if redeemed > 0:
-        avg_seconds = total_redeem_time_seconds / redeemed
-        hours, remainder = divmod(int(avg_seconds), 3600)
-        minutes, _ = divmod(remainder, 60)
-        avg_redeem_time_str = f"{hours} ч {minutes} мин"
-    retention_rate_str = "н/д"
-    if redeemed > 0:
-        retention_rate = round(((redeemed - left_count) / redeemed) * 100, 1)
-        retention_rate_str = f"{retention_rate}%"
-    report_date = end_time.strftime('%d.%m.%Y')
-    header = f"📊 **ОтчетПодпискаТГ ({report_date})** 📊\n\n"
-    period_str = f"**Период:** с {start_time.strftime('%H:%M %d.%m')} по {end_time.strftime('%H:%M %d.%m')}\n\n"
-    stats = (f"✅ **Выдано купонов:** {issued}\n"
-             f"🥃 **Погашено настоек:** {redeemed}\n"
-             f"📈 **Конверсия в погашение:** {conversion_rate}%\n"
-             f"⏱️ **Среднее время до погашения:** {avg_redeem_time_str}\n"
-             f"💔 **Отписалось за сутки:** {left_count} чел.\n"
-             f"🎯 **Удержание за сутки:** {retention_rate_str}\n")
-    sources_str = ""
-    if sources:
-        sources_str += "\n**Источники подписчиков:**\n"
-        sorted_sources = sorted(sources.items(), key=lambda item: item[1], reverse=True)
-        for source, count in sorted_sources:
-            sources_str += f"• {source}: {count}\n"
-    return header + period_str + stats + sources_str
+def get_main_menu_keyboard(user_id):
+    """Возвращает главную клавиатуру для основного меню."""
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    menu_button = types.KeyboardButton("📖 Меню")
+    friend_button = types.KeyboardButton("🤝 Привести товарища")
+    book_button = types.KeyboardButton("📍 Забронировать стол")
+    ai_help_button = types.KeyboardButton("🗣 Спроси у Евгенича")
 
-def send_report(bot, chat_id, start_time, end_time):
-    """Запрашивает данные из ЛОКАЛЬНОЙ БД и отправляет отчет."""
-    try:
-        issued, redeemed, redeemed_users, sources, total_redeem_time = database.get_report_data_for_period(start_time, end_time)
-        redeemed_in_period, left_count = database.get_daily_churn_data(start_time, end_time)
-        if issued == 0:
-            bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
-            return
-        report_text = generate_report_text(start_time, end_time, issued, redeemed, redeemed_users, sources, total_redeem_time, left_count)
-        bot.send_message(chat_id, report_text, parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
-        bot.send_message(chat_id, "Ошибка при формировании отчета.")
+    keyboard.row(menu_button, friend_button)
+    keyboard.row(ai_help_button, book_button)
 
-def register_admin_handlers(bot):
-    """Регистрирует все команды и колбэки для админ-панели."""
-    admin_states = {}
+    if user_id in ADMIN_IDS:
+        admin_button = types.KeyboardButton("👑 Админка")
+        keyboard.row(admin_button)
 
-    def is_admin(user_id):
-        return user_id in ADMIN_IDS
+    return keyboard
 
-    @bot.message_handler(func=lambda message: message.text == "👑 Админка")
-    def handle_admin_command(message: types.Message):
-        if not is_admin(message.from_user.id):
-            return
-        bot.send_message(
-            message.chat.id,
-            "👑 **Главное меню админ-панели**\n\nВыберите нужный раздел:",
-            reply_markup=keyboards.get_admin_main_menu()
-        )
+def get_gift_keyboard():
+    """Возвращает клавиатуру для получения подарка."""
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    gift_button = types.KeyboardButton("🥃 Получить настойку по талону")
+    keyboard.add(gift_button)
+    return keyboard
 
-    # --- Пошаговые обработчики для админ-функций ---
+# === INLINE-КЛАВИАТУРЫ ДЛЯ ПОДПИСКИ И ПОДАРКА ===
 
-    def process_find_user_step(message: types.Message):
-        admin_id = message.from_user.id
-        if admin_states.get(admin_id) != 'awaiting_user_identifier':
-            return
-        
-        identifier = message.text
-        user_data = database.find_user_by_id_or_username(identifier)
-        
-        if user_data:
-            status_map = {
-                'registered': 'Зарегистрирован', 'issued': 'Купон выдан',
-                'redeemed': 'Купон погашен', 'redeemed_and_left': 'Погасил и отписался'
-            }
-            status_ru = status_map.get(user_data['status'], user_data['status'])
-            response = (f"👤 **Профиль пользователя:**\n\n"
-                        f"**ID:** `{user_data['user_id']}`\n"
-                        f"**Имя:** {user_data['first_name']}\n"
-                        f"**Юзернейм:** @{user_data['username'] or 'Нет'}\n"
-                        f"**Статус:** {status_ru}\n"
-                        f"**Источник:** {user_data['source'] or 'Неизвестен'}\n"
-                        f"**Пригласил:** {user_data['referrer_id'] or 'Никто'}\n"
-                        f"**Дата регистрации:** {user_data['signup_date'] or 'Нет данных'}\n"
-                        f"**Дата погашения:** {user_data['redeem_date'] or 'Еще не погашен'}")
-            bot.send_message(admin_id, response, parse_mode="Markdown")
-        else:
-            bot.send_message(admin_id, f"❌ Пользователь с идентификатором '{identifier}' не найден.")
-        del admin_states[admin_id]
+def get_subscription_keyboard(channel_url):
+    """Возвращает клавиатуру для проверки подписки на канал."""
+    inline_keyboard = types.InlineKeyboardMarkup(row_width=1)
+    subscribe_button = types.InlineKeyboardButton(text="➡️ Перейти к каналу", url=channel_url)
+    check_button = types.InlineKeyboardButton(text="✅ Я подписался, проверить!", callback_data="check_subscription")
+    inline_keyboard.add(subscribe_button, check_button)
+    return inline_keyboard
 
-    def process_issue_coupon_step(message: types.Message):
-        admin_id = message.from_user.id
-        if admin_states.get(admin_id) != 'awaiting_coupon_user_id':
-            return
-        user_id_str = message.text
-        if not user_id_str.isdigit():
-            bot.send_message(admin_id, "❌ ID пользователя должен быть числом. Попробуйте снова.")
-            return
-        user_id = int(user_id_str)
-        user_data = database.find_user_by_id(user_id)
-        if not user_data:
-            bot.send_message(admin_id, f"❌ Пользователь с ID {user_id} не найден в базе.")
-        else:
-            issue_coupon(bot, user_id, user_id)
-            bot.send_message(admin_id, f"✅ Купон успешно выдан пользователю {user_data['first_name']} (ID: {user_id}).")
-        del admin_states[admin_id]
-        
-    def process_password_word_step(message: types.Message):
-        if not is_admin(message.from_user.id): return
-        new_word = message.text
-        msg = bot.send_message(message.chat.id, texts.BOSS_ASK_PASSWORD_BONUS)
-        bot.register_next_step_handler(msg, process_password_bonus_step, new_word)
+def get_redeem_keyboard():
+    """Возвращает кнопку для погашения купона."""
+    redeem_keyboard = types.InlineKeyboardMarkup()
+    redeem_button = types.InlineKeyboardButton(text="🔒 НАЛИТЬ ПРИ БАРМЕНЕ", callback_data="redeem_reward")
+    redeem_keyboard.add(redeem_button)
+    return redeem_keyboard
 
-    def process_password_bonus_step(message: types.Message, word):
-        if not is_admin(message.from_user.id): return
-        new_bonus = message.text
-        settings_manager.update_setting("promotions.password_of_the_day.password", word)
-        settings_manager.update_setting("promotions.password_of_the_day.bonus_text", new_bonus)
-        bot.send_message(message.chat.id, texts.BOSS_PASSWORD_SUCCESS)
-        
-    def process_audio_upload_step(message: types.Message):
-        if not is_admin(message.from_user.id): return
-        if message.audio:
-            file_id = message.audio.file_id
-            settings_manager.update_setting("greeting_audio_id", file_id)
-            bot.reply_to(message, "✅ Аудио-приветствие сохранено!")
-            logging.info(f"Админ {message.from_user.id} загрузил новое аудио. File ID: {file_id}")
-        else:
-            bot.reply_to(message, "Это не аудиофайл. Попробуй еще раз.")
+# === INLINE-КЛАВИАТУРЫ ДЛЯ МЕНЮ ===
 
-    # --- Основной обработчик кнопок админки ---
-    @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_') or call.data.startswith('boss_'))
-    def handle_admin_callbacks(call: types.CallbackQuery):
-        if not is_admin(call.from_user.id):
-            bot.answer_callback_query(call.id, texts.ADMIN_ACCESS_DENIED, show_alert=True)
-            return
-        
-        action = call.data
-        bot.answer_callback_query(call.id)
-        
-        try:
-            # НАВИГАЦИЯ
-            if action == 'admin_main_menu':
-                bot.edit_message_text("👑 **Главное меню админ-панели**\n\nВыберите нужный раздел:", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_main_menu())
-            elif action == 'admin_menu_promotions':
-                settings = settings_manager.get_all_settings()
-                bot.edit_message_text("⚙️ **Управление акциями**\n\nВключайте и выключайте промо-акции.", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_promotions_menu(settings))
-            elif action == 'admin_menu_reports':
-                bot.edit_message_text("📊 **Отчеты и аналитика**\n\nВыберите нужный отчет.", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_reports_menu())
-            elif action == 'admin_menu_content':
-                bot.edit_message_text("📝 **Управление контентом**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_content_menu())
-            elif action == 'admin_menu_users':
-                bot.edit_message_text("👤 **Управление пользователями**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_users_menu())
-            elif action == 'admin_menu_data':
-                bot.edit_message_text("💾 **Управление данными**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_data_menu())
-            
-            # ДЕЙСТВИЯ ПОЛЬЗОВАТЕЛЕЙ
-            elif action == 'admin_find_user':
-                msg = bot.send_message(call.message.chat.id, "Введите ID или @username пользователя для поиска:")
-                admin_states[call.from_user.id] = 'awaiting_user_identifier'
-                bot.register_next_step_handler(msg, process_find_user_step)
-            elif action == 'admin_issue_coupon_manual':
-                msg = bot.send_message(call.message.chat.id, "Введите ID пользователя, которому нужно выдать купон:")
-                admin_states[call.from_user.id] = 'awaiting_coupon_user_id'
-                bot.register_next_step_handler(msg, process_issue_coupon_step)
-            elif action == 'admin_export_sheets':
-                bot.send_message(call.message.chat.id, "⏳ Начинаю выгрузку в Google Sheets... Это может занять до минуты.")
-                success, message = do_export()
-                bot.send_message(call.message.chat.id, message)
-            
-            # ОТЧЕТЫ
-            elif action == 'admin_report_manual_daily':
-                tz_moscow = pytz.timezone('Europe/Moscow')
-                end_time = datetime.datetime.now(tz_moscow)
-                start_time = end_time - datetime.timedelta(days=1)
-                send_report(bot, call.message.chat.id, start_time, end_time)
-            elif action == 'admin_churn_analysis':
-                total_left, distribution = database.get_full_churn_analysis()
-                if total_left == 0:
-                    bot.send_message(call.message.chat.id, "Пока никто из получивших подарок не отписался. Отличная работа!")
-                    return
-                response = f"💔 **Анализ оттока подписчиков (за все время)**\n\nВсего отписалось после подарка: **{total_left}** чел.\n\n**Как быстро они отписываются:**\n"
-                for period, count in distribution.items():
-                    percentage = round((count / total_left) * 100, 1) if total_left > 0 else 0
-                    response += f"• {period}: **{count}** чел. ({percentage}%)\n"
-                bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
-            elif action == 'admin_report_leaderboard':
-                top_list = database.get_top_referrers_for_month(5)
-                if not top_list:
-                    bot.send_message(call.message.chat.id, "В этом месяце пока никто не привел друзей, которые бы получили настойку.")
-                    return
-                month_name = datetime.datetime.now(pytz.timezone('Europe/Moscow')).strftime('%B %Y')
-                response = f"🏆 **Ударники труда за {month_name}**:\n(учитываются только друзья, погасившие настойку в этом месяце)\n\n"
-                medals = ["🥇", "🥈", "🥉", "4.", "5."]
-                for i, (name, count) in enumerate(top_list):
-                    response += f"{medals[i]} Товарищ **{name}** — {count} чел.\n"
-                bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+def get_menu_choice_keyboard():
+    """Возвращает клавиатуру для выбора типа меню (настойки или кухня)."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    nastoiki_button = types.InlineKeyboardButton(text="🥃 Меню настоек", callback_data="menu_nastoiki_main")
+    food_button = types.InlineKeyboardButton(text="🍔 Меню кухни", callback_data="menu_food_main")
+    full_menu_button = types.InlineKeyboardButton(text="📄 Полное меню (Сайт)", url=MENU_URL)
+    keyboard.add(nastoiki_button, food_button, full_menu_button)
+    return keyboard
 
-            # УПРАВЛЕНИЕ КОНТЕНТОМ И АКЦИЯМИ
-            elif action.startswith('boss_toggle_'):
-                feature_path = action.replace('boss_toggle_', '')
-                current_value = settings_manager.get_setting(feature_path)
-                settings_manager.update_setting(feature_path, not current_value)
-                new_settings = settings_manager.get_all_settings()
-                bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_promotions_menu(new_settings))
-            elif action == 'boss_upload_audio':
-                msg = bot.send_message(call.message.chat.id, "Отправь мне аудиофайл...")
-                bot.register_next_step_handler(msg, process_audio_upload_step)
-            elif action == 'boss_set_password':
-                msg = bot.send_message(call.message.chat.id, texts.BOSS_ASK_PASSWORD_WORD)
-                bot.register_next_step_handler(msg, process_password_word_step)
-                
-        except ApiTelegramException as e:
-            logging.warning(f"Не удалось обработать колбэк в админ-панели: {e}")
+def get_nastoiki_categories_keyboard():
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    buttons = [
+        types.InlineKeyboardButton(text=category['title'], callback_data=f"menu_category_{index}")
+        for index, category in enumerate(MENU_DATA)
+    ]
+    keyboard.add(*buttons)
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Назад к выбору меню", callback_data="main_menu_choice"))
+    return keyboard
 
-    @bot.message_handler(commands=['restart'])
-    def handle_restart_command(message: types.Message):
-        if not is_admin(message.from_user.id):
-            return
-        user_id = message.from_user.id
-        success, response_message = database.delete_user(user_id)
-        if success:
-            bot.reply_to(message, f"✅ Успех: {response_message}\nМожете начинать тестирование заново, отправив команду /start.")
-        else:
-            bot.reply_to(message, f"❌ Ошибка при сбросе профиля: {response_message}")
+def get_nastoiki_items_keyboard():
+    keyboard = types.InlineKeyboardMarkup()
+    back_button = types.InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="menu_nastoiki_main")
+    keyboard.add(back_button)
+    return keyboard
+
+def get_food_categories_keyboard():
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    buttons = [
+        types.InlineKeyboardButton(text=category, callback_data=f"food_category_{category}")
+        for category in FOOD_MENU_DATA.keys()
+    ]
+    keyboard.add(*buttons)
+    keyboard.add(types.InlineKeyboardButton(text="⬅️ Назад к выбору меню", callback_data="main_menu_choice"))
+    return keyboard
+
+def get_food_items_keyboard():
+    keyboard = types.InlineKeyboardMarkup()
+    back_button = types.InlineKeyboardButton(text="⬅️ Назад к категориям кухни", callback_data="menu_food_main")
+    keyboard.add(back_button)
+    return keyboard
+
+# === INLINE-КЛАВИАТУРЫ ДЛЯ БРОНИРОВАНИЯ ===
+
+def get_booking_options_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("📞 Позвонить", callback_data="booking_phone"),
+        types.InlineKeyboardButton("🌐 Забронировать через сайт", callback_data="booking_site"),
+        types.InlineKeyboardButton("🔐 Написать в секретный чат", callback_data="booking_secret"),
+        types.InlineKeyboardButton("🤖 Забронировать через меня", callback_data="booking_bot")
+    )
+    return markup
+
+def get_booking_confirmation_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("✅ Всё верно!", callback_data="confirm_booking"),
+        types.InlineKeyboardButton("❌ Начать заново", callback_data="cancel_booking")
+    )
+    return markup
+
+def get_secret_chat_keyboard():
+    keyboard = types.InlineKeyboardMarkup()
+    url_button = types.InlineKeyboardButton(text="👉 Перейти в секретный чат", url="https://t.me/stolik_evgenicha")
+    keyboard.add(url_button)
+    return keyboard
+
+# === СТРУКТУРА АДМИН-ПАНЕЛИ ===
+
+def get_admin_main_menu():
+    """Главное меню админки с разделами."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("⚙️ Управление акциями", callback_data="admin_menu_promotions"),
+        types.InlineKeyboardButton("📊 Отчеты и аналитика", callback_data="admin_menu_reports"),
+        types.InlineKeyboardButton("📝 Управление контентом", callback_data="admin_menu_content"),
+        types.InlineKeyboardButton("👥 Управление персоналом", callback_data="admin_menu_staff"),
+        types.InlineKeyboardButton("👤 Управление пользователями", callback_data="admin_menu_users"),
+        types.InlineKeyboardButton("💾 Управление данными", callback_data="admin_menu_data")
+    )
+    return keyboard
+
+def get_admin_promotions_menu(settings: dict):
+    """Меню для управления промо-акциями."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+
+    group_bonus_promo = settings['promotions']['group_bonus']
+    group_bonus_status = "✅ ВКЛ" if group_bonus_promo.get('is_active') else "❌ ВЫКЛ"
+    group_bonus_button = types.InlineKeyboardButton(
+        f"Бонус компании: {group_bonus_status}",
+        callback_data="boss_toggle_promotions.group_bonus.is_active"
+    )
+
+    happy_hours_promo = settings['promotions']['happy_hours']
+    happy_hours_status = "✅ ВКЛ" if happy_hours_promo.get('is_active') else "❌ ВЫКЛ"
+    happy_hours_button = types.InlineKeyboardButton(
+        f"Счастливые часы: {happy_hours_status}",
+        callback_data="boss_toggle_promotions.happy_hours.is_active"
+    )
+
+    password_promo = settings['promotions']['password_of_the_day']
+    password_status = "✅ ВКЛ" if password_promo.get('is_active') else "❌ ВЫКЛ"
+    password_toggle_button = types.InlineKeyboardButton(
+        f"Пароль дня: {password_status}",
+        callback_data="boss_toggle_promotions.password_of_the_day.is_active"
+    )
+
+    keyboard.add(group_bonus_button, happy_hours_button, password_toggle_button)
+    keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
+    return keyboard
+
+def get_admin_reports_menu():
+    """Меню для просмотра отчетов."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("📊 Отчет за 24ч", callback_data="admin_report_manual_daily"),
+        types.InlineKeyboardButton("🏆 Ударники труда", callback_data="admin_report_leaderboard"),
+        types.InlineKeyboardButton("💔 Анализ оттока", callback_data="admin_churn_analysis")
+    )
+    keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
+    return keyboard
+
+def get_admin_content_menu():
+    """Меню для управления контентом."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("🤫 Установить пароль", callback_data="boss_set_password"),
+        types.InlineKeyboardButton("🎤 Загрузить аудио", callback_data="boss_upload_audio")
+    )
+    keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
+    return keyboard
+
+def get_admin_users_menu():
+    """Меню для управления пользователями."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("🔍 Найти пользователя", callback_data="admin_find_user"),
+        types.InlineKeyboardButton("🎁 Выдать купон вручную", callback_data="admin_issue_coupon_manual")
+    )
+    keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
+    return keyboard
+
+def get_admin_data_menu():
+    """Меню для управления данными."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("📥 Выгрузить в Google Sheets", callback_data="admin_export_sheets")
+    )
+    keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
+    return keyboard
+
+# --- НОВЫЕ КЛАВИАТУРЫ ДЛЯ ПЕРСОНАЛА ---
+def get_admin_staff_menu():
+    """Меню для управления персоналом."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("📋 Список сотрудников", callback_data="admin_list_staff")
+    )
+    keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
+    return keyboard
+
+def get_staff_management_keyboard(staff_id: int, current_status: str):
+    """Клавиатура для управления конкретным сотрудником."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    
+    new_status = 'inactive' if current_status == 'active' else 'active'
+    button_text = "❌ Деактивировать" if current_status == 'active' else "✅ Активировать"
+    
+    keyboard.add(
+        types.InlineKeyboardButton(button_text, callback_data=f"admin_toggle_staff_{staff_id}_{new_status}")
+    )
+    return keyboard
+
+def get_position_choice_keyboard():
+    """Клавиатура для выбора должности при регистрации сотрудника."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("🤵 Официант", callback_data="staff_reg_pos_Официант"),
+        types.InlineKeyboardButton("🍸 Бармен", callback_data="staff_reg_pos_Бармен"),
+        types.InlineKeyboardButton("🎩 Менеджер", callback_data="staff_reg_pos_Менеджер")
+    )
+    return keyboard
