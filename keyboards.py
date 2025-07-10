@@ -59,7 +59,6 @@ def get_menu_choice_keyboard():
     return keyboard
 
 def get_nastoiki_categories_keyboard():
-    """Возвращает клавиатуру с категориями настоек И КНОПКОЙ НАЗАД."""
     keyboard = types.InlineKeyboardMarkup(row_width=2)
     buttons = [
         types.InlineKeyboardButton(text=category['title'], callback_data=f"menu_category_{index}")
@@ -70,14 +69,12 @@ def get_nastoiki_categories_keyboard():
     return keyboard
 
 def get_nastoiki_items_keyboard():
-    """Возвращает клавиатуру с кнопкой 'назад' для меню настоек."""
     keyboard = types.InlineKeyboardMarkup()
     back_button = types.InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="menu_nastoiki_main")
     keyboard.add(back_button)
     return keyboard
 
 def get_food_categories_keyboard():
-    """Возвращает клавиатуру с категориями кухни И КНОПКОЙ НАЗАД."""
     keyboard = types.InlineKeyboardMarkup(row_width=2)
     buttons = [
         types.InlineKeyboardButton(text=category, callback_data=f"food_category_{category}")
@@ -88,7 +85,6 @@ def get_food_categories_keyboard():
     return keyboard
 
 def get_food_items_keyboard():
-    """Возвращает клавиатуру с кнопкой 'назад' для меню кухни."""
     keyboard = types.InlineKeyboardMarkup()
     back_button = types.InlineKeyboardButton(text="⬅️ Назад к категориям кухни", callback_data="menu_food_main")
     keyboard.add(back_button)
@@ -97,7 +93,6 @@ def get_food_items_keyboard():
 # === INLINE-КЛАВИАТУРЫ ДЛЯ БРОНИРОВАНИЯ ===
 
 def get_booking_options_keyboard():
-    """Возвращает клавиатуру с вариантами бронирования."""
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("📞 Позвонить", callback_data="booking_phone"),
@@ -108,7 +103,6 @@ def get_booking_options_keyboard():
     return markup
 
 def get_booking_confirmation_keyboard():
-    """Клавиатура для подтверждения или отмены брони."""
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("✅ Всё верно!", callback_data="confirm_booking"),
@@ -117,20 +111,29 @@ def get_booking_confirmation_keyboard():
     return markup
 
 def get_secret_chat_keyboard():
-    """Клавиатура со ссылкой на секретный чат."""
     keyboard = types.InlineKeyboardMarkup()
     url_button = types.InlineKeyboardButton(text="👉 Перейти в секретный чат", url="https://t.me/stolik_evgenicha")
     keyboard.add(url_button)
     return keyboard
 
-# === INLINE-КЛАВИАТУРЫ ДЛЯ АДМИН-ПАНЕЛИ ===
+# === НОВАЯ СТРУКТУРА АДМИН-ПАНЕЛИ ===
 
-def get_boss_main_keyboard(settings: dict):
-    """
-    Главное меню для БОССА. Динамически показывает статус акций.
-    """
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
+def get_admin_main_menu():
+    """Главное меню админки с разделами."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("⚙️ Управление акциями", callback_data="admin_menu_promotions"),
+        types.InlineKeyboardButton("📊 Отчеты и аналитика", callback_data="admin_menu_reports"),
+        types.InlineKeyboardButton("📝 Управление контентом", callback_data="admin_menu_content"),
+        types.InlineKeyboardButton("👤 Управление пользователями", callback_data="admin_menu_users"),
+        types.InlineKeyboardButton("💾 Управление данными", callback_data="admin_menu_data")
+    )
+    return keyboard
 
+def get_admin_promotions_menu(settings: dict):
+    """Меню для управления промо-акциями."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    
     group_bonus_promo = settings['promotions']['group_bonus']
     group_bonus_status = "✅ ВКЛ" if group_bonus_promo.get('is_active') else "❌ ВЫКЛ"
     group_bonus_button = types.InlineKeyboardButton(
@@ -151,33 +154,47 @@ def get_boss_main_keyboard(settings: dict):
         f"Пароль дня: {password_status}",
         callback_data="boss_toggle_promotions.password_of_the_day.is_active"
     )
-    password_set_button = types.InlineKeyboardButton(
-        "🤫 Установить пароль",
-        callback_data="boss_set_password"
-    )
-    audio_upload_button = types.InlineKeyboardButton(
-        "🎤 Загрузить аудио",
-        callback_data="boss_upload_audio"
-    )
     
-    report_daily_button = types.InlineKeyboardButton(
-        "📊 Отчет за 24ч",
-        callback_data="admin_report_manual_daily"
-    )
-    
-    report_leaderboard_button = types.InlineKeyboardButton(
-        "🏆 Ударники труда",
-        callback_data="admin_report_leaderboard"
-    )
-    
-    report_churn_button = types.InlineKeyboardButton(
-        "💔 Анализ оттока",
-        callback_data="admin_churn_analysis"
-    )
+    keyboard.add(group_bonus_button, happy_hours_button, password_toggle_button)
+    keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
+    return keyboard
 
-    keyboard.add(group_bonus_button, happy_hours_button)
-    keyboard.add(password_toggle_button, password_set_button)
-    keyboard.add(audio_upload_button)
-    keyboard.add(report_daily_button, report_leaderboard_button)
-    keyboard.add(report_churn_button)
+def get_admin_reports_menu():
+    """Меню для просмотра отчетов."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("📊 Отчет за 24ч", callback_data="admin_report_manual_daily"),
+        types.InlineKeyboardButton("🏆 Ударники труда", callback_data="admin_report_leaderboard"),
+        types.InlineKeyboardButton("💔 Анализ оттока", callback_data="admin_churn_analysis") # Мы уже добавили эту кнопку, оставляем
+    )
+    keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
+    return keyboard
+
+def get_admin_content_menu():
+    """Меню для управления контентом."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("🤫 Установить пароль", callback_data="boss_set_password"),
+        types.InlineKeyboardButton("🎤 Загрузить аудио", callback_data="boss_upload_audio")
+    )
+    keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
+    return keyboard
+
+def get_admin_users_menu():
+    """Меню для управления пользователями."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("🔍 Найти пользователя", callback_data="admin_find_user"),
+        types.InlineKeyboardButton("🎁 Выдать купон вручную", callback_data="admin_issue_coupon_manual")
+    )
+    keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
+    return keyboard
+    
+def get_admin_data_menu():
+    """Меню для управления данными."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("📥 Выгрузить в Google Sheets", callback_data="admin_export_sheets")
+    )
+    keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
     return keyboard
