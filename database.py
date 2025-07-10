@@ -11,6 +11,7 @@ import os
 import json
 import gspread
 import threading
+from collections import defaultdict
 from google.oauth2.service_account import Credentials
 from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
 
@@ -20,7 +21,46 @@ DB_FILE = os.path.join(DATA_DIR, "evgenich_data.db")
 SHEET_NAME = "Выгрузка Пользователей"
 
 # --- Секция работы с Google Sheets (фоновые задачи) ---
-# ... (Этот блок остается без изменений)
+def _get_sheets_worksheet():
+    """Подключается к Google Sheets и возвращает рабочий лист."""
+    try:
+        creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+        creds = Credentials.from_service_account_info(
+            creds_dict,
+            scopes=['https://www.googleapis.com/auth/spreadsheets']
+        )
+        gc = gspread.authorize(creds)
+        spreadsheet = gc.open_by_key(GOOGLE_SHEET_KEY)
+        return spreadsheet.worksheet(SHEET_NAME)
+    except Exception as e:
+        logging.error(f"G-Sheets | Не удалось подключиться к таблице '{SHEET_NAME}': {e}")
+        return None
+
+def _add_user_to_sheets_in_background(row_data: List[Any]):
+    """(Фоновая задача) Добавляет строку с данными пользователя в таблицу."""
+    try:
+        worksheet = _get_sheets_worksheet()
+        if worksheet:
+            worksheet.append_row(row_data)
+            logging.info(f"G-Sheets (фон) | Пользователь с ID {row_data[1]} успешно дублирован.")
+    except Exception as e:
+        logging.error(f"G-Sheets (фон) | Ошибка дублирования пользователя {row_data[1]}: {e}")
+
+def _update_status_in_sheets_in_background(user_id: int, new_status: str, redeem_time: Optional[datetime.datetime]):
+    """(Фоновая задача) Обновляет статус пользователя в таблице."""
+    try:
+        worksheet = _get_sheets_worksheet()
+        if worksheet:
+            cell = worksheet.find(str(user_id), in_column=2)
+            if cell:
+                worksheet.update_cell(cell.row, 5, new_status)
+                if redeem_time:
+                    worksheet.update_cell(cell.row, 8, redeem_time.strftime('%Y-%m-%d %H:%M:%S'))
+                logging.info(f"G-Sheets (фон) | Статус пользователя {user_id} успешно обновлен.")
+            else:
+                logging.warning(f"G-Sheets (фон) | Не удалось найти пользователя {user_id} для обновления.")
+    except Exception as e:
+        logging.error(f"G-Sheets (фон) | Ошибка обновления статуса для {user_id}: {e}")
 
 # --- Секция работы с локальной базой SQLite ---
 def get_db_connection():
@@ -103,143 +143,14 @@ def add_new_user(user_id: int, username: str, first_name: str, source: str, refe
     except Exception as e:
         logging.error(f"SQLite | Ошибка добавления пользователя {user_id}: {e}")
         return
-    # Логика для Google Sheets остается прежней, но без brought_by_staff_id
-    # ...
+    # Логика для Google Sheets
+    row_data = [
+        signup_time.strftime('%Y-%m-%d %H:%M:%S'), user_id, first_name,
+        username or "N/A", 'registered', source,
+        referrer_id if referrer_id else "", ""
+    ]
+    threading.Thread(target=_add_user_to_sheets_in_background, args=(row_data,)).start()
 
-# --- НОВЫЕ ФУНКЦИИ: Работа с Персоналом (staff) ---
-
-def find_staff_by_telegram_id(telegram_id: int) -> Optional[sqlite3.Row]:
-    """Находит сотрудника по его Telegram ID."""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM staff WHERE telegram_id = ?", (telegram_id,))
-        staff_member = cur.fetchone()
-        conn.close()
-        return staff_member
-    except Exception as e:
-        logging.error(f"Ошибка поиска сотрудника по Telegram ID {telegram_id}: {e}")
-        return None
-
-def find_staff_by_code(unique_code: str) -> Optional[sqlite3.Row]:
-    """Находит сотрудника по его уникальному коду."""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM staff WHERE unique_code = ? AND status = 'active'", (unique_code,))
-        staff_member = cur.fetchone()
-        conn.close()
-        return staff_member
-    except Exception as e:
-        logging.error(f"Ошибка поиска сотрудника по коду {unique_code}: {e}")
-        return None
-
-def add_or_update_staff(telegram_id: int, full_name: str, position: str) -> Optional[str]:
-    """Добавляет нового сотрудника или обновляет данные существующего."""
-    try:
-        # Генерация короткого имени (Иван Смирнов -> Иван С.)
-        parts = full_name.split()
-        short_name = f"{parts[0]} {parts[1][0]}." if len(parts) > 1 else parts[0]
-        
-        # Генерация уникального кода
-        base_code = parts[0].lower()
-        unique_code = f"{base_code}{telegram_id % 1000}"
-
-        conn = get_db_connection()
-        cur = conn.cursor()
-        # INSERT OR REPLACE обновит запись, если telegram_id уже существует
-        cur.execute(
-            """INSERT OR REPLACE INTO staff (telegram_id, full_name, short_name, position, unique_code, status)
-               VALUES (?, ?, ?, ?, ?, 'active')""",
-            (telegram_id, full_name, short_name, position, unique_code)
-        )
-        conn.commit()
-        conn.close()
-        logging.info(f"Сотрудник {full_name} (ID: {telegram_id}) успешно добавлен/обновлен в системе.")
-        return unique_code
-    except Exception as e:
-        logging.error(f"Ошибка при добавлении/обновлении сотрудника {telegram_id}: {e}")
-        return None
-
-def get_all_staff(only_active: bool = False) -> List[sqlite3.Row]:
-    """Возвращает список всех или только активных сотрудников."""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        query = "SELECT * FROM staff"
-        if only_active:
-            query += " WHERE status = 'active'"
-        cur.execute(query)
-        staff_list = cur.fetchall()
-        conn.close()
-        return staff_list
-    except Exception as e:
-        logging.error(f"Ошибка получения списка сотрудников: {e}")
-        return []
-
-def update_staff_status(staff_id: int, new_status: str) -> bool:
-    """Обновляет статус сотрудника (active/inactive)."""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("UPDATE staff SET status = ? WHERE staff_id = ?", (new_status, staff_id))
-        updated = cur.rowcount > 0
-        conn.commit()
-        conn.close()
-        logging.info(f"Статус сотрудника {staff_id} обновлен на {new_status}.")
-        return updated
-    except Exception as e:
-        logging.error(f"Ошибка обновления статуса сотрудника {staff_id}: {e}")
-        return False
-        
-# --- НОВЫЕ ФУНКЦИИ: Для отчетов по персоналу ---
-
-def get_staff_performance_for_period(start_time: datetime, end_time: datetime) -> Dict[str, List[Dict]]:
-    """Собирает статистику по персоналу за период."""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        # Выбираем всех гостей, приведенных персоналом за период
-        cur.execute("""
-            SELECT s.short_name, s.position, u.status
-            FROM users u
-            JOIN staff s ON u.brought_by_staff_id = s.staff_id
-            WHERE u.signup_date BETWEEN ? AND ?
-        """, (start_time, end_time))
-        
-        results = cur.fetchall()
-        conn.close()
-
-        performance = {}
-        # Считаем гостей и отписки для каждого сотрудника
-        for row in results:
-            name = row['short_name']
-            if name not in performance:
-                performance[name] = {'position': row['position'], 'brought': 0, 'churn': 0}
-            
-            performance[name]['brought'] += 1
-            if row['status'] == 'redeemed_and_left':
-                performance[name]['churn'] += 1
-        
-        # Группируем по должностям
-        grouped_performance = {}
-        for name, data in performance.items():
-            position = data['position']
-            if position not in grouped_performance:
-                grouped_performance[position] = []
-            grouped_performance[position].append({'name': name, 'brought': data['brought'], 'churn': data['churn']})
-            
-        # Сортируем сотрудников внутри каждой должности
-        for position in grouped_performance:
-            grouped_performance[position].sort(key=lambda x: x['brought'], reverse=True)
-            
-        return grouped_performance
-
-    except Exception as e:
-        logging.error(f"Ошибка сбора статистики по персоналу: {e}")
-        return {}
-        
-# ... (остальной код файла остается без изменений, я привожу его для полноты)
 def update_status(user_id: int, new_status: str) -> bool:
     redeem_time = datetime.datetime.now(pytz.utc) if new_status == 'redeemed' else None
     updated = False
@@ -263,6 +174,18 @@ def update_status(user_id: int, new_status: str) -> bool:
         threading.Thread(target=_update_status_in_sheets_in_background, args=(user_id, new_status, redeem_time)).start()
     return updated
 
+def find_user_by_id(user_id: int) -> Optional[sqlite3.Row]:
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        user = cur.fetchone()
+        conn.close()
+        return user
+    except Exception as e:
+        logging.error(f"SQLite | Ошибка поиска пользователя {user_id}: {e}")
+        return None
+
 def find_user_by_id_or_username(identifier: str) -> Optional[sqlite3.Row]:
     """Находит пользователя по ID или @username."""
     try:
@@ -279,18 +202,6 @@ def find_user_by_id_or_username(identifier: str) -> Optional[sqlite3.Row]:
         return user
     except Exception as e:
         logging.error(f"SQLite | Ошибка поиска пользователя по идентификатору '{identifier}': {e}")
-        return None
-
-def find_user_by_id(user_id: int) -> Optional[sqlite3.Row]:
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-        user = cur.fetchone()
-        conn.close()
-        return user
-    except Exception as e:
-        logging.error(f"SQLite | Ошибка поиска пользователя {user_id}: {e}")
         return None
 
 def get_reward_status(user_id: int) -> str:
@@ -484,3 +395,126 @@ def get_top_referrers_for_month(limit: int = 5) -> List[Tuple[str, int]]:
 
 def get_daily_updates() -> dict:
     return {'special': 'нет', 'stop-list': 'ничего'}
+
+# --- Функции для работы с Персоналом (staff) ---
+
+def find_staff_by_telegram_id(telegram_id: int) -> Optional[sqlite3.Row]:
+    """Находит сотрудника по его Telegram ID."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM staff WHERE telegram_id = ?", (telegram_id,))
+        staff_member = cur.fetchone()
+        conn.close()
+        return staff_member
+    except Exception as e:
+        logging.error(f"Ошибка поиска сотрудника по Telegram ID {telegram_id}: {e}")
+        return None
+
+def find_staff_by_code(unique_code: str) -> Optional[sqlite3.Row]:
+    """Находит сотрудника по его уникальному коду."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM staff WHERE unique_code = ? AND status = 'active'", (unique_code,))
+        staff_member = cur.fetchone()
+        conn.close()
+        return staff_member
+    except Exception as e:
+        logging.error(f"Ошибка поиска сотрудника по коду {unique_code}: {e}")
+        return None
+
+def add_or_update_staff(telegram_id: int, full_name: str, position: str) -> Optional[str]:
+    """Добавляет нового сотрудника или обновляет данные существующего."""
+    try:
+        parts = full_name.split()
+        short_name = f"{parts[0]} {parts[1][0]}." if len(parts) > 1 else parts[0]
+        base_code = parts[0].lower().strip().replace(' ', '')
+        unique_code = f"{base_code}{telegram_id % 1000}"
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT OR REPLACE INTO staff (telegram_id, full_name, short_name, position, unique_code, status)
+               VALUES (?, ?, ?, ?, ?, 'active')""",
+            (telegram_id, full_name, short_name, position, unique_code)
+        )
+        conn.commit()
+        conn.close()
+        logging.info(f"Сотрудник {full_name} (ID: {telegram_id}) успешно добавлен/обновлен в системе.")
+        return unique_code
+    except Exception as e:
+        logging.error(f"Ошибка при добавлении/обновлении сотрудника {telegram_id}: {e}")
+        return None
+
+def get_all_staff(only_active: bool = False) -> List[sqlite3.Row]:
+    """Возвращает список всех или только активных сотрудников."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        query = "SELECT * FROM staff ORDER BY full_name"
+        if only_active:
+            query = "SELECT * FROM staff WHERE status = 'active' ORDER BY full_name"
+        cur.execute(query)
+        staff_list = cur.fetchall()
+        conn.close()
+        return staff_list
+    except Exception as e:
+        logging.error(f"Ошибка получения списка сотрудников: {e}")
+        return []
+
+def update_staff_status(staff_id: int, new_status: str) -> bool:
+    """Обновляет статус сотрудника (active/inactive)."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE staff SET status = ? WHERE staff_id = ?", (new_status, staff_id))
+        updated = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        logging.info(f"Статус сотрудника {staff_id} обновлен на {new_status}.")
+        return updated
+    except Exception as e:
+        logging.error(f"Ошибка обновления статуса сотрудника {staff_id}: {e}")
+        return False
+        
+def get_staff_performance_for_period(start_time: datetime, end_time: datetime) -> Dict[str, List[Dict]]:
+    """Собирает статистику по персоналу за период."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT s.short_name, s.position, u.status
+            FROM users u
+            JOIN staff s ON u.brought_by_staff_id = s.staff_id
+            WHERE u.signup_date BETWEEN ? AND ?
+        """, (start_time, end_time))
+        
+        results = cur.fetchall()
+        conn.close()
+
+        performance = {}
+        for row in results:
+            name = row['short_name']
+            if name not in performance:
+                performance[name] = {'position': row['position'], 'brought': 0, 'churn': 0}
+            
+            performance[name]['brought'] += 1
+            if row['status'] == 'redeemed_and_left':
+                performance[name]['churn'] += 1
+        
+        grouped_performance = {}
+        for name, data in performance.items():
+            position = data['position']
+            if position not in grouped_performance:
+                grouped_performance[position] = []
+            grouped_performance[position].append({'name': name, 'brought': data['brought'], 'churn': data['churn']})
+            
+        for position in grouped_performance:
+            grouped_performance[position].sort(key=lambda x: x['brought'], reverse=True)
+            
+        return grouped_performance
+
+    except Exception as e:
+        logging.error(f"Ошибка сбора статистики по персоналу: {e}")
+        return {}
