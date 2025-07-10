@@ -4,7 +4,7 @@ from config import ADMIN_IDS, MENU_URL
 from menu_nastoiki import MENU_DATA
 from food_menu import FOOD_MENU_DATA
 
-# ===!ОСНОВНЫЕ REPLY-КЛАВИАТУРЫ!===
+# === ОСНОВНЫЕ REPLY-КЛАВИАТУРЫ ===
 
 def get_main_menu_keyboard(user_id):
     """Возвращает главную клавиатуру для основного меню."""
@@ -125,6 +125,7 @@ def get_admin_main_menu():
         types.InlineKeyboardButton("⚙️ Управление акциями", callback_data="admin_menu_promotions"),
         types.InlineKeyboardButton("📊 Отчеты и аналитика", callback_data="admin_menu_reports"),
         types.InlineKeyboardButton("📝 Управление контентом", callback_data="admin_menu_content"),
+        types.InlineKeyboardButton("👥 Управление персоналом", callback_data="admin_menu_staff"),
         types.InlineKeyboardButton("👤 Управление пользователями", callback_data="admin_menu_users"),
         types.InlineKeyboardButton("💾 Управление данными", callback_data="admin_menu_data")
     )
@@ -133,7 +134,7 @@ def get_admin_main_menu():
 def get_admin_promotions_menu(settings: dict):
     """Меню для управления промо-акциями."""
     keyboard = types.InlineKeyboardMarkup(row_width=1)
-
+    
     group_bonus_promo = settings['promotions']['group_bonus']
     group_bonus_status = "✅ ВКЛ" if group_bonus_promo.get('is_active') else "❌ ВЫКЛ"
     group_bonus_button = types.InlineKeyboardButton(
@@ -154,7 +155,7 @@ def get_admin_promotions_menu(settings: dict):
         f"Пароль дня: {password_status}",
         callback_data="boss_toggle_promotions.password_of_the_day.is_active"
     )
-
+    
     keyboard.add(group_bonus_button, happy_hours_button, password_toggle_button)
     keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
     return keyboard
@@ -192,7 +193,7 @@ def get_admin_users_menu():
     )
     keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
     return keyboard
-
+    
 def get_admin_data_menu():
     """Меню для управления данными."""
     keyboard = types.InlineKeyboardMarkup(row_width=1)
@@ -200,4 +201,35 @@ def get_admin_data_menu():
         types.InlineKeyboardButton("📥 Выгрузить в Google Sheets", callback_data="admin_export_sheets")
     )
     keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
+    return keyboard
+
+def get_admin_staff_menu():
+    """Меню для управления персоналом."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("📋 Список сотрудников", callback_data="admin_list_staff")
+    )
+    keyboard.add(types.InlineKeyboardButton("⬅️ Назад в админку", callback_data="admin_main_menu"))
+    return keyboard
+
+def get_staff_management_keyboard(staff_id: int, current_status: str):
+    """Клавиатура для управления конкретным сотрудником."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    
+    new_status = 'inactive' if current_status == 'active' else 'active'
+    button_text = "❌ Деактивировать" if current_status == 'active' else "✅ Активировать"
+    
+    keyboard.add(
+        types.InlineKeyboardButton(button_text, callback_data=f"admin_toggle_staff_{staff_id}_{new_status}")
+    )
+    return keyboard
+
+def get_position_choice_keyboard():
+    """Клавиатура для выбора должности при регистрации сотрудника."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("🤵 Официант", callback_data="staff_reg_pos_Официант"),
+        types.InlineKeyboardButton("🍸 Бармен", callback_data="staff_reg_pos_Бармен"),
+        types.InlineKeyboardButton("🎩 Менеджер", callback_data="staff_reg_pos_Менеджер")
+    )
     return keyboard
