@@ -31,7 +31,7 @@ def generate_daily_report_text(start_time, end_time, general_stats, staff_stats)
     # Блок общей статистики
     conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
     avg_redeem_time_str = "н/д"
-    if redeemed > 0:
+    if redeemed > 0 and total_redeem_time > 0:
         avg_seconds = total_redeem_time / redeemed
         hours, remainder = divmod(int(avg_seconds), 3600)
         minutes, _ = divmod(remainder, 60)
@@ -57,7 +57,6 @@ def generate_daily_report_text(start_time, end_time, general_stats, staff_stats)
     sources_block = ""
     if sources:
         sources_block += "\n---\n\n**Источники подписчиков (общие):**\n"
-        # Убираем из общих источников те, что относятся к персоналу
         filtered_sources = {k: v for k, v in sources.items() if not k.startswith("Сотрудник:")}
         sorted_sources = sorted(filtered_sources.items(), key=lambda item: item[1], reverse=True)
         for source, count in sorted_sources:
@@ -67,7 +66,6 @@ def generate_daily_report_text(start_time, end_time, general_stats, staff_stats)
     staff_block = ""
     if staff_stats:
         staff_block += "\n---\n\n**🏆 Эффективность персонала (за сутки) 🏆**\n"
-        # Сортируем должности для стабильного порядка
         for position in sorted(staff_stats.keys()):
             position_rus = f"{position}ы"
             if position == "Менеджер": position_rus = "Менеджеры"
@@ -80,7 +78,8 @@ def generate_daily_report_text(start_time, end_time, general_stats, staff_stats)
             medals = ["🥇", "🥈", "🥉"]
             for i, staff in enumerate(sorted_staff):
                 medal = medals[i] if i < len(medals) else "•"
-                staff_block += f"{medal} **{staff['name']}** | Гостей: **{staff['brought']}** (Отток: {staff['churn']})\n"
+                staff_name_short = shorten_name(staff['name'])
+                staff_block += f"{medal} **{staff_name_short}** | Гостей: **{staff['brought']}** (Отток: {staff['churn']})\n"
     else:
         staff_block = "\n\n---\n\n**🏆 Эффективность персонала (за сутки) 🏆**\n\n_Сегодня никто из персонала не приводил гостей через бота._"
 
@@ -92,7 +91,7 @@ def send_report(bot, chat_id, start_time, end_time):
         general_stats = database.get_report_data_for_period(start_time, end_time)
         staff_stats = database.get_staff_performance_for_period(start_time, end_time)
 
-        if general_stats[0] == 0: # Проверяем issued
+        if general_stats[0] == 0:
             bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
             return
 
@@ -102,16 +101,17 @@ def send_report(bot, chat_id, start_time, end_time):
         # Логика для "Ударника дня"
         all_staff_results = []
         for position in staff_stats:
-            all_staff_results.extend(staff_stats[position])
+             for staff_member in staff_stats[position]:
+                all_staff_results.append(staff_member)
         
         if all_staff_results:
             winner = max(all_staff_results, key=lambda x: x['brought'])
             if winner['brought'] > 0:
-                winner_name = winner['name']
-                # Тут будет вызов нейросети в будущем. Пока - шаблон.
+                winner_name = shorten_name(winner['name'])
                 winner_text = (f"💥 **ГЕРОЙ ДНЯ!** 💥\n\n"
                                f"Сегодня всех обошел(ла) **{winner_name}**, приведя **{winner['brought']}** новых гостей! "
                                f"Отличная работа, так держать! 👏🥳")
+                # Тут будет логика тега и AI
                 bot.send_message(chat_id, winner_text)
 
     except Exception as e:
@@ -151,6 +151,12 @@ def register_admin_handlers(bot):
                 'redeemed': 'Купон погашен', 'redeemed_and_left': 'Погасил и отписался'
             }
             status_ru = status_map.get(user_data['status'], user_data['status'])
+            staff_name = "Нет"
+            if user_data.get('brought_by_staff_id'):
+                staff_info = database.find_staff_by_id(user_data['brought_by_staff_id'])
+                if staff_info:
+                    staff_name = staff_info['short_name']
+
             response = (f"👤 **Профиль пользователя:**\n\n"
                         f"**ID:** `{user_data['user_id']}`\n"
                         f"**Имя:** {user_data['first_name']}\n"
@@ -158,7 +164,7 @@ def register_admin_handlers(bot):
                         f"**Статус:** {status_ru}\n"
                         f"**Источник:** {user_data['source'] or 'Неизвестен'}\n"
                         f"**Пригласил:** {user_data['referrer_id'] or 'Никто'}\n"
-                        f"**Привел сотрудник:** {user_data['brought_by_staff_id'] or 'Нет'}\n"
+                        f"**Привел сотрудник:** {staff_name}\n"
                         f"**Дата регистрации:** {user_data['signup_date'] or 'Нет данных'}\n"
                         f"**Дата погашения:** {user_data['redeem_date'] or 'Еще не погашен'}")
             bot.send_message(admin_id, response, parse_mode="Markdown")
@@ -221,7 +227,7 @@ def register_admin_handlers(bot):
         try:
             # НАВИГАЦИЯ
             if action == 'admin_main_menu':
-                bot.edit_message_text("👑 **Главное меню админ-панели**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_main_menu())
+                bot.edit_message_text("👑 **Главное меню админ-панели**\n\nВыберите нужный раздел:", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_main_menu())
             elif action == 'admin_menu_promotions':
                 settings = settings_manager.get_all_settings()
                 bot.edit_message_text("⚙️ **Управление акциями**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_promotions_menu(settings))
@@ -236,7 +242,7 @@ def register_admin_handlers(bot):
             elif action == 'admin_menu_staff':
                 bot.edit_message_text("👥 **Управление персоналом**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_staff_menu())
             
-            # ДЕЙСТВИЯ
+            # УПРАВЛЕНИЕ ПЕРСОНАЛОМ
             elif action == 'admin_list_staff':
                 all_staff = database.get_all_staff()
                 if not all_staff:
@@ -253,17 +259,19 @@ def register_admin_handlers(bot):
             elif action.startswith('admin_toggle_staff_'):
                 parts = action.split('_')
                 staff_id, new_status = int(parts[3]), parts[4]
-                database.update_staff_status(staff_id, new_status)
-                
-                all_staff = database.get_all_staff()
-                for s in all_staff:
-                    if s['staff_id'] == staff_id:
-                        status_icon = "✅ Активен" if new_status == 'active' else "❌ Неактивен"
-                        new_text = f"{s['full_name']} ({s['position']})\nСтатус: {status_icon} | ID: `{s['telegram_id']}`"
-                        bot.edit_message_text(new_text, call.message.chat.id, call.message.message_id, parse_mode="Markdown",
-                                              reply_markup=keyboards.get_staff_management_keyboard(s['staff_id'], new_status))
-                        break
-            
+                if database.update_staff_status(staff_id, new_status):
+                    all_staff = database.get_all_staff() # Получаем обновленный список
+                    for s in all_staff:
+                        if s['staff_id'] == staff_id:
+                            status_icon = "✅ Активен" if new_status == 'active' else "❌ Неактивен"
+                            new_text = f"{s['full_name']} ({s['position']})\nСтатус: {status_icon} | ID: `{s['telegram_id']}`"
+                            bot.edit_message_text(new_text, call.message.chat.id, call.message.message_id, parse_mode="Markdown",
+                                                  reply_markup=keyboards.get_staff_management_keyboard(s['staff_id'], new_status))
+                            break
+                else:
+                    bot.edit_message_text("Не удалось обновить статус.", call.message.chat.id, call.message.message_id, reply_markup=None)
+
+            # ДЕЙСТВИЯ
             elif action == 'admin_find_user':
                 msg = bot.send_message(call.message.chat.id, "Введите ID или @username пользователя для поиска:")
                 admin_states[call.from_user.id] = 'awaiting_user_identifier'
@@ -287,23 +295,23 @@ def register_admin_handlers(bot):
                 total_left, distribution = database.get_full_churn_analysis()
                 if total_left == 0:
                     bot.send_message(call.message.chat.id, "Пока никто из получивших подарок не отписался. Отличная работа!")
-                    return
-                response = f"💔 **Анализ оттока подписчиков (за все время)**\n\nВсего отписалось после подарка: **{total_left}** чел.\n\n**Как быстро они отписываются:**\n"
-                for period, count in distribution.items():
-                    percentage = round((count / total_left) * 100, 1) if total_left > 0 else 0
-                    response += f"• {period}: **{count}** чел. ({percentage}%)\n"
-                bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+                else:
+                    response = f"💔 **Анализ оттока подписчиков (за все время)**\n\nВсего отписалось после подарка: **{total_left}** чел.\n\n**Как быстро они отписываются:**\n"
+                    for period, count in distribution.items():
+                        percentage = round((count / total_left) * 100, 1) if total_left > 0 else 0
+                        response += f"• {period}: **{count}** чел. ({percentage}%)\n"
+                    bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
             elif action == 'admin_report_leaderboard':
                 top_list = database.get_top_referrers_for_month(5)
                 if not top_list:
                     bot.send_message(call.message.chat.id, "В этом месяце пока никто не привел друзей, которые бы получили настойку.")
-                    return
-                month_name = datetime.datetime.now(pytz.timezone('Europe/Moscow')).strftime('%B %Y')
-                response = f"🏆 **Ударники труда за {month_name}**:\n(учитываются только друзья, погасившие настойку в этом месяце)\n\n"
-                medals = ["🥇", "🥈", "🥉", "4.", "5."]
-                for i, (name, count) in enumerate(top_list):
-                    response += f"{medals[i]} Товарищ **{name}** — {count} чел.\n"
-                bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+                else:
+                    month_name = datetime.datetime.now(pytz.timezone('Europe/Moscow')).strftime('%B %Y')
+                    response = f"🏆 **Ударники труда за {month_name}**:\n(учитываются только друзья, погасившие настойку в этом месяце)\n\n"
+                    medals = ["🥇", "🥈", "🥉", "4.", "5."]
+                    for i, (name, count) in enumerate(top_list):
+                        response += f"{medals[i]} Товарищ **{name}** — {count} чел.\n"
+                    bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
 
             # УПРАВЛЕНИЕ КОНТЕНТОМ И АКЦИЯМИ
             elif action.startswith('boss_toggle_'):
