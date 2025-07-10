@@ -33,7 +33,8 @@ def issue_coupon(bot, user_id, chat_id):
 def register_user_command_handlers(bot):
     """Регистрирует обработчики для основных команд пользователя и персонала."""
     
-    staff_reg_states = {} # Словарь для хранения состояний регистрации персонала
+    # Словарь для хранения состояний регистрации персонала (имя, должность)
+    staff_reg_data = {} 
 
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
@@ -53,7 +54,6 @@ def register_user_command_handlers(bot):
             )
             return
 
-        # Если пользователь не найден, регистрируем его
         if status == 'not_found':
             logging.info(f"Новый пользователь {user_id}. Регистрируем в SQLite...")
             referrer_id = None
@@ -65,7 +65,6 @@ def register_user_command_handlers(bot):
                 payload = args[1]
                 logging.info(f"Обнаружена нагрузка (payload): {payload}")
 
-                # Проверяем, привел ли гостя сотрудник
                 if payload.startswith('w_'):
                     staff_code = payload.replace('w_', '')
                     staff_member = database.find_staff_by_code(staff_code)
@@ -74,16 +73,12 @@ def register_user_command_handlers(bot):
                         source = f"Сотрудник: {staff_member['short_name']}"
                     else:
                         logging.warning(f"Не найден активный сотрудник с кодом {staff_code}")
-
-                # Проверяем, привел ли гостя другой гость (реферал)
                 elif payload.startswith('ref_'):
                     try:
                         referrer_id = int(payload.replace('ref_', ''))
                         source = 'Реферал'
                     except (ValueError, IndexError):
                         logging.warning(f"Не удалось распознать ref_id из {payload}")
-                
-                # Проверяем другие источники
                 else:
                     allowed_sources = {
                         'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 'qr_toilet': 'QR в туалете',
@@ -103,29 +98,36 @@ def register_user_command_handlers(bot):
             reply_markup=keyboards.get_gift_keyboard()
         )
 
-    # --- НОВЫЕ КОМАНДЫ ДЛЯ ПЕРСОНАЛА ---
+    # --- ИСПРАВЛЕННАЯ ЛОГИКА РЕГИСТРАЦИИ ПЕРСОНАЛА ---
 
     def process_staff_name_step(message: types.Message):
+        """Шаг 2: Обработка введенного имени сотрудника."""
         user_id = message.from_user.id
-        if staff_reg_states.get(user_id) != 'awaiting_name':
+        
+        # Проверяем, что мы действительно ждем имя от этого пользователя
+        if staff_reg_data.get(user_id) != 'awaiting_name':
+            # Если нет, передаем управление дальше (например, AI)
             return
-            
+
         full_name = message.text.strip()
         if len(full_name.split()) < 2:
-            bot.send_message(user_id, "Пожалуйста, введите и имя, и фамилию. Например: Иван Смирнов", reply_markup=types.ReplyKeyboardRemove())
-            bot.register_next_step_handler_by_chat_id(user_id, process_staff_name_step)
+            bot.send_message(user_id, "Пожалуйста, введите и имя, и фамилию. Например: Иван Смирнов")
+            # Снова регистрируем этот же шаг, чтобы бот ждал правильного ввода
+            bot.register_next_step_handler(message, process_staff_name_step)
             return
-            
-        staff_reg_states[user_id] = {'step': 'awaiting_position', 'full_name': full_name}
+        
+        # Сохраняем имя и переводим на следующий шаг
+        staff_reg_data[user_id] = {'full_name': full_name}
         bot.send_message(user_id, f"Отлично, {full_name.split()[0]}! Теперь выбери свою должность:",
                          reply_markup=keyboards.get_position_choice_keyboard())
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("staff_reg_pos_"))
     def handle_staff_position_choice(call: types.CallbackQuery):
+        """Шаг 3: Обработка выбора должности."""
         user_id = call.from_user.id
-        user_state = staff_reg_states.get(user_id)
+        user_state = staff_reg_data.get(user_id)
         
-        if not user_state or user_state.get('step') != 'awaiting_position':
+        if not isinstance(user_state, dict) or 'full_name' not in user_state:
             bot.answer_callback_query(call.id, "Что-то пошло не так. Попробуйте начать регистрацию заново с команды /staff_reg", show_alert=True)
             return
             
@@ -143,12 +145,13 @@ def register_user_command_handlers(bot):
         else:
             bot.send_message(user_id, "Произошла ошибка при регистрации. Обратись к администратору.", reply_markup=keyboards.get_main_menu_keyboard(user_id))
             
-        if user_id in staff_reg_states:
-            del staff_reg_states[user_id]
+        if user_id in staff_reg_data:
+            del staff_reg_data[user_id]
 
 
     @bot.message_handler(commands=['staff_reg'])
     def handle_staff_reg(message: types.Message):
+        """Шаг 1: Инициация регистрации персонала."""
         user_id = message.from_user.id
         
         if message.chat.type == 'private':
@@ -158,24 +161,24 @@ def register_user_command_handlers(bot):
         try:
             member = bot.get_chat_member(REPORT_CHAT_ID, user_id)
             if member.status not in ['member', 'administrator', 'creator']:
-                bot.send_message(user_id, "Эта команда только для участников рабочего чата.")
-                return 
+                return # Игнорируем, если не состоит в чате
         except Exception as e:
             logging.warning(f"Не удалось проверить членство {user_id} в рабочем чате: {e}")
             return
         
         existing_staff = database.find_staff_by_telegram_id(user_id)
         if existing_staff:
-             bot.send_message(user_id, "Ты уже зарегистрирован в системе. Чтобы получить свой QR-код, используй команду /myqr")
+             msg_to_send = bot.send_message(user_id, "Ты уже зарегистрирован в системе. Чтобы получить свой QR-код, используй команду /myqr")
              return
 
-        staff_reg_states[user_id] = 'awaiting_name'
-        bot.send_message(user_id, "Привет! Вижу, ты из нашей команды. Давай зарегистрируем тебя в системе.\n\n"
+        # Начинаем регистрацию в личных сообщениях
+        msg = bot.send_message(user_id, "Привет! Вижу, ты из нашей команды. Давай зарегистрируем тебя в системе.\n\n"
                                   "**Пожалуйста, введи свои полные Имя и Фамилию** (например, 'Иван Смирнов'). "
                                   "Эти данные будет видеть руководство в отчетах по эффективности.", parse_mode="Markdown")
-        # Мы не можем использовать register_next_step_handler в групповом чате, поэтому полагаемся на то,
-        # что пользователь напишет в личку боту. Инструкция выше должна его направить.
-        # В реальной реализации можно было бы использовать FSM.
+        
+        # "Запираем" бота в ожидании следующего шага от этого пользователя
+        staff_reg_data[user_id] = 'awaiting_name'
+        bot.register_next_step_handler(msg, process_staff_name_step)
 
     def send_qr_to_staff(bot, user_id, unique_code):
         bot_info = bot.get_me()
