@@ -13,111 +13,15 @@ import keyboards
 import settings_manager
 from export_to_sheets import do_export
 from handlers.user_commands import issue_coupon
-
-# --- Утилита для сокращения имени ---
-def shorten_name(full_name: str) -> str:
-    """Превращает 'Иван Смирнов' в 'Иван С.'."""
-    parts = full_name.split()
-    if len(parts) > 1:
-        return f"{parts[0]} {parts[1][0]}."
-    return full_name
+from handlers.reports import send_report, generate_daily_report_text
+from handlers.utils import shorten_name
+from handlers.reports_callbacks import handle_report_callbacks
+from handlers.staff import handle_staff_callbacks
+from handlers.users import handle_user_callbacks
+from handlers.promotions import handle_promotions_callbacks
+from handlers.content import handle_content_callbacks
 
 # --- Функции генерации отчетов ---
-def generate_daily_report_text(start_time, end_time, general_stats, staff_stats):
-    """Формирует текст полного ежедневного отчета."""
-    issued, redeemed, _, sources, total_redeem_time = general_stats
-    _, left_count = database.get_daily_churn_data(start_time, end_time)
-
-    # Блок общей статистики
-    conversion_rate = round((redeemed / issued) * 100, 1) if issued > 0 else 0
-    avg_redeem_time_str = "н/д"
-    if redeemed > 0 and total_redeem_time > 0:
-        avg_seconds = total_redeem_time / redeemed
-        hours, remainder = divmod(int(avg_seconds), 3600)
-        minutes, _ = divmod(remainder, 60)
-        avg_redeem_time_str = f"{hours} ч {minutes} мин"
-    
-    retention_rate_str = "н/д"
-    if redeemed > 0:
-        retention_rate = round(((redeemed - left_count) / redeemed) * 100, 1)
-        retention_rate_str = f"{retention_rate}%"
-
-    report_date = end_time.strftime('%d.%m.%Y')
-    header = f"📊 **ОтчетПодпискаТГ ({report_date})** 📊\n\n"
-    period_str = f"**Период:** с {start_time.strftime('%H:%M %d.%m')} по {end_time.strftime('%H:%M %d.%m')}\n\n"
-    
-    stats_block = (f"✅ **Выдано купонов:** {issued}\n"
-                   f"🥃 **Погашено настоек:** {redeemed}\n"
-                   f"📈 **Конверсия в погашение:** {conversion_rate}%\n"
-                   f"⏱️ **Среднее время до погашения:** {avg_redeem_time_str}\n"
-                   f"💔 **Отписалось за сутки:** {left_count} чел.\n"
-                   f"🎯 **Удержание за сутки:** {retention_rate_str}\n")
-    
-    # Блок источников
-    sources_block = ""
-    if sources:
-        sources_block += "\n---\n\n**Источники подписчиков (общие):**\n"
-        filtered_sources = {k: v for k, v in sources.items() if not k.startswith("Сотрудник:")}
-        sorted_sources = sorted(filtered_sources.items(), key=lambda item: item[1], reverse=True)
-        for source, count in sorted_sources:
-            sources_block += f"• {source}: {count}\n"
-            
-    # Блок персонала
-    staff_block = ""
-    if staff_stats:
-        staff_block += "\n---\n\n**🏆 Эффективность персонала (за сутки) 🏆**\n"
-        for position in sorted(staff_stats.keys()):
-            position_rus = f"{position}ы"
-            if position == "Менеджер": position_rus = "Менеджеры"
-            
-            emoji_map = {"Официант": "🤵", "Бармен": "🍸", "Менеджер": "🎩"}
-            emoji = emoji_map.get(position, "👥")
-
-            staff_block += f"\n**{emoji} {position_rus}:**\n"
-            sorted_staff = sorted(staff_stats[position], key=lambda x: x['brought'], reverse=True)
-            medals = ["🥇", "🥈", "🥉"]
-            for i, staff in enumerate(sorted_staff):
-                medal = medals[i] if i < len(medals) else "•"
-                staff_name_short = shorten_name(staff['name'])
-                staff_block += f"{medal} **{staff_name_short}** | Гостей: **{staff['brought']}** (Отток: {staff['churn']})\n"
-    else:
-        staff_block = "\n\n---\n\n**🏆 Эффективность персонала (за сутки) 🏆**\n\n_Сегодня никто из персонала не приводил гостей через бота._"
-
-    return header + period_str + stats_block + sources_block + staff_block
-
-def send_report(bot, chat_id, start_time, end_time):
-    """Запрашивает все данные и отправляет единый отчет."""
-    try:
-        general_stats = database.get_report_data_for_period(start_time, end_time)
-        staff_stats = database.get_staff_performance_for_period(start_time, end_time)
-
-        if general_stats[0] == 0:
-            bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
-            return
-
-        report_text = generate_daily_report_text(start_time, end_time, general_stats, staff_stats)
-        bot.send_message(chat_id, report_text, parse_mode="Markdown")
-        
-        # Логика для "Ударника дня"
-        all_staff_results = []
-        for position in staff_stats:
-             for staff_member in staff_stats[position]:
-                all_staff_results.append(staff_member)
-        
-        if all_staff_results:
-            winner = max(all_staff_results, key=lambda x: x['brought'])
-            if winner['brought'] > 0:
-                winner_name = shorten_name(winner['name'])
-                winner_text = (f"💥 **ГЕРОЙ ДНЯ!** 💥\n\n"
-                               f"Сегодня всех обошел(ла) **{winner_name}**, приведя **{winner['brought']}** новых гостей! "
-                               f"Отличная работа, так держать! 👏🥳")
-                # Тут будет логика тега и AI
-                bot.send_message(chat_id, winner_text)
-
-    except Exception as e:
-        logging.error(f"Не удалось отправить отчет в чат {chat_id}: {e}")
-        bot.send_message(chat_id, "Ошибка при формировании отчета.")
-
 
 def register_admin_handlers(bot):
     """Регистрирует все команды и колбэки для админ-панели."""
@@ -214,6 +118,13 @@ def register_admin_handlers(bot):
         else:
             bot.reply_to(message, "Это не аудиофайл. Попробуй еще раз.")
 
+    # Регистрируем обработчики из новых файлов
+    handle_report_callbacks(bot, admin_states, settings_manager, keyboards, texts)
+    handle_staff_callbacks(bot, keyboards)
+    handle_user_callbacks(bot, admin_states, texts)
+    handle_promotions_callbacks(bot, settings_manager, keyboards)
+    handle_content_callbacks(bot, texts)
+
     # --- Основной обработчик кнопок админки ---
     @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_') or call.data.startswith('boss_'))
     def handle_admin_callbacks(call: types.CallbackQuery):
@@ -242,35 +153,6 @@ def register_admin_handlers(bot):
             elif action == 'admin_menu_staff':
                 bot.edit_message_text("👥 **Управление персоналом**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_staff_menu())
             
-            # УПРАВЛЕНИЕ ПЕРСОНАЛОМ
-            elif action == 'admin_list_staff':
-                all_staff = database.get_all_staff()
-                if not all_staff:
-                    bot.send_message(call.message.chat.id, "В системе пока нет ни одного сотрудника.")
-                    return
-                
-                bot.delete_message(call.message.chat.id, call.message.message_id)
-                bot.send_message(call.message.chat.id, "📋 **Список сотрудников:**\n(Нажмите на кнопку под сообщением, чтобы изменить статус)")
-                for staff in all_staff:
-                    status_icon = "✅ Активен" if staff['status'] == 'active' else "❌ Неактивен"
-                    response = f"{staff['full_name']} ({staff['position']})\nСтатус: {status_icon} | ID: `{staff['telegram_id']}`"
-                    bot.send_message(call.message.chat.id, response, parse_mode="Markdown", reply_markup=keyboards.get_staff_management_keyboard(staff['staff_id'], staff['status']))
-            
-            elif action.startswith('admin_toggle_staff_'):
-                parts = action.split('_')
-                staff_id, new_status = int(parts[3]), parts[4]
-                if database.update_staff_status(staff_id, new_status):
-                    all_staff = database.get_all_staff() # Получаем обновленный список
-                    for s in all_staff:
-                        if s['staff_id'] == staff_id:
-                            status_icon = "✅ Активен" if new_status == 'active' else "❌ Неактивен"
-                            new_text = f"{s['full_name']} ({s['position']})\nСтатус: {status_icon} | ID: `{s['telegram_id']}`"
-                            bot.edit_message_text(new_text, call.message.chat.id, call.message.message_id, parse_mode="Markdown",
-                                                  reply_markup=keyboards.get_staff_management_keyboard(s['staff_id'], new_status))
-                            break
-                else:
-                    bot.edit_message_text("Не удалось обновить статус.", call.message.chat.id, call.message.message_id, reply_markup=None)
-
             # ДЕЙСТВИЯ
             elif action == 'admin_find_user':
                 msg = bot.send_message(call.message.chat.id, "Введите ID или @username пользователя для поиска:")
@@ -312,6 +194,65 @@ def register_admin_handlers(bot):
                     for i, (name, count) in enumerate(top_list):
                         response += f"{medals[i]} Товарищ **{name}** — {count} чел.\n"
                     bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+
+            # ОТЧЕТЫ (реализация)
+            elif action == 'admin_report_source_funnel':
+                tz_moscow = pytz.timezone('Europe/Moscow')
+                end_time = datetime.datetime.now(tz_moscow)
+                start_time = end_time - datetime.timedelta(days=30)
+                _, _, _, sources, _ = database.get_report_data_for_period(start_time, end_time)
+                if not sources:
+                    bot.send_message(call.message.chat.id, "Нет данных по источникам за месяц.")
+                else:
+                    text = f"🔬 Воронка по источникам (30 дней):\n"
+                    total = sum(sources.values())
+                    for src, count in sorted(sources.items(), key=lambda x: x[1], reverse=True):
+                        percent = round(count / total * 100, 1) if total else 0
+                        text += f"• {src or 'Неизвестно'}: {count} ({percent}%)\n"
+                    bot.send_message(call.message.chat.id, text)
+
+            elif action == 'admin_report_churn_by_source':
+                tz_moscow = pytz.timezone('Europe/Moscow')
+                end_time = datetime.datetime.now(tz_moscow)
+                start_time = end_time - datetime.timedelta(days=30)
+                # Получаем отток по источникам
+                try:
+                    conn = database.get_db_connection()
+                    cur = conn.cursor()
+                    cur.execute("SELECT source, COUNT(*) as cnt FROM users WHERE redeem_date BETWEEN ? AND ? AND status = 'redeemed_and_left' GROUP BY source", (start_time, end_time))
+                    rows = cur.fetchall()
+                    conn.close()
+                    if not rows:
+                        bot.send_message(call.message.chat.id, "Нет данных по оттоку за месяц.")
+                    else:
+                        total = sum(row['cnt'] for row in rows)
+                        text = f"📈 Анализ оттока по источникам (30 дней):\n"
+                        for row in rows:
+                            percent = round(row['cnt'] / total * 100, 1) if total else 0
+                            text += f"• {row['source'] or 'Неизвестно'}: {row['cnt']} ({percent}%)\n"
+                        bot.send_message(call.message.chat.id, text)
+                except Exception as e:
+                    bot.send_message(call.message.chat.id, f"Ошибка при формировании отчёта: {e}")
+
+            elif action == 'admin_report_activity_time':
+                tz_moscow = pytz.timezone('Europe/Moscow')
+                end_time = datetime.datetime.now(tz_moscow)
+                start_time = end_time - datetime.timedelta(days=30)
+                try:
+                    conn = database.get_db_connection()
+                    cur = conn.cursor()
+                    cur.execute("SELECT strftime('%H', signup_date) as hour, COUNT(*) as cnt FROM users WHERE signup_date BETWEEN ? AND ? GROUP BY hour ORDER BY hour", (start_time, end_time))
+                    rows = cur.fetchall()
+                    conn.close()
+                    if not rows:
+                        bot.send_message(call.message.chat.id, "Нет данных по активности гостей за месяц.")
+                    else:
+                        text = f"🕒 Пики активности гостей (регистрация, 30 дней):\n"
+                        for row in rows:
+                            text += f"• {row['hour']}:00 — {row['cnt']}\n"
+                        bot.send_message(call.message.chat.id, text)
+                except Exception as e:
+                    bot.send_message(call.message.chat.id, f"Ошибка при формировании отчёта: {e}")
 
             # УПРАВЛЕНИЕ КОНТЕНТОМ И АКЦИЯМИ
             elif action.startswith('boss_toggle_'):
