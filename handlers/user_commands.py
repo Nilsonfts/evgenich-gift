@@ -238,35 +238,24 @@ def register_user_command_handlers(bot):
 
     @bot.message_handler(func=lambda message: message.text == "🥃 Получить настойку по талону")
     def handle_redeem_nastoika(message: types.Message):
-        """Обрабатывает кнопку получения настойки по талону."""
+        """Обрабатывает кнопку получения настойки по талону - начинает сбор профиля."""
         user_id = message.from_user.id
         user_status = database.get_reward_status(user_id)
         
-        if user_status == 'issued':
-            # У пользователя есть неиспользованный купон
-            bot.send_message(
-                message.chat.id,
-                texts.CONTACT_REQUEST_TEXT,
-                reply_markup=keyboards.get_contact_request_keyboard()
-            )
-        elif user_status == 'redeemed':
+        if user_status in ['redeemed', 'redeemed_and_left']:
             bot.send_message(
                 message.chat.id,
                 "🥃 Твой купон уже был использован, товарищ! Если хочешь еще настойку, приводи друзей!",
                 reply_markup=keyboards.get_main_menu_keyboard(user_id)
             )
-        elif user_status == 'not_found' or user_status == 'registered':
-            bot.send_message(
-                message.chat.id,
-                "🔒 У тебя пока нет купона, товарищ! Сначала нужно подписаться на наш канал через команду /start",
-                reply_markup=keyboards.get_main_menu_keyboard(user_id)
-            )
-        else:
-            bot.send_message(
-                message.chat.id,
-                "🤔 Что-то пошло не так. Попробуй еще раз или обратись к персоналу.",
-                reply_markup=keyboards.get_main_menu_keyboard(user_id)
-            )
+            return
+        
+        # Начинаем сбор профиля - запрашиваем контакт
+        bot.send_message(
+            message.chat.id,
+            texts.CONTACT_REQUEST_TEXT,
+            reply_markup=keyboards.get_contact_request_keyboard()
+        )
 
     @bot.message_handler(commands=['voice'])
     def handle_voice_command(message: types.Message):
@@ -286,6 +275,28 @@ def register_user_command_handlers(bot):
             texts.get_help_text(message.from_user.id, ADMIN_IDS),
             parse_mode="Markdown"
         )
+
+    @bot.message_handler(commands=['restart'])
+    def handle_restart_command(message: types.Message):
+        """Команда для админов для сброса состояния пользователя (для тестирования)."""
+        user_id = message.from_user.id
+        
+        if user_id in ADMIN_IDS:
+            # Удаляем пользователя из базы данных
+            success, msg = database.delete_user(user_id)
+            
+            # Очищаем состояние профиля, если есть
+            if user_id in user_profile_data:
+                del user_profile_data[user_id]
+            
+            bot.send_message(
+                message.chat.id,
+                f"✅ Успех: Пользователь {user_id} успешно удален из SQLite.\nМожете начинать тестирование заново с /start",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            logging.info(f"Админ {user_id} сбросил свое состояние через /restart")
+        else:
+            bot.send_message(message.chat.id, "🚫 Эта команда доступна только администраторам.")
 
     @bot.message_handler(content_types=['contact'])
     def handle_contact_received(message: types.Message):
