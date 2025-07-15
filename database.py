@@ -244,6 +244,59 @@ def init_db():
                 reported_by_user_id INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""")
+        
+        # --- НОВЫЕ ТАБЛИЦЫ: Система рассылок ---
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS newsletters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                media_type TEXT,
+                media_file_id TEXT,
+                status TEXT DEFAULT 'draft',
+                created_by INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                scheduled_time TIMESTAMP,
+                sent_at TIMESTAMP,
+                target_count INTEGER DEFAULT 0,
+                delivered_count INTEGER DEFAULT 0,
+                read_count INTEGER DEFAULT 0
+            )""")
+        
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS newsletter_buttons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                newsletter_id INTEGER,
+                text TEXT NOT NULL,
+                url TEXT NOT NULL,
+                utm_campaign TEXT,
+                utm_source TEXT DEFAULT 'telegram_bot',
+                utm_medium TEXT DEFAULT 'newsletter',
+                utm_content TEXT,
+                position INTEGER DEFAULT 0,
+                FOREIGN KEY (newsletter_id) REFERENCES newsletters (id)
+            )""")
+        
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS newsletter_stats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                newsletter_id INTEGER,
+                user_id INTEGER,
+                delivered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                read_at TIMESTAMP,
+                FOREIGN KEY (newsletter_id) REFERENCES newsletters (id)
+            )""")
+        
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS newsletter_clicks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                newsletter_id INTEGER,
+                button_id INTEGER,
+                user_id INTEGER,
+                clicked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (newsletter_id) REFERENCES newsletters (id),
+                FOREIGN KEY (button_id) REFERENCES newsletter_buttons (id)
+            )""")
             
         conn.commit()
         conn.close()
@@ -702,6 +755,229 @@ def is_waiting_for_iiko_data(report_date: datetime.date) -> bool:
     """Проверяет, ожидаются ли данные iiko за определенную дату."""
     # Данные ожидаются, если они еще не внесены
     return get_iiko_nastoika_count_for_date(report_date) is None
+
+# --- Функции для работы с рассылками ---
+
+def get_newsletter_audience_count() -> int:
+    """Возвращает количество активных пользователей для рассылки."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        # Считаем всех зарегистрированных пользователей (исключаем только полностью отписавшихся)
+        cur.execute("SELECT COUNT(*) FROM users WHERE status != 'redeemed_and_left'")
+        count = cur.fetchone()[0]
+        conn.close()
+        return count
+    except Exception as e:
+        logging.error(f"Ошибка подсчета аудитории рассылки: {e}")
+        return 0
+
+def create_newsletter(title: str, content: str, created_by: int, media_type: str = None, media_file_id: str = None) -> int:
+    """Создает новую рассылку и возвращает ее ID."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO newsletters (title, content, media_type, media_file_id, created_by)
+            VALUES (?, ?, ?, ?, ?)
+        """, (title, content, media_type, media_file_id, created_by))
+        newsletter_id = cur.lastrowid
+        conn.commit()
+        conn.close()
+        logging.info(f"Создана рассылка '{title}' с ID {newsletter_id}")
+        return newsletter_id
+    except Exception as e:
+        logging.error(f"Ошибка создания рассылки: {e}")
+        return 0
+
+def add_newsletter_button(newsletter_id: int, text: str, url: str, position: int = 0) -> int:
+    """Добавляет кнопку к рассылке с UTM-метками."""
+    try:
+        utm_campaign = f"newsletter_{newsletter_id}"
+        utm_content = f"button_{newsletter_id}_{position}"
+        
+        # Добавляем UTM-параметры к URL
+        separator = "&" if "?" in url else "?"
+        tracked_url = f"{url}{separator}utm_source=telegram_bot&utm_medium=newsletter&utm_campaign={utm_campaign}&utm_content={utm_content}"
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO newsletter_buttons (newsletter_id, text, url, utm_campaign, utm_content, position)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (newsletter_id, text, tracked_url, utm_campaign, utm_content, position))
+        button_id = cur.lastrowid
+        conn.commit()
+        conn.close()
+        logging.info(f"Добавлена кнопка '{text}' к рассылке {newsletter_id}")
+        return button_id
+    except Exception as e:
+        logging.error(f"Ошибка добавления кнопки к рассылке: {e}")
+        return 0
+
+def get_newsletter_by_id(newsletter_id: int) -> Optional[sqlite3.Row]:
+    """Получает рассылку по ID."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM newsletters WHERE id = ?", (newsletter_id,))
+        newsletter = cur.fetchone()
+        conn.close()
+        return newsletter
+    except Exception as e:
+        logging.error(f"Ошибка получения рассылки {newsletter_id}: {e}")
+        return None
+
+def get_newsletter_buttons(newsletter_id: int) -> List[sqlite3.Row]:
+    """Получает кнопки рассылки."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM newsletter_buttons WHERE newsletter_id = ? ORDER BY position", (newsletter_id,))
+        buttons = cur.fetchall()
+        conn.close()
+        return buttons
+    except Exception as e:
+        logging.error(f"Ошибка получения кнопок рассылки {newsletter_id}: {e}")
+        return []
+
+def get_user_newsletters(created_by: int = None, limit: int = 10) -> List[sqlite3.Row]:
+    """Получает список рассылок пользователя."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        if created_by:
+            cur.execute("SELECT * FROM newsletters WHERE created_by = ? ORDER BY created_at DESC LIMIT ?", (created_by, limit))
+        else:
+            cur.execute("SELECT * FROM newsletters ORDER BY created_at DESC LIMIT ?", (limit,))
+        newsletters = cur.fetchall()
+        conn.close()
+        return newsletters
+    except Exception as e:
+        logging.error(f"Ошибка получения списка рассылок: {e}")
+        return []
+
+def schedule_newsletter(newsletter_id: int, scheduled_time: datetime.datetime) -> bool:
+    """Планирует рассылку на определенное время."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE newsletters 
+            SET status = 'scheduled', scheduled_time = ? 
+            WHERE id = ?
+        """, (scheduled_time, newsletter_id))
+        updated = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        if updated:
+            logging.info(f"Рассылка {newsletter_id} запланирована на {scheduled_time}")
+        return updated
+    except Exception as e:
+        logging.error(f"Ошибка планирования рассылки {newsletter_id}: {e}")
+        return False
+
+def mark_newsletter_sent(newsletter_id: int, target_count: int, delivered_count: int) -> bool:
+    """Отмечает рассылку как отправленную."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE newsletters 
+            SET status = 'sent', sent_at = ?, target_count = ?, delivered_count = ? 
+            WHERE id = ?
+        """, (datetime.datetime.now(pytz.utc), target_count, delivered_count, newsletter_id))
+        updated = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        if updated:
+            logging.info(f"Рассылка {newsletter_id} отмечена как отправленная")
+        return updated
+    except Exception as e:
+        logging.error(f"Ошибка обновления статуса рассылки {newsletter_id}: {e}")
+        return False
+
+def track_newsletter_delivery(newsletter_id: int, user_id: int) -> bool:
+    """Отслеживает доставку рассылки пользователю."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT OR IGNORE INTO newsletter_stats (newsletter_id, user_id)
+            VALUES (?, ?)
+        """, (newsletter_id, user_id))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка отслеживания доставки рассылки {newsletter_id} пользователю {user_id}: {e}")
+        return False
+
+def track_newsletter_click(newsletter_id: int, button_id: int, user_id: int) -> bool:
+    """Отслеживает клик по кнопке в рассылке."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO newsletter_clicks (newsletter_id, button_id, user_id)
+            VALUES (?, ?, ?)
+        """, (newsletter_id, button_id, user_id))
+        conn.commit()
+        conn.close()
+        logging.info(f"Зафиксирован клик по кнопке {button_id} в рассылке {newsletter_id} от пользователя {user_id}")
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка отслеживания клика: {e}")
+        return False
+
+def get_newsletter_analytics(newsletter_id: int) -> Dict[str, Any]:
+    """Получает аналитику по рассылке."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Общая статистика
+        cur.execute("SELECT target_count, delivered_count FROM newsletters WHERE id = ?", (newsletter_id,))
+        newsletter_stats = cur.fetchone()
+        
+        # Статистика кликов по кнопкам
+        cur.execute("""
+            SELECT b.text, b.utm_content, COUNT(c.id) as clicks
+            FROM newsletter_buttons b
+            LEFT JOIN newsletter_clicks c ON b.id = c.button_id
+            WHERE b.newsletter_id = ?
+            GROUP BY b.id, b.text, b.utm_content
+        """, (newsletter_id,))
+        button_stats = cur.fetchall()
+        
+        # Общее количество кликов
+        cur.execute("SELECT COUNT(*) FROM newsletter_clicks WHERE newsletter_id = ?", (newsletter_id,))
+        total_clicks = cur.fetchone()[0]
+        
+        conn.close()
+        
+        return {
+            'target_count': newsletter_stats['target_count'] if newsletter_stats else 0,
+            'delivered_count': newsletter_stats['delivered_count'] if newsletter_stats else 0,
+            'total_clicks': total_clicks,
+            'button_stats': [dict(row) for row in button_stats]
+        }
+    except Exception as e:
+        logging.error(f"Ошибка получения аналитики рассылки {newsletter_id}: {e}")
+        return {'target_count': 0, 'delivered_count': 0, 'total_clicks': 0, 'button_stats': []}
+
+def get_active_users_for_newsletter() -> List[int]:
+    """Получает список ID активных пользователей для рассылки."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM users WHERE status != 'redeemed_and_left'")
+        user_ids = [row[0] for row in cur.fetchall()]
+        conn.close()
+        return user_ids
+    except Exception as e:
+        logging.error(f"Ошибка получения списка пользователей для рассылки: {e}")
+        return []
 
 # --- Функции для работы с Персоналом (staff) ---
 

@@ -16,7 +16,7 @@ import texts
 from handlers.user_commands import register_user_command_handlers
 from handlers.callback_query import register_callback_handlers
 from handlers.booking_flow import register_booking_handlers
-from handlers.admin_panel import register_admin_handlers, send_report
+from handlers.admin_panel import register_admin_handlers, send_report, init_admin_handlers
 from handlers.ai_logic import register_ai_handlers
 from handlers.iiko_data_handler import register_iiko_data_handlers
 from delayed_tasks_processor import DelayedTasksProcessor
@@ -167,6 +167,9 @@ if __name__ == "__main__":
     register_admin_handlers(bot)
     register_ai_handlers(bot)
     register_iiko_data_handlers(bot)
+    
+    # Инициализируем систему рассылок с планировщиком
+    init_admin_handlers(bot, scheduler)
 
     # Ежедневный отчет в 05:30 (запрос данных iiko)
     scheduler.add_job(

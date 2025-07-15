@@ -13,6 +13,8 @@ import keyboards
 import settings_manager
 from export_to_sheets import do_export
 from handlers.user_commands import issue_coupon
+from handlers.newsletter_manager import register_newsletter_handlers
+from handlers.newsletter_buttons import register_newsletter_buttons_handlers
 
 # --- Утилита для сокращения имени ---
 def shorten_name(full_name: str) -> str:
@@ -246,6 +248,8 @@ def register_admin_handlers(bot):
                 bot.edit_message_text("📊 **Отчеты и аналитика**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_reports_menu())
             elif action == 'admin_menu_content':
                 bot.edit_message_text("📝 **Управление контентом**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_content_menu())
+            elif action == 'admin_newsletter_main':
+                bot.edit_message_text("📧 **Система рассылок**\n\nВыберите действие:", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_content_management_menu(), parse_mode="Markdown")
             elif action == 'admin_menu_users':
                 bot.edit_message_text("👤 **Управление пользователями**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_users_menu())
             elif action == 'admin_menu_data':
@@ -456,3 +460,18 @@ def register_admin_handlers(bot):
 
     # Регистрируем обработчики отчетов - теперь встроены в основной обработчик выше
     logging.info("Обработчики админ-панели зарегистрированы")
+
+def init_admin_handlers(bot, scheduler=None):
+    """Инициализирует все обработчики админ-панели."""
+    # Основные обработчики админ-панели уже зарегистрированы через декораторы
+    
+    # Регистрируем обработчики системы рассылок
+    if scheduler:
+        register_newsletter_handlers(bot, scheduler)
+    else:
+        logging.warning("Scheduler не передан, функции планирования рассылок недоступны")
+    
+    # Регистрируем обработчики кнопок рассылок
+    register_newsletter_buttons_handlers(bot)
+    
+    logging.info("Все обработчики админ-панели инициализированы")

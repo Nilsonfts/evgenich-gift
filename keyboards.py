@@ -186,6 +186,7 @@ def get_admin_content_menu():
     """Меню для управления контентом."""
     keyboard = types.InlineKeyboardMarkup(row_width=1)
     keyboard.add(
+        types.InlineKeyboardButton("📧 Система рассылок", callback_data="admin_newsletter_main"),
         types.InlineKeyboardButton("🤫 Установить пароль", callback_data="boss_set_password"),
         types.InlineKeyboardButton("🎤 Загрузить аудио", callback_data="boss_upload_audio")
     )
@@ -240,4 +241,124 @@ def get_position_choice_keyboard():
         types.InlineKeyboardButton("🍸 Бармен", callback_data="staff_reg_pos_Бармен"),
         types.InlineKeyboardButton("🎩 Менеджер", callback_data="staff_reg_pos_Менеджер")
     )
+    return keyboard
+
+# === КЛАВИАТУРЫ ДЛЯ СИСТЕМЫ РАССЫЛОК ===
+
+def get_content_management_menu():
+    """Главное меню управления контентом."""
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        types.InlineKeyboardButton("📊 Статистика базы", callback_data="admin_content_stats"),
+        types.InlineKeyboardButton("✉️ Создать рассылку", callback_data="admin_content_create")
+    )
+    keyboard.add(
+        types.InlineKeyboardButton("📋 Мои рассылки", callback_data="admin_content_list"),
+        types.InlineKeyboardButton("📈 Аналитика рассылок", callback_data="admin_content_analytics")
+    )
+    keyboard.add(
+        types.InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")
+    )
+    return keyboard
+
+def get_newsletter_creation_menu():
+    """Меню создания рассылки."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("📝 Текстовая рассылка", callback_data="admin_newsletter_type_text"),
+        types.InlineKeyboardButton("🖼 Рассылка с картинкой", callback_data="admin_newsletter_type_photo"),
+        types.InlineKeyboardButton("🎥 Рассылка с видео", callback_data="admin_newsletter_type_video")
+    )
+    keyboard.add(
+        types.InlineKeyboardButton("🔙 Назад", callback_data="admin_menu_content")
+    )
+    return keyboard
+
+def get_newsletter_sending_menu(newsletter_id: int):
+    """Меню отправки рассылки."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("📧 Тестовая отправка", callback_data=f"admin_newsletter_test_{newsletter_id}"),
+        types.InlineKeyboardButton("🚀 Отправить сейчас", callback_data=f"admin_newsletter_send_{newsletter_id}"),
+        types.InlineKeyboardButton("⏰ Запланировать", callback_data=f"admin_newsletter_schedule_{newsletter_id}")
+    )
+    keyboard.add(
+        types.InlineKeyboardButton("🔙 Назад", callback_data="admin_menu_content")
+    )
+    return keyboard
+
+def get_newsletter_buttons_menu(newsletter_id: int):
+    """Меню управления кнопками рассылки."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("➕ Добавить кнопку", callback_data=f"admin_newsletter_add_button_{newsletter_id}"),
+        types.InlineKeyboardButton("✅ Готово", callback_data=f"admin_newsletter_ready_{newsletter_id}")
+    )
+    return keyboard
+
+def get_button_templates_menu(newsletter_id: int):
+    """Шаблоны кнопок для рассылки."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("📍 Забронировать стол", callback_data=f"admin_button_template_{newsletter_id}_booking"),
+        types.InlineKeyboardButton("🌐 Перейти на сайт", callback_data=f"admin_button_template_{newsletter_id}_website"),
+        types.InlineKeyboardButton("📖 Меню", callback_data=f"admin_button_template_{newsletter_id}_menu"),
+        types.InlineKeyboardButton("🎯 Своя кнопка", callback_data=f"admin_button_template_{newsletter_id}_custom")
+    )
+    keyboard.add(
+        types.InlineKeyboardButton("🔙 Назад", callback_data=f"admin_newsletter_buttons_{newsletter_id}")
+    )
+    return keyboard
+
+def get_newsletter_list_keyboard(newsletters):
+    """Клавиатура со списком рассылок."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    for newsletter in newsletters:
+        status_emoji = {
+            'draft': '📝',
+            'scheduled': '⏰', 
+            'sent': '✅',
+            'sending': '📤'
+        }.get(newsletter['status'], '❓')
+        
+        button_text = f"{status_emoji} {newsletter['title'][:30]}..."
+        keyboard.add(
+            types.InlineKeyboardButton(button_text, callback_data=f"admin_newsletter_view_{newsletter['id']}")
+        )
+    
+    keyboard.add(
+        types.InlineKeyboardButton("🔙 Назад", callback_data="admin_menu_content")
+    )
+    return keyboard
+
+def get_newsletter_view_keyboard(newsletter_id: int, status: str):
+    """Клавиатура просмотра конкретной рассылки."""
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    
+    if status == 'draft':
+        keyboard.add(
+            types.InlineKeyboardButton("✏️ Редактировать", callback_data=f"admin_newsletter_edit_{newsletter_id}"),
+            types.InlineKeyboardButton("🚀 Отправить", callback_data=f"admin_newsletter_send_menu_{newsletter_id}")
+        )
+    
+    keyboard.add(
+        types.InlineKeyboardButton("📊 Аналитика", callback_data=f"admin_newsletter_stats_{newsletter_id}"),
+        types.InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_newsletter_delete_{newsletter_id}")
+    )
+    
+    keyboard.add(
+        types.InlineKeyboardButton("🔙 К списку", callback_data="admin_content_list")
+    )
+    return keyboard
+
+def create_newsletter_inline_keyboard(buttons_data):
+    """Создает inline-клавиатуру для рассылки из данных кнопок."""
+    if not buttons_data:
+        return None
+        
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    for button in buttons_data:
+        keyboard.add(
+            types.InlineKeyboardButton(button['text'], url=button['url'])
+        )
     return keyboard
