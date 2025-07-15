@@ -23,6 +23,17 @@ SHEET_NAME = "Выгрузка Пользователей"
 # Проверяем доступность Google Sheets
 GOOGLE_SHEETS_ENABLED = bool(GOOGLE_SHEET_KEY and GOOGLE_CREDENTIALS_JSON)
 
+# --- Функция перевода статусов ---
+def _translate_status_to_russian(status: str) -> str:
+    """Переводит статус с английского на русский для Google Таблиц."""
+    status_translations = {
+        'registered': 'Зарегистрирован',
+        'issued': 'Купон выдан',
+        'redeemed': 'Купон погашен',
+        'redeemed_and_left': 'Погашен и отписался'
+    }
+    return status_translations.get(status, status)
+
 # --- Секция работы с Google Sheets (фоновые задачи) ---
 def _get_sheets_worksheet():
     """Подключается к Google Sheets и возвращает рабочий лист."""
@@ -71,6 +82,39 @@ def _update_contact_in_sheets_in_background(user_id: int, phone_number: str, con
     except Exception as e:
         logging.error(f"G-Sheets (фон) | Ошибка обновления контакта для {user_id}: {e}")
 
+def _update_name_in_sheets_in_background(user_id: int, real_name: str):
+    """(Фоновая задача) Обновляет настоящее имя пользователя в таблице."""
+    if not GOOGLE_SHEETS_ENABLED:
+        return
+    try:
+        worksheet = _get_sheets_worksheet()
+        if worksheet:
+            cell = worksheet.find(str(user_id), in_column=2)
+            if cell:
+                worksheet.update_cell(cell.row, 7, real_name)  # Колонка G - настоящее имя
+                logging.info(f"G-Sheets (фон) | Имя пользователя {user_id} успешно обновлено: {real_name}")
+            else:
+                logging.warning(f"G-Sheets (фон) | Не удалось найти пользователя {user_id} для обновления имени.")
+    except Exception as e:
+        logging.error(f"G-Sheets (фон) | Ошибка обновления имени для {user_id}: {e}")
+
+def _update_birth_date_in_sheets_in_background(user_id: int, birth_date: str):
+    """(Фоновая задача) Обновляет дату рождения пользователя в таблице."""
+    if not GOOGLE_SHEETS_ENABLED:
+        return
+    try:
+        worksheet = _get_sheets_worksheet()
+        if worksheet:
+            cell = worksheet.find(str(user_id), in_column=2)
+            if cell:
+                worksheet.update_cell(cell.row, 8, birth_date)  # Колонка H - дата рождения
+                worksheet.update_cell(cell.row, 9, "1")  # Колонка I - профиль завершен
+                logging.info(f"G-Sheets (фон) | Дата рождения пользователя {user_id} успешно обновлена: {birth_date}")
+            else:
+                logging.warning(f"G-Sheets (фон) | Не удалось найти пользователя {user_id} для обновления даты рождения.")
+    except Exception as e:
+        logging.error(f"G-Sheets (фон) | Ошибка обновления даты рождения для {user_id}: {e}")
+
 def _update_status_in_sheets_in_background(user_id: int, new_status: str, redeem_time: Optional[datetime.datetime]):
     """(Фоновая задача) Обновляет статус пользователя в таблице."""
     if not GOOGLE_SHEETS_ENABLED:
@@ -80,10 +124,11 @@ def _update_status_in_sheets_in_background(user_id: int, new_status: str, redeem
         if worksheet:
             cell = worksheet.find(str(user_id), in_column=2)
             if cell:
-                worksheet.update_cell(cell.row, 7, new_status)  # Статус теперь в 7-й колонке
+                russian_status = _translate_status_to_russian(new_status)
+                worksheet.update_cell(cell.row, 10, russian_status)  # Статус в колонке J (10)
                 if redeem_time:
-                    worksheet.update_cell(cell.row, 10, redeem_time.strftime('%Y-%m-%d %H:%M:%S'))  # Дата погашения в 10-й колонке
-                logging.info(f"G-Sheets (фон) | Статус пользователя {user_id} успешно обновлен.")
+                    worksheet.update_cell(cell.row, 13, redeem_time.strftime('%Y-%m-%d %H:%M:%S'))  # Дата погашения в колонке M (13)
+                logging.info(f"G-Sheets (фон) | Статус пользователя {user_id} успешно обновлен на '{russian_status}'.")
             else:
                 logging.warning(f"G-Sheets (фон) | Не удалось найти пользователя {user_id} для обновления.")
     except Exception as e:
@@ -209,7 +254,7 @@ def add_new_user(user_id: int, username: str, first_name: str, source: str, refe
     row_data = [
         signup_time.strftime('%Y-%m-%d %H:%M:%S'), user_id, first_name,
         username or "N/A", "", "", "", "", "",  # phone_number, contact_shared_date, real_name, birth_date, profile_completed пока пустые
-        'registered', source,
+        _translate_status_to_russian('registered'), source,
         referrer_id if referrer_id else "", ""
     ]
     if GOOGLE_SHEETS_ENABLED:
@@ -275,6 +320,9 @@ def update_user_name(user_id: int, real_name: str) -> bool:
         conn.close()
         if updated:
             logging.info(f"SQLite | Имя пользователя {user_id} обновлено: {real_name}")
+            # Обновляем в Google Sheets в фоновом режиме
+            if GOOGLE_SHEETS_ENABLED:
+                threading.Thread(target=_update_name_in_sheets_in_background, args=(user_id, real_name)).start()
         return updated
     except Exception as e:
         logging.error(f"SQLite | Ошибка обновления имени для {user_id}: {e}")
@@ -294,6 +342,9 @@ def update_user_birth_date(user_id: int, birth_date: str) -> bool:
         conn.close()
         if updated:
             logging.info(f"SQLite | Дата рождения пользователя {user_id} обновлена: {birth_date}")
+            # Обновляем в Google Sheets в фоновом режиме
+            if GOOGLE_SHEETS_ENABLED:
+                threading.Thread(target=_update_birth_date_in_sheets_in_background, args=(user_id, birth_date)).start()
         return updated
     except Exception as e:
         logging.error(f"SQLite | Ошибка обновления даты рождения для {user_id}: {e}")
