@@ -74,9 +74,8 @@ def _update_contact_in_sheets_in_background(user_id: int, phone_number: str, con
         if worksheet:
             cell = worksheet.find(str(user_id), in_column=2)
             if cell:
-                worksheet.update_cell(cell.row, 5, phone_number)  # Колонка с номером телефона
-                worksheet.update_cell(cell.row, 6, contact_shared_date.strftime('%Y-%m-%d %H:%M:%S'))  # Колонка с датой
-                logging.info(f"G-Sheets (фон) | Контакт пользователя {user_id} успешно обновлен.")
+                worksheet.update_cell(cell.row, 5, phone_number)  # Колонка E - номер телефона
+                logging.info(f"G-Sheets (фон) | Контакт пользователя {user_id} успешно обновлен: {phone_number}")
             else:
                 logging.warning(f"G-Sheets (фон) | Не удалось найти пользователя {user_id} для обновления контакта.")
     except Exception as e:
@@ -91,7 +90,7 @@ def _update_name_in_sheets_in_background(user_id: int, real_name: str):
         if worksheet:
             cell = worksheet.find(str(user_id), in_column=2)
             if cell:
-                worksheet.update_cell(cell.row, 7, real_name)  # Колонка G - настоящее имя
+                worksheet.update_cell(cell.row, 6, real_name)  # Колонка F - настоящее имя
                 logging.info(f"G-Sheets (фон) | Имя пользователя {user_id} успешно обновлено: {real_name}")
             else:
                 logging.warning(f"G-Sheets (фон) | Не удалось найти пользователя {user_id} для обновления имени.")
@@ -107,8 +106,7 @@ def _update_birth_date_in_sheets_in_background(user_id: int, birth_date: str):
         if worksheet:
             cell = worksheet.find(str(user_id), in_column=2)
             if cell:
-                worksheet.update_cell(cell.row, 8, birth_date)  # Колонка H - дата рождения
-                worksheet.update_cell(cell.row, 9, "1")  # Колонка I - профиль завершен
+                worksheet.update_cell(cell.row, 7, birth_date)  # Колонка G - дата рождения
                 logging.info(f"G-Sheets (фон) | Дата рождения пользователя {user_id} успешно обновлена: {birth_date}")
             else:
                 logging.warning(f"G-Sheets (фон) | Не удалось найти пользователя {user_id} для обновления даты рождения.")
@@ -125,9 +123,9 @@ def _update_status_in_sheets_in_background(user_id: int, new_status: str, redeem
             cell = worksheet.find(str(user_id), in_column=2)
             if cell:
                 russian_status = _translate_status_to_russian(new_status)
-                worksheet.update_cell(cell.row, 10, russian_status)  # Статус в колонке J (10)
+                worksheet.update_cell(cell.row, 8, russian_status)  # Статус в колонке H (8)
                 if redeem_time:
-                    worksheet.update_cell(cell.row, 13, redeem_time.strftime('%Y-%m-%d %H:%M:%S'))  # Дата погашения в колонке M (13)
+                    worksheet.update_cell(cell.row, 10, redeem_time.strftime('%Y-%m-%d %H:%M:%S'))  # Дата погашения в колонке J (10)
                 logging.info(f"G-Sheets (фон) | Статус пользователя {user_id} успешно обновлен на '{russian_status}'.")
             else:
                 logging.warning(f"G-Sheets (фон) | Не удалось найти пользователя {user_id} для обновления.")
@@ -253,9 +251,8 @@ def add_new_user(user_id: int, username: str, first_name: str, source: str, refe
     # Логика для Google Sheets
     row_data = [
         signup_time.strftime('%Y-%m-%d %H:%M:%S'), user_id, first_name,
-        username or "N/A", "", "", "", "", "",  # phone_number, contact_shared_date, real_name, birth_date, profile_completed пока пустые
-        _translate_status_to_russian('registered'), source,
-        referrer_id if referrer_id else "", ""
+        username or "N/A", "", "", "",  # phone_number, real_name, birth_date пока пустые
+        _translate_status_to_russian('registered'), source, ""  # дата погашения пока пустая
     ]
     if GOOGLE_SHEETS_ENABLED:
         threading.Thread(target=_add_user_to_sheets_in_background, args=(row_data,)).start()
