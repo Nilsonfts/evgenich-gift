@@ -25,6 +25,8 @@ def shorten_name(full_name: str) -> str:
     return full_name
 
 # --- Функции генерации отчетов ---
+
+# --- Функции генерации отчетов ---
 def generate_daily_report_text(start_time, end_time, general_stats, staff_stats, iiko_count=None):
     """Формирует текст полного ежедневного отчета."""
     issued, redeemed, _, sources, total_redeem_time = general_stats
@@ -139,6 +141,179 @@ def register_admin_handlers(bot):
     def is_admin(user_id):
         return user_id in ADMIN_IDS
 
+    def _show_newsletter_audience_stats(message):
+        """Показывает статистику базы для рассылок."""
+        try:
+            conn = database.get_db_connection()
+            cur = conn.cursor()
+            
+            # Общая статистика пользователей
+            cur.execute("SELECT COUNT(*) FROM users")
+            total_users = cur.fetchone()[0]
+            
+            cur.execute("SELECT COUNT(*) FROM users WHERE status = 'registered'")
+            registered_count = cur.fetchone()[0]
+            
+            cur.execute("SELECT COUNT(*) FROM users WHERE status = 'issued'")
+            issued_count = cur.fetchone()[0]
+            
+            cur.execute("SELECT COUNT(*) FROM users WHERE status = 'redeemed'")
+            redeemed_count = cur.fetchone()[0]
+            
+            cur.execute("SELECT COUNT(*) FROM users WHERE status = 'redeemed_and_left'")
+            churned_count = cur.fetchone()[0]
+            
+            # Активная аудитория для рассылок
+            active_for_newsletter = registered_count + issued_count + redeemed_count
+            
+            # Статистика по источникам
+            cur.execute("SELECT source, COUNT(*) as count FROM users GROUP BY source ORDER BY count DESC LIMIT 5")
+            source_stats = cur.fetchall()
+            
+            conn.close()
+            
+            stats_text = (
+                f"📊 **Статистика базы подписчиков**\n\n"
+                f"**👥 Общая статистика:**\n"
+                f"• Всего пользователей: **{total_users}**\n"
+                f"• Зарегистрированы: **{registered_count}**\n"
+                f"• Получили купоны: **{issued_count}**\n"
+                f"• Погасили купоны: **{redeemed_count}**\n"
+                f"• Отписались: **{churned_count}**\n\n"
+                f"📧 **Для рассылок:**\n"
+                f"• Активная аудитория: **{active_for_newsletter}** чел.\n"
+                f"• Исключены (отписались): **{churned_count}** чел.\n\n"
+                f"📈 **Топ источников:**\n"
+            )
+            
+            for source, count in source_stats:
+                source_name = source or "Неизвестно"
+                stats_text += f"• {source_name}: **{count}** чел.\n"
+            
+            bot.edit_message_text(
+                stats_text,
+                message.chat.id,
+                message.message_id,
+                reply_markup=keyboards.get_content_management_menu(),
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logging.error(f"Ошибка показа статистики аудитории: {e}")
+            bot.send_message(message.chat.id, "Ошибка получения статистики")
+
+    def _show_newsletters_list(message):
+        """Показывает список рассылок."""
+        try:
+            conn = database.get_db_connection()
+            cur = conn.cursor()
+            
+            cur.execute("""
+                SELECT id, title, status, created_at, target_count, delivered_count
+                FROM newsletters 
+                ORDER BY created_at DESC 
+                LIMIT 10
+            """)
+            newsletters = cur.fetchall()
+            conn.close()
+            
+            if not newsletters:
+                list_text = "📋 **Ваши рассылки**\n\nПока нет созданных рассылок."
+            else:
+                list_text = "📋 **Ваши рассылки:**\n\n"
+                
+                for newsletter in newsletters:
+                    status_emoji = {
+                        'draft': '📝',
+                        'scheduled': '⏰',
+                        'sent': '✅',
+                        'sending': '📤'
+                    }.get(newsletter[2], '❓')
+                    
+                    delivery_info = ""
+                    if newsletter[4] and newsletter[5]:  # target_count и delivered_count
+                        delivery_info = f" ({newsletter[5]}/{newsletter[4]})"
+                    
+                    list_text += f"{status_emoji} **{newsletter[1]}**{delivery_info}\n"
+            
+            bot.edit_message_text(
+                list_text,
+                message.chat.id,
+                message.message_id,
+                reply_markup=keyboards.get_content_management_menu(),
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logging.error(f"Ошибка показа списка рассылок: {e}")
+            bot.send_message(message.chat.id, "Ошибка получения списка рассылок")
+
+    def _show_analytics_overview(message):
+        """Показывает общую аналитику рассылок."""
+        try:
+            conn = database.get_db_connection()
+            cur = conn.cursor()
+            
+            # Общая статистика рассылок
+            cur.execute("SELECT COUNT(*) FROM newsletters")
+            total_newsletters = cur.fetchone()[0]
+            
+            cur.execute("SELECT COUNT(*) FROM newsletters WHERE status = 'sent'")
+            sent_newsletters = cur.fetchone()[0]
+            
+            cur.execute("SELECT SUM(target_count) FROM newsletters WHERE status = 'sent'")
+            total_sent = cur.fetchone()[0] or 0
+            
+            cur.execute("SELECT SUM(delivered_count) FROM newsletters WHERE status = 'sent'")
+            total_delivered = cur.fetchone()[0] or 0
+            
+            # Статистика кликов
+            cur.execute("SELECT COUNT(*) FROM newsletter_clicks")
+            total_clicks = cur.fetchone()[0]
+            
+            # Топ кнопок по кликам
+            cur.execute("""
+                SELECT nb.text, COUNT(nc.id) as clicks
+                FROM newsletter_buttons nb
+                LEFT JOIN newsletter_clicks nc ON nb.id = nc.button_id
+                GROUP BY nb.id, nb.text
+                ORDER BY clicks DESC
+                LIMIT 5
+            """)
+            top_buttons = cur.fetchall()
+            
+            conn.close()
+            
+            # Расчет CTR
+            ctr = 0
+            if total_delivered > 0:
+                ctr = round((total_clicks / total_delivered) * 100, 1)
+            
+            analytics_text = (
+                f"📈 **Общая аналитика рассылок**\n\n"
+                f"**📊 Статистика:**\n"
+                f"• Всего рассылок: **{total_newsletters}**\n"
+                f"• Отправлено: **{sent_newsletters}**\n"
+                f"• Сообщений доставлено: **{total_delivered}**\n"
+                f"• Всего кликов: **{total_clicks}**\n"
+                f"• CTR: **{ctr}%**\n\n"
+            )
+            
+            if top_buttons:
+                analytics_text += "🔥 **Топ кнопок по кликам:**\n"
+                for button_text, clicks in top_buttons:
+                    if clicks > 0:
+                        analytics_text += f"• {button_text}: **{clicks}** кликов\n"
+            
+            bot.edit_message_text(
+                analytics_text,
+                message.chat.id,
+                message.message_id,
+                reply_markup=keyboards.get_content_management_menu(),
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logging.error(f"Ошибка показа аналитики: {e}")
+            bot.send_message(message.chat.id, "Ошибка получения аналитики")
+
     @bot.message_handler(func=lambda message: message.text == "👑 Админка")
     def handle_admin_command(message: types.Message):
         if not is_admin(message.from_user.id):
@@ -250,6 +425,163 @@ def register_admin_handlers(bot):
                 bot.edit_message_text("📝 **Управление контентом**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_content_menu())
             elif action == 'admin_newsletter_main':
                 bot.edit_message_text("📧 **Система рассылок**\n\nВыберите действие:", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_content_management_menu(), parse_mode="Markdown")
+            
+            # ОБРАБОТЧИКИ СИСТЕМЫ РАССЫЛОК
+            elif action == 'admin_content_stats':
+                _show_newsletter_audience_stats(call.message)
+            elif action == 'admin_content_create':
+                bot.edit_message_text("✉️ **Создание рассылки**\n\nВыберите тип рассылки:", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_newsletter_creation_menu(), parse_mode="Markdown")
+            elif action == 'admin_content_list':
+                _show_newsletters_list(call.message)
+            elif action == 'admin_content_analytics':
+                _show_analytics_overview(call.message)
+            
+            # ОБРАБОТЧИКИ СИСТЕМЫ РАССЫЛОК
+            elif action == 'admin_content_stats':
+                # Статистика базы для рассылок
+                try:
+                    conn = database.get_db_connection()
+                    cur = conn.cursor()
+                    
+                    # Общая статистика пользователей
+                    cur.execute("SELECT COUNT(*) FROM users")
+                    total_users = cur.fetchone()[0]
+                    
+                    cur.execute("SELECT COUNT(*) FROM users WHERE status = 'registered'")
+                    registered = cur.fetchone()[0]
+                    
+                    cur.execute("SELECT COUNT(*) FROM users WHERE status = 'issued'")
+                    issued = cur.fetchone()[0]
+                    
+                    cur.execute("SELECT COUNT(*) FROM users WHERE status = 'redeemed'")
+                    redeemed = cur.fetchone()[0]
+                    
+                    cur.execute("SELECT COUNT(*) FROM users WHERE status = 'redeemed_and_left'")
+                    blocked = cur.fetchone()[0]
+                    
+                    # Активные для рассылок (исключаем заблокированных)
+                    active_for_newsletter = total_users - blocked
+                    
+                    conn.close()
+                    
+                    stats_text = (
+                        f"📊 **Статистика базы для рассылок**\n\n"
+                        f"👥 **Всего пользователей:** {total_users}\n"
+                        f"📝 **Зарегистрированы:** {registered}\n"
+                        f"🎁 **Получили купоны:** {issued}\n"
+                        f"✅ **Погасили купоны:** {redeemed}\n"
+                        f"🚫 **Заблокировали бота:** {blocked}\n\n"
+                        f"📧 **Доступно для рассылки:** {active_for_newsletter}\n\n"
+                        f"💡 Рассылка будет отправлена **{active_for_newsletter}** подписчикам"
+                    )
+                    
+                    bot.edit_message_text(
+                        stats_text,
+                        call.message.chat.id,
+                        call.message.message_id,
+                        reply_markup=keyboards.get_content_management_menu(),
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    bot.send_message(call.message.chat.id, f"Ошибка получения статистики: {e}")
+            
+            elif action == 'admin_content_create':
+                # Создание новой рассылки
+                bot.edit_message_text(
+                    "✉️ **Создание рассылки**\n\nВыберите тип рассылки:",
+                    call.message.chat.id,
+                    call.message.message_id,
+                    reply_markup=keyboards.get_newsletter_creation_menu(),
+                    parse_mode="Markdown"
+                )
+            
+            elif action == 'admin_content_list':
+                # Список рассылок
+                try:
+                    newsletters = database.get_user_newsletters(call.from_user.id, 10)
+                    
+                    if not newsletters:
+                        bot.edit_message_text(
+                            "📋 **Мои рассылки**\n\nУ вас пока нет созданных рассылок.\nСоздайте свою первую рассылку!",
+                            call.message.chat.id,
+                            call.message.message_id,
+                            reply_markup=keyboards.get_content_management_menu(),
+                            parse_mode="Markdown"
+                        )
+                    else:
+                        list_text = "📋 **Мои рассылки:**\n\n"
+                        for newsletter in newsletters[:5]:
+                            status_emoji = {
+                                'draft': '📝',
+                                'scheduled': '⏰',
+                                'sent': '✅',
+                                'sending': '📤'
+                            }.get(newsletter['status'], '❓')
+                            
+                            list_text += f"{status_emoji} **{newsletter['title']}**\n"
+                            list_text += f"Статус: {newsletter['status']}\n"
+                            if newsletter['created_at']:
+                                list_text += f"Создана: {newsletter['created_at'][:16]}\n"
+                            list_text += "\n"
+                        
+                        bot.edit_message_text(
+                            list_text,
+                            call.message.chat.id,
+                            call.message.message_id,
+                            reply_markup=keyboards.get_content_management_menu(),
+                            parse_mode="Markdown"
+                        )
+                except Exception as e:
+                    bot.send_message(call.message.chat.id, f"Ошибка получения списка рассылок: {e}")
+            
+            elif action == 'admin_content_analytics':
+                # Общая аналитика рассылок
+                try:
+                    conn = database.get_db_connection()
+                    cur = conn.cursor()
+                    
+                    # Общая статистика рассылок
+                    cur.execute("SELECT COUNT(*) FROM newsletters")
+                    total_newsletters = cur.fetchone()[0]
+                    
+                    cur.execute("SELECT COUNT(*) FROM newsletters WHERE status = 'sent'")
+                    sent_newsletters = cur.fetchone()[0]
+                    
+                    cur.execute("SELECT SUM(target_count) FROM newsletters WHERE status = 'sent'")
+                    total_sent = cur.fetchone()[0] or 0
+                    
+                    cur.execute("SELECT SUM(delivered_count) FROM newsletters WHERE status = 'sent'")
+                    total_delivered = cur.fetchone()[0] or 0
+                    
+                    cur.execute("SELECT COUNT(*) FROM newsletter_clicks")
+                    total_clicks = cur.fetchone()[0]
+                    
+                    conn.close()
+                    
+                    analytics_text = (
+                        f"📈 **Аналитика рассылок**\n\n"
+                        f"📧 **Всего рассылок:** {total_newsletters}\n"
+                        f"✅ **Отправлено:** {sent_newsletters}\n"
+                        f"📤 **Сообщений отправлено:** {total_sent}\n"
+                        f"📥 **Доставлено:** {total_delivered}\n"
+                        f"👆 **Всего кликов:** {total_clicks}\n\n"
+                    )
+                    
+                    if total_delivered > 0:
+                        ctr = round((total_clicks / total_delivered) * 100, 1)
+                        analytics_text += f"📊 **Общий CTR:** {ctr}%"
+                    else:
+                        analytics_text += "📊 **CTR:** Нет данных"
+                    
+                    bot.edit_message_text(
+                        analytics_text,
+                        call.message.chat.id,
+                        call.message.message_id,
+                        reply_markup=keyboards.get_content_management_menu(),
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    bot.send_message(call.message.chat.id, f"Ошибка получения аналитики: {e}")
             elif action == 'admin_menu_users':
                 bot.edit_message_text("👤 **Управление пользователями**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_users_menu())
             elif action == 'admin_menu_data':
