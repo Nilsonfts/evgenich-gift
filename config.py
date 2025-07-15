@@ -1,4 +1,8 @@
 import os
+from dotenv import load_dotenv
+
+# Загружаем переменные из .env файла
+load_dotenv()
 
 # --- Telegram ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -25,8 +29,19 @@ MENU_URL = os.getenv("MENU_URL")
 
 # --- Проверки ---
 if not all([
-    BOT_TOKEN, CHANNEL_ID, GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON,
-    HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID, ADMIN_IDS,
-    REPORT_CHAT_ID, MENU_URL, OPENAI_API_KEY
+    BOT_TOKEN, CHANNEL_ID, ADMIN_IDS,
+    HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID
 ]):
-    raise ValueError("Одна или несколько переменных окружения не установлены! Проверь все.")
+    raise ValueError("Основные переменные окружения не установлены! Проверь BOT_TOKEN, CHANNEL_ID, ADMIN_IDS, стикеры.")
+
+# Опциональные переменные с дефолтными значениями
+if not GOOGLE_SHEET_KEY:
+    print("⚠️  GOOGLE_SHEET_KEY не установлен - экспорт в Google Sheets отключен")
+if not GOOGLE_CREDENTIALS_JSON:
+    print("⚠️  GOOGLE_CREDENTIALS_JSON не установлен - экспорт в Google Sheets отключен")
+if not OPENAI_API_KEY:
+    print("⚠️  OPENAI_API_KEY не установлен - AI функции отключены")
+if not REPORT_CHAT_ID:
+    print("⚠️  REPORT_CHAT_ID не установлен - отчеты не будут отправляться")
+if not MENU_URL:
+    print("⚠️  MENU_URL не установлен - ссылка на меню не будет работать")

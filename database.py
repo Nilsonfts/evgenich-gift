@@ -20,9 +20,15 @@ DATA_DIR = "/data"
 DB_FILE = os.path.join(DATA_DIR, "evgenich_data.db")
 SHEET_NAME = "Выгрузка Пользователей"
 
+# Проверяем доступность Google Sheets
+GOOGLE_SHEETS_ENABLED = bool(GOOGLE_SHEET_KEY and GOOGLE_CREDENTIALS_JSON)
+
 # --- Секция работы с Google Sheets (фоновые задачи) ---
 def _get_sheets_worksheet():
     """Подключается к Google Sheets и возвращает рабочий лист."""
+    if not GOOGLE_SHEETS_ENABLED:
+        logging.warning("Google Sheets отключен - отсутствуют необходимые переменные окружения")
+        return None
     try:
         creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
         creds = Credentials.from_service_account_info(
@@ -38,6 +44,8 @@ def _get_sheets_worksheet():
 
 def _add_user_to_sheets_in_background(row_data: List[Any]):
     """(Фоновая задача) Добавляет строку с данными пользователя в таблицу."""
+    if not GOOGLE_SHEETS_ENABLED:
+        return
     try:
         worksheet = _get_sheets_worksheet()
         if worksheet:
@@ -48,6 +56,8 @@ def _add_user_to_sheets_in_background(row_data: List[Any]):
 
 def _update_contact_in_sheets_in_background(user_id: int, phone_number: str, contact_shared_date: datetime.datetime):
     """(Фоновая задача) Обновляет контактную информацию пользователя в таблице."""
+    if not GOOGLE_SHEETS_ENABLED:
+        return
     try:
         worksheet = _get_sheets_worksheet()
         if worksheet:
@@ -63,6 +73,8 @@ def _update_contact_in_sheets_in_background(user_id: int, phone_number: str, con
 
 def _update_status_in_sheets_in_background(user_id: int, new_status: str, redeem_time: Optional[datetime.datetime]):
     """(Фоновая задача) Обновляет статус пользователя в таблице."""
+    if not GOOGLE_SHEETS_ENABLED:
+        return
     try:
         worksheet = _get_sheets_worksheet()
         if worksheet:
@@ -196,11 +208,12 @@ def add_new_user(user_id: int, username: str, first_name: str, source: str, refe
     # Логика для Google Sheets
     row_data = [
         signup_time.strftime('%Y-%m-%d %H:%M:%S'), user_id, first_name,
-        username or "N/A", "", "",  # phone_number и contact_shared_date пока пустые
+        username or "N/A", "", "", "", "", "",  # phone_number, contact_shared_date, real_name, birth_date, profile_completed пока пустые
         'registered', source,
         referrer_id if referrer_id else "", ""
     ]
-    threading.Thread(target=_add_user_to_sheets_in_background, args=(row_data,)).start()
+    if GOOGLE_SHEETS_ENABLED:
+        threading.Thread(target=_add_user_to_sheets_in_background, args=(row_data,)).start()
 
 def update_status(user_id: int, new_status: str) -> bool:
     redeem_time = datetime.datetime.now(pytz.utc) if new_status == 'redeemed' else None
@@ -221,7 +234,7 @@ def update_status(user_id: int, new_status: str) -> bool:
     except Exception as e:
         logging.error(f"SQLite | Ошибка обновления статуса для {user_id}: {e}")
         return False
-    if updated:
+    if updated and GOOGLE_SHEETS_ENABLED:
         threading.Thread(target=_update_status_in_sheets_in_background, args=(user_id, new_status, redeem_time)).start()
     return updated
 
@@ -241,7 +254,8 @@ def update_user_contact(user_id: int, phone_number: str) -> bool:
         if updated:
             logging.info(f"SQLite | Контакт пользователя {user_id} обновлен: {phone_number}")
             # Обновляем в Google Sheets в фоновом режиме
-            threading.Thread(target=_update_contact_in_sheets_in_background, args=(user_id, phone_number, contact_time)).start()
+            if GOOGLE_SHEETS_ENABLED:
+                threading.Thread(target=_update_contact_in_sheets_in_background, args=(user_id, phone_number, contact_time)).start()
         return updated
     except Exception as e:
         logging.error(f"SQLite | Ошибка обновления контакта для {user_id}: {e}")
