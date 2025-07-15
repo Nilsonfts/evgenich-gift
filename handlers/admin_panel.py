@@ -13,6 +13,7 @@ import keyboards
 import settings_manager
 from export_to_sheets import do_export
 from handlers.user_commands import issue_coupon
+from handlers.reports_callbacks import handle_report_callbacks
 
 # --- Утилита для сокращения имени ---
 def shorten_name(full_name: str) -> str:
@@ -413,3 +414,6 @@ def register_admin_handlers(bot):
             bot.reply_to(message, f"✅ Успех: {response_message}\nМожете начинать тестирование заново, отправив команду /start.")
         else:
             bot.reply_to(message, f"❌ Ошибка при сбросе профиля: {response_message}")
+
+    # Регистрируем обработчики отчетов
+    handle_report_callbacks(bot, admin_states, settings_manager, keyboards, texts)
