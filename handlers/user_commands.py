@@ -236,6 +236,38 @@ def register_user_command_handlers(bot):
             reply_markup=keyboards.get_menu_choice_keyboard()
         )
 
+    @bot.message_handler(func=lambda message: message.text == "🥃 Получить настойку по талону")
+    def handle_redeem_nastoika(message: types.Message):
+        """Обрабатывает кнопку получения настойки по талону."""
+        user_id = message.from_user.id
+        user_status = database.get_reward_status(user_id)
+        
+        if user_status == 'issued':
+            # У пользователя есть неиспользованный купон
+            bot.send_message(
+                message.chat.id,
+                texts.CONTACT_REQUEST_TEXT,
+                reply_markup=keyboards.get_contact_request_keyboard()
+            )
+        elif user_status == 'redeemed':
+            bot.send_message(
+                message.chat.id,
+                "🥃 Твой купон уже был использован, товарищ! Если хочешь еще настойку, приводи друзей!",
+                reply_markup=keyboards.get_main_menu_keyboard(user_id)
+            )
+        elif user_status == 'not_found' or user_status == 'registered':
+            bot.send_message(
+                message.chat.id,
+                "🔒 У тебя пока нет купона, товарищ! Сначала нужно подписаться на наш канал через команду /start",
+                reply_markup=keyboards.get_main_menu_keyboard(user_id)
+            )
+        else:
+            bot.send_message(
+                message.chat.id,
+                "🤔 Что-то пошло не так. Попробуй еще раз или обратись к персоналу.",
+                reply_markup=keyboards.get_main_menu_keyboard(user_id)
+            )
+
     @bot.message_handler(commands=['voice'])
     def handle_voice_command(message: types.Message):
         audio_id = settings_manager.get_setting("greeting_audio_id")
