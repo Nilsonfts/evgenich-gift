@@ -43,12 +43,30 @@ def request_feedback(user_id):
     pass
 
 def send_daily_report_job():
-    """Формирует и отправляет отчет за последние 24 часа."""
+    """Формирует и отправляет отчет за смену с 12:00 до 06:00."""
     logging.info("Scheduler: Запускаю отправку ежедневного отчета...")
     try:
         tz_moscow = pytz.timezone('Europe/Moscow')
-        end_time = datetime.datetime.now(tz_moscow).replace(hour=6, minute=0, second=0, microsecond=0)
-        start_time = end_time - datetime.timedelta(days=1)
+        current_time = datetime.datetime.now(tz_moscow)
+        
+        # Если сейчас до 12:00, то отчет за смену: 12:00 позавчера - 06:00 вчера
+        # Если сейчас после 12:00, то отчет за смену: 12:00 вчера - 06:00 сегодня
+        if current_time.hour < 12:
+            # Отчет за позавчерашнюю смену
+            end_time = current_time.replace(hour=6, minute=0, second=0, microsecond=0)
+            start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+        else:
+            # Отчет за вчерашнюю смену  
+            end_time = current_time.replace(hour=6, minute=0, second=0, microsecond=0)
+            if current_time.hour >= 6:
+                # Если сейчас после 06:00, то берем сегодняшние 06:00
+                pass
+            else:
+                # Если сейчас до 06:00, то берем вчерашние 06:00
+                end_time = end_time - datetime.timedelta(days=1)
+            start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+        
+        logging.info(f"Формирую отчет за смену: {start_time.strftime('%d.%m.%Y %H:%M')} - {end_time.strftime('%d.%m.%Y %H:%M')}")
         send_report(bot, REPORT_CHAT_ID, start_time, end_time)
         logging.info(f"Scheduler: Ежедневный отчет успешно отправлен в чат {REPORT_CHAT_ID}.")
     except Exception as e:

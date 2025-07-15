@@ -46,6 +46,21 @@ def _add_user_to_sheets_in_background(row_data: List[Any]):
     except Exception as e:
         logging.error(f"G-Sheets (фон) | Ошибка дублирования пользователя {row_data[1]}: {e}")
 
+def _update_contact_in_sheets_in_background(user_id: int, phone_number: str, contact_shared_date: datetime.datetime):
+    """(Фоновая задача) Обновляет контактную информацию пользователя в таблице."""
+    try:
+        worksheet = _get_sheets_worksheet()
+        if worksheet:
+            cell = worksheet.find(str(user_id), in_column=2)
+            if cell:
+                worksheet.update_cell(cell.row, 5, phone_number)  # Колонка с номером телефона
+                worksheet.update_cell(cell.row, 6, contact_shared_date.strftime('%Y-%m-%d %H:%M:%S'))  # Колонка с датой
+                logging.info(f"G-Sheets (фон) | Контакт пользователя {user_id} успешно обновлен.")
+            else:
+                logging.warning(f"G-Sheets (фон) | Не удалось найти пользователя {user_id} для обновления контакта.")
+    except Exception as e:
+        logging.error(f"G-Sheets (фон) | Ошибка обновления контакта для {user_id}: {e}")
+
 def _update_status_in_sheets_in_background(user_id: int, new_status: str, redeem_time: Optional[datetime.datetime]):
     """(Фоновая задача) Обновляет статус пользователя в таблице."""
     try:
@@ -53,9 +68,9 @@ def _update_status_in_sheets_in_background(user_id: int, new_status: str, redeem
         if worksheet:
             cell = worksheet.find(str(user_id), in_column=2)
             if cell:
-                worksheet.update_cell(cell.row, 5, new_status)
+                worksheet.update_cell(cell.row, 7, new_status)  # Статус теперь в 7-й колонке
                 if redeem_time:
-                    worksheet.update_cell(cell.row, 8, redeem_time.strftime('%Y-%m-%d %H:%M:%S'))
+                    worksheet.update_cell(cell.row, 10, redeem_time.strftime('%Y-%m-%d %H:%M:%S'))  # Дата погашения в 10-й колонке
                 logging.info(f"G-Sheets (фон) | Статус пользователя {user_id} успешно обновлен.")
             else:
                 logging.warning(f"G-Sheets (фон) | Не удалось найти пользователя {user_id} для обновления.")
@@ -94,6 +109,41 @@ def init_db():
             cur.execute("SELECT brought_by_staff_id FROM users LIMIT 1")
         except sqlite3.OperationalError:
             cur.execute("ALTER TABLE users ADD COLUMN brought_by_staff_id INTEGER")
+
+        # Проверка и добавление колонки phone_number для контактов
+        try:
+            cur.execute("SELECT phone_number FROM users LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute("ALTER TABLE users ADD COLUMN phone_number TEXT")
+            logging.info("База данных обновлена: добавлена колонка phone_number")
+
+        # Проверка и добавление колонки contact_shared_date для даты предоставления контакта
+        try:
+            cur.execute("SELECT contact_shared_date FROM users LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute("ALTER TABLE users ADD COLUMN contact_shared_date TIMESTAMP")
+            logging.info("База данных обновлена: добавлена колонка contact_shared_date")
+
+        # Проверка и добавление колонки real_name для настоящего имени
+        try:
+            cur.execute("SELECT real_name FROM users LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute("ALTER TABLE users ADD COLUMN real_name TEXT")
+            logging.info("База данных обновлена: добавлена колонка real_name")
+
+        # Проверка и добавление колонки birth_date для даты рождения
+        try:
+            cur.execute("SELECT birth_date FROM users LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute("ALTER TABLE users ADD COLUMN birth_date DATE")
+            logging.info("База данных обновлена: добавлена колонка birth_date")
+
+        # Проверка и добавление колонки profile_completed для отслеживания завершенности профиля
+        try:
+            cur.execute("SELECT profile_completed FROM users LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute("ALTER TABLE users ADD COLUMN profile_completed BOOLEAN DEFAULT 0")
+            logging.info("База данных обновлена: добавлена колонка profile_completed")
 
         # --- НОВАЯ ТАБЛИЦА: Персонал (staff) ---
         cur.execute("""
@@ -146,7 +196,8 @@ def add_new_user(user_id: int, username: str, first_name: str, source: str, refe
     # Логика для Google Sheets
     row_data = [
         signup_time.strftime('%Y-%m-%d %H:%M:%S'), user_id, first_name,
-        username or "N/A", 'registered', source,
+        username or "N/A", "", "",  # phone_number и contact_shared_date пока пустые
+        'registered', source,
         referrer_id if referrer_id else "", ""
     ]
     threading.Thread(target=_add_user_to_sheets_in_background, args=(row_data,)).start()
@@ -173,6 +224,66 @@ def update_status(user_id: int, new_status: str) -> bool:
     if updated:
         threading.Thread(target=_update_status_in_sheets_in_background, args=(user_id, new_status, redeem_time)).start()
     return updated
+
+def update_user_contact(user_id: int, phone_number: str) -> bool:
+    """Обновляет контактную информацию пользователя."""
+    contact_time = datetime.datetime.now(pytz.utc)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE users SET phone_number = ?, contact_shared_date = ? WHERE user_id = ?",
+            (phone_number, contact_time, user_id)
+        )
+        updated = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        if updated:
+            logging.info(f"SQLite | Контакт пользователя {user_id} обновлен: {phone_number}")
+            # Обновляем в Google Sheets в фоновом режиме
+            threading.Thread(target=_update_contact_in_sheets_in_background, args=(user_id, phone_number, contact_time)).start()
+        return updated
+    except Exception as e:
+        logging.error(f"SQLite | Ошибка обновления контакта для {user_id}: {e}")
+        return False
+
+def update_user_name(user_id: int, real_name: str) -> bool:
+    """Обновляет настоящее имя пользователя."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE users SET real_name = ? WHERE user_id = ?",
+            (real_name, user_id)
+        )
+        updated = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        if updated:
+            logging.info(f"SQLite | Имя пользователя {user_id} обновлено: {real_name}")
+        return updated
+    except Exception as e:
+        logging.error(f"SQLite | Ошибка обновления имени для {user_id}: {e}")
+        return False
+
+def update_user_birth_date(user_id: int, birth_date: str) -> bool:
+    """Обновляет дату рождения пользователя."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE users SET birth_date = ?, profile_completed = 1 WHERE user_id = ?",
+            (birth_date, user_id)
+        )
+        updated = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        if updated:
+            logging.info(f"SQLite | Дата рождения пользователя {user_id} обновлена: {birth_date}")
+        return updated
+    except Exception as e:
+        logging.error(f"SQLite | Ошибка обновления даты рождения для {user_id}: {e}")
+        return False
 
 def find_user_by_id(user_id: int) -> Optional[sqlite3.Row]:
     try:

@@ -30,6 +30,13 @@ def get_gift_keyboard():
     keyboard.add(gift_button)
     return keyboard
 
+def get_contact_request_keyboard():
+    """Возвращает клавиатуру для запроса контакта (только обязательная кнопка)."""
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    contact_button = types.KeyboardButton("📱 Поделиться контактом", request_contact=True)
+    keyboard.add(contact_button)
+    return keyboard
+
 # === INLINE-КЛАВИАТУРЫ ДЛЯ ПОДПИСКИ И ПОДАРКА ===
 
 def get_subscription_keyboard(channel_url):
@@ -164,7 +171,8 @@ def get_admin_reports_menu():
     """Меню для просмотра отчетов."""
     keyboard = types.InlineKeyboardMarkup(row_width=1)
     keyboard.add(
-        types.InlineKeyboardButton("📊 Отчет за 24ч", callback_data="admin_report_manual_daily"),
+        types.InlineKeyboardButton("📊 Отчет за смену", callback_data="admin_report_manual_daily"),
+        types.InlineKeyboardButton("👷 Статистика сотрудников", callback_data="admin_report_staff_realtime"),
         types.InlineKeyboardButton("🏆 Ударники труда", callback_data="admin_report_leaderboard"),
         types.InlineKeyboardButton("💔 Анализ оттока", callback_data="admin_churn_analysis"),
         types.InlineKeyboardButton("🔬 Воронка по источникам", callback_data="admin_report_source_funnel"),

@@ -20,8 +20,13 @@ EXPORT_SHEET_NAME = "Выгрузка Пользователей"
 COLUMN_CONFIG = {
     "signup_date": "Дата Регистрации",
     "user_id": "ID Пользователя",
-    "first_name": "Имя",
+    "first_name": "Имя в Telegram",
     "username": "Юзернейм в Telegram",
+    "phone_number": "Номер Телефона",
+    "contact_shared_date": "Дата Предоставления Контакта",
+    "real_name": "Настоящее Имя",
+    "birth_date": "Дата Рождения",
+    "profile_completed": "Профиль Завершен",
     "status": "Статус Награды",
     "source": "Источник Привлечения",
     "referrer_id": "ID Пригласившего",
@@ -83,6 +88,12 @@ def do_export() -> Tuple[bool, str]:
             ordered_row = []
             for key in column_order_keys:
                 value = user_row[key]
+                
+                # Специальная обработка для булевых значений
+                if key == 'profile_completed':
+                    value = "Да" if value == 1 else "Нет"
+                
+                # Обработка дат
                 if isinstance(value, str) and ('-' in value and ':' in value):
                      try:
                          value = datetime.fromisoformat(value).strftime('%Y-%m-%d %H:%M:%S')

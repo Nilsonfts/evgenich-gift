@@ -43,8 +43,8 @@ def generate_daily_report_text(start_time, end_time, general_stats, staff_stats)
         retention_rate_str = f"{retention_rate}%"
 
     report_date = end_time.strftime('%d.%m.%Y')
-    header = f"📊 **ОтчетПодпискаТГ ({report_date})** 📊\n\n"
-    period_str = f"**Период:** с {start_time.strftime('%H:%M %d.%m')} по {end_time.strftime('%H:%M %d.%m')}\n\n"
+    header = f"📊 **ОтчетСмена ({report_date})** 📊\n\n"
+    period_str = f"**Смена:** с {start_time.strftime('%H:%M %d.%m')} по {end_time.strftime('%H:%M %d.%m')}\n\n"
     
     stats_block = (f"✅ **Выдано купонов:** {issued}\n"
                    f"🥃 **Погашено настоек:** {redeemed}\n"
@@ -288,9 +288,71 @@ def register_admin_handlers(bot):
             # ОТЧЕТЫ
             elif action == 'admin_report_manual_daily':
                 tz_moscow = pytz.timezone('Europe/Moscow')
-                end_time = datetime.datetime.now(tz_moscow)
-                start_time = end_time - datetime.timedelta(days=1)
+                current_time = datetime.datetime.now(tz_moscow)
+                
+                # Используем ту же логику, что и в основном отчете
+                if current_time.hour < 12:
+                    end_time = current_time.replace(hour=6, minute=0, second=0, microsecond=0)
+                    start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+                else:
+                    end_time = current_time.replace(hour=6, minute=0, second=0, microsecond=0)
+                    if current_time.hour >= 6:
+                        pass
+                    else:
+                        end_time = end_time - datetime.timedelta(days=1)
+                    start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+                
                 send_report(bot, call.message.chat.id, start_time, end_time)
+            elif action == 'admin_report_staff_realtime':
+                # Статистика сотрудников в режиме реального времени за текущую смену
+                tz_moscow = pytz.timezone('Europe/Moscow')
+                current_time = datetime.datetime.now(tz_moscow)
+                
+                # Определяем начало текущей смены
+                if current_time.hour >= 12:
+                    # Текущая смена началась сегодня в 12:00
+                    start_time = current_time.replace(hour=12, minute=0, second=0, microsecond=0)
+                else:
+                    # Текущая смена началась вчера в 12:00
+                    start_time = (current_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+                
+                staff_stats = database.get_staff_performance_for_period(start_time, current_time)
+                
+                if not staff_stats:
+                    bot.send_message(call.message.chat.id, 
+                        f"👷 **Статистика сотрудников в реальном времени**\n\n"
+                        f"📅 С {start_time.strftime('%d.%m %H:%M')} по {current_time.strftime('%d.%m %H:%M')}\n\n"
+                        f"За текущую смену никто из персонала не привел гостей через бота.")
+                else:
+                    response = (f"👷 **Статистика сотрудников в реальном времени**\n\n"
+                               f"📅 С {start_time.strftime('%d.%m %H:%M')} по {current_time.strftime('%d.%m %H:%M')}\n\n")
+                    
+                    total_brought = 0
+                    for position in staff_stats:
+                        for staff_member in staff_stats[position]:
+                            total_brought += staff_member['brought']
+                    
+                    response += f"🎯 **Всего приведено за смену:** {total_brought} гостей\n\n"
+                    
+                    for position in sorted(staff_stats.keys()):
+                        position_rus = f"{position}ы"
+                        if position == "Менеджер": position_rus = "Менеджеры"
+                        
+                        emoji_map = {"Официант": "🤵", "Бармен": "🍸", "Менеджер": "🎩"}
+                        emoji = emoji_map.get(position, "👥")
+                        
+                        response += f"**{emoji} {position_rus}:**\n"
+                        sorted_staff = sorted(staff_stats[position], key=lambda x: x['brought'], reverse=True)
+                        
+                        for staff_member in sorted_staff:
+                            staff_name_short = shorten_name(staff_member['name'])
+                            response += f"• **{staff_name_short}**: {staff_member['brought']} гостей"
+                            if staff_member['churn'] > 0:
+                                response += f" (отток: {staff_member['churn']})"
+                            response += "\n"
+                        response += "\n"
+                    
+                    bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
             elif action == 'admin_churn_analysis':
                 total_left, distribution = database.get_full_churn_analysis()
                 if total_left == 0:
