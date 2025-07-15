@@ -13,7 +13,6 @@ import keyboards
 import settings_manager
 from export_to_sheets import do_export
 from handlers.user_commands import issue_coupon
-from handlers.reports_callbacks import handle_report_callbacks
 
 # --- Утилита для сокращения имени ---
 def shorten_name(full_name: str) -> str:
@@ -386,6 +385,46 @@ def register_admin_handlers(bot):
                     for i, (name, count) in enumerate(top_list):
                         response += f"{medals[i]} Товарищ **{name}** — {count} чел.\n"
                     bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+            elif action == 'admin_report_churn_by_source':
+                tz_moscow = pytz.timezone('Europe/Moscow')
+                end_time = datetime.datetime.now(tz_moscow)
+                start_time = end_time - datetime.timedelta(days=30)
+                try:
+                    conn = database.get_db_connection()
+                    cur = conn.cursor()
+                    cur.execute("SELECT source, COUNT(*) as cnt FROM users WHERE redeem_date BETWEEN ? AND ? AND status = 'redeemed_and_left' GROUP BY source", (start_time, end_time))
+                    rows = cur.fetchall()
+                    conn.close()
+                    if not rows:
+                        bot.send_message(call.message.chat.id, "Нет данных по оттоку за месяц.")
+                    else:
+                        total = sum(row['cnt'] for row in rows)
+                        text = f"📈 Анализ оттока по источникам (30 дней):\n"
+                        for row in rows:
+                            percent = round(row['cnt'] / total * 100, 1) if total else 0
+                            text += f"• {row['source'] or 'Неизвестно'}: {row['cnt']} ({percent}%)\n"
+                        bot.send_message(call.message.chat.id, text)
+                except Exception as e:
+                    bot.send_message(call.message.chat.id, f"Ошибка при формировании отчёта: {e}")
+            elif action == 'admin_report_activity_time':
+                tz_moscow = pytz.timezone('Europe/Moscow')
+                end_time = datetime.datetime.now(tz_moscow)
+                start_time = end_time - datetime.timedelta(days=30)
+                try:
+                    conn = database.get_db_connection()
+                    cur = conn.cursor()
+                    cur.execute("SELECT strftime('%H', signup_date) as hour, COUNT(*) as cnt FROM users WHERE signup_date BETWEEN ? AND ? GROUP BY hour ORDER BY hour", (start_time, end_time))
+                    rows = cur.fetchall()
+                    conn.close()
+                    if not rows:
+                        bot.send_message(call.message.chat.id, "Нет данных по активности гостей за месяц.")
+                    else:
+                        text = f"🕒 Пики активности гостей (регистрация, 30 дней):\n"
+                        for row in rows:
+                            text += f"• {row['hour']}:00 — {row['cnt']}\n"
+                        bot.send_message(call.message.chat.id, text)
+                except Exception as e:
+                    bot.send_message(call.message.chat.id, f"Ошибка при формировании отчёта: {e}")
 
             # УПРАВЛЕНИЕ КОНТЕНТОМ И АКЦИЯМИ
             elif action.startswith('boss_toggle_'):
@@ -415,5 +454,5 @@ def register_admin_handlers(bot):
         else:
             bot.reply_to(message, f"❌ Ошибка при сбросе профиля: {response_message}")
 
-    # Регистрируем обработчики отчетов
-    handle_report_callbacks(bot, admin_states, settings_manager, keyboards, texts)
+    # Регистрируем обработчики отчетов - теперь встроены в основной обработчик выше
+    logging.info("Обработчики админ-панели зарегистрированы")
