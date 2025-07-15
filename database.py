@@ -125,7 +125,7 @@ def _update_status_in_sheets_in_background(user_id: int, new_status: str, redeem
                 russian_status = _translate_status_to_russian(new_status)
                 worksheet.update_cell(cell.row, 8, russian_status)  # Статус в колонке H (8)
                 if redeem_time:
-                    worksheet.update_cell(cell.row, 10, redeem_time.strftime('%Y-%m-%d %H:%M:%S'))  # Дата погашения в колонке J (10)
+                    worksheet.update_cell(cell.row, 11, redeem_time.strftime('%Y-%m-%d %H:%M:%S'))  # Дата погашения в колонке K (11)
                 logging.info(f"G-Sheets (фон) | Статус пользователя {user_id} успешно обновлен на '{russian_status}'.")
             else:
                 logging.warning(f"G-Sheets (фон) | Не удалось найти пользователя {user_id} для обновления.")
@@ -252,7 +252,8 @@ def add_new_user(user_id: int, username: str, first_name: str, source: str, refe
     row_data = [
         signup_time.strftime('%Y-%m-%d %H:%M:%S'), user_id, first_name,
         username or "N/A", "", "", "",  # phone_number, real_name, birth_date пока пустые
-        _translate_status_to_russian('registered'), source, ""  # дата погашения пока пустая
+        _translate_status_to_russian('registered'), source, 
+        referrer_id if referrer_id else "", ""  # реферер ID и дата погашения
     ]
     if GOOGLE_SHEETS_ENABLED:
         threading.Thread(target=_add_user_to_sheets_in_background, args=(row_data,)).start()
