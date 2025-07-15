@@ -18,6 +18,8 @@ from handlers.callback_query import register_callback_handlers
 from handlers.booking_flow import register_booking_handlers
 from handlers.admin_panel import register_admin_handlers, send_report
 from handlers.ai_logic import register_ai_handlers
+from handlers.iiko_data_handler import register_iiko_data_handlers
+from delayed_tasks_processor import DelayedTasksProcessor
 
 if not os.path.exists('logs'):
     os.makedirs('logs')
@@ -33,6 +35,7 @@ logging.basicConfig(
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 scheduler = BackgroundScheduler(timezone="Europe/Moscow")
+delayed_tasks_processor = DelayedTasksProcessor(bot)
 
 def send_friend_bonus(referrer_id, friend_name):
     # Тут должна быть ваша логика отправки бонуса
@@ -67,10 +70,54 @@ def send_daily_report_job():
             start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
         
         logging.info(f"Формирую отчет за смену: {start_time.strftime('%d.%m.%Y %H:%M')} - {end_time.strftime('%d.%m.%Y %H:%M')}")
+        
+        # Запрашиваем данные iiko перед отправкой отчета
+        report_date = end_time.date()
+        request_iiko_data_before_report(report_date, start_time, end_time)
+        
+    except Exception as e:
+        logging.error(f"Scheduler: Ошибка при отправке ежедневного отчета: {e}")
+
+def request_iiko_data_before_report(report_date: datetime.date, start_time: datetime.datetime, end_time: datetime.datetime):
+    """Запрашивает данные iiko перед формированием отчета."""
+    from texts import IIKO_DATA_REQUEST_TEXT
+    from database import is_waiting_for_iiko_data
+    
+    # Проверяем, нужны ли данные за эту дату
+    if is_waiting_for_iiko_data(report_date):
+        try:
+            # Отправляем запрос в чат отчетов в 05:30
+            bot.send_message(
+                REPORT_CHAT_ID,
+                IIKO_DATA_REQUEST_TEXT,
+                parse_mode='Markdown'
+            )
+            logging.info(f"Отправлен запрос данных iiko за {report_date}")
+            
+            # Планируем отправку отчета через 35 минут (в 06:05)
+            scheduler.add_job(
+                lambda: send_final_report_with_iiko(start_time, end_time),
+                'date',
+                run_date=datetime.datetime.now(pytz.timezone('Europe/Moscow')) + datetime.timedelta(minutes=35),
+                id=f'final_report_{report_date}',
+                replace_existing=True
+            )
+            
+        except Exception as e:
+            logging.error(f"Ошибка запроса данных iiko: {e}")
+            # Если не удалось запросить, отправляем отчет без данных iiko
+            send_final_report_with_iiko(start_time, end_time)
+    else:
+        # Данные уже есть, отправляем отчет сразу
+        send_final_report_with_iiko(start_time, end_time)
+
+def send_final_report_with_iiko(start_time: datetime.datetime, end_time: datetime.datetime):
+    """Отправляет финальный отчет с данными iiko (если есть)."""
+    try:
         send_report(bot, REPORT_CHAT_ID, start_time, end_time)
         logging.info(f"Scheduler: Ежедневный отчет успешно отправлен в чат {REPORT_CHAT_ID}.")
     except Exception as e:
-        logging.error(f"Scheduler: Ошибка при отправке ежедневного отчета: {e}")
+        logging.error(f"Ошибка отправки финального отчета: {e}")
 
 def run_nightly_auditor_job():
     """
@@ -119,14 +166,15 @@ if __name__ == "__main__":
     register_booking_handlers(bot)
     register_admin_handlers(bot)
     register_ai_handlers(bot)
+    register_iiko_data_handlers(bot)
 
-    # Ежедневный отчет в 06:05
+    # Ежедневный отчет в 05:30 (запрос данных iiko)
     scheduler.add_job(
         send_daily_report_job,
-        trigger=CronTrigger(hour=6, minute=5, timezone='Europe/Moscow'),
+        trigger=CronTrigger(hour=5, minute=30, timezone='Europe/Moscow'),
         id='daily_report_job', name='Daily report', replace_existing=True
     )
-    logging.info("Scheduler: Задача для ежедневного отчета запланирована на 06:05.")
+    logging.info("Scheduler: Задача для ежедневного отчета запланирована на 05:30.")
 
     # Ночной аудитор в 04:00
     scheduler.add_job(
@@ -137,6 +185,7 @@ if __name__ == "__main__":
     logging.info("Scheduler: Задача 'Ночной Аудитор' запланирована на 04:00.")
 
     scheduler.start()
-    logging.info("✅ Все обработчики и планировщик успешно запущены.")
+    delayed_tasks_processor.start()
+    logging.info("✅ Все обработчики, планировщик и обработчик отложенных задач успешно запущены.")
 
     bot.infinity_polling(skip_pending=True)

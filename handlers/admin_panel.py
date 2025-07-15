@@ -23,7 +23,7 @@ def shorten_name(full_name: str) -> str:
     return full_name
 
 # --- Функции генерации отчетов ---
-def generate_daily_report_text(start_time, end_time, general_stats, staff_stats):
+def generate_daily_report_text(start_time, end_time, general_stats, staff_stats, iiko_count=None):
     """Формирует текст полного ежедневного отчета."""
     issued, redeemed, _, sources, total_redeem_time = general_stats
     _, left_count = database.get_daily_churn_data(start_time, end_time)
@@ -46,8 +46,16 @@ def generate_daily_report_text(start_time, end_time, general_stats, staff_stats)
     header = f"📊 **ОтчетСмена ({report_date})** 📊\n\n"
     period_str = f"**Смена:** с {start_time.strftime('%H:%M %d.%m')} по {end_time.strftime('%H:%M %d.%m')}\n\n"
     
+    # Добавляем информацию о настойках iiko
+    iiko_info = ""
+    if iiko_count is not None:
+        iiko_info = f"🍷 **Пробито настоек в iiko:** {iiko_count}\n"
+    else:
+        iiko_info = f"🍷 **Пробито настоек в iiko:** данные не получены\n"
+    
     stats_block = (f"✅ **Выдано купонов:** {issued}\n"
-                   f"🥃 **Погашено настоек:** {redeemed}\n"
+                   f"🥃 **Погашено настоек:** {redeemed}\n" +
+                   iiko_info +
                    f"📈 **Конверсия в погашение:** {conversion_rate}%\n"
                    f"⏱️ **Среднее время до погашения:** {avg_redeem_time_str}\n"
                    f"💔 **Отписалось за сутки:** {left_count} чел.\n"
@@ -90,12 +98,15 @@ def send_report(bot, chat_id, start_time, end_time):
     try:
         general_stats = database.get_report_data_for_period(start_time, end_time)
         staff_stats = database.get_staff_performance_for_period(start_time, end_time)
+        
+        # Получаем данные iiko за дату окончания смены
+        iiko_count = database.get_iiko_nastoika_count_for_date(end_time.date())
 
         if general_stats[0] == 0:
             bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
             return
 
-        report_text = generate_daily_report_text(start_time, end_time, general_stats, staff_stats)
+        report_text = generate_daily_report_text(start_time, end_time, general_stats, staff_stats, iiko_count)
         bot.send_message(chat_id, report_text, parse_mode="Markdown")
         
         # Логика для "Ударника дня"

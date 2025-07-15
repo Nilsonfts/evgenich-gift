@@ -16,7 +16,7 @@ from google.oauth2.service_account import Credentials
 from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
 
 # --- Настройки ---
-DATA_DIR = "/data"
+DATA_DIR = "data"  # Используем локальную папку data
 DB_FILE = os.path.join(DATA_DIR, "evgenich_data.db")
 SHEET_NAME = "Выгрузка Пользователей"
 
@@ -223,6 +223,27 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
                 rating INTEGER, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""")
+        
+        # --- НОВАЯ ТАБЛИЦА: Отложенные задачи (delayed_tasks) ---
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS delayed_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                task_type TEXT,
+                scheduled_time TIMESTAMP,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""")
+        
+        # --- НОВАЯ ТАБЛИЦА: Данные iiko (iiko_data) ---
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS iiko_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_date DATE,
+                nastoika_count INTEGER,
+                reported_by_user_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""")
             
         conn.commit()
         conn.close()
@@ -274,6 +295,9 @@ def update_status(user_id: int, new_status: str) -> bool:
         conn.close()
         if updated:
             logging.info(f"SQLite | Статус пользователя {user_id} обновлен на {new_status}.")
+            # Планируем отложенное сообщение при погашении купона
+            if new_status == 'redeemed':
+                schedule_delayed_message(user_id, 'engagement_after_redeem', 10)
     except Exception as e:
         logging.error(f"SQLite | Ошибка обновления статуса для {user_id}: {e}")
         return False
@@ -569,6 +593,115 @@ def get_top_referrers_for_month(limit: int = 5) -> List[Tuple[str, int]]:
 
 def get_daily_updates() -> dict:
     return {'special': 'нет', 'stop-list': 'ничего'}
+
+# --- Функции для работы с отложенными задачами (delayed_tasks) ---
+
+def schedule_delayed_message(user_id: int, task_type: str, delay_minutes: int = 10):
+    """Планирует отложенное сообщение для пользователя."""
+    try:
+        scheduled_time = datetime.datetime.now(pytz.utc) + datetime.timedelta(minutes=delay_minutes)
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO delayed_tasks (user_id, task_type, scheduled_time) VALUES (?, ?, ?)",
+            (user_id, task_type, scheduled_time)
+        )
+        conn.commit()
+        conn.close()
+        logging.info(f"Отложенная задача '{task_type}' запланирована для пользователя {user_id} на {scheduled_time}")
+    except Exception as e:
+        logging.error(f"Ошибка планирования отложенной задачи для {user_id}: {e}")
+
+def get_pending_delayed_tasks() -> List[sqlite3.Row]:
+    """Получает все отложенные задачи, готовые к выполнению."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        now = datetime.datetime.now(pytz.utc)
+        cur.execute(
+            "SELECT * FROM delayed_tasks WHERE status = 'pending' AND scheduled_time <= ?",
+            (now,)
+        )
+        tasks = cur.fetchall()
+        conn.close()
+        return tasks
+    except Exception as e:
+        logging.error(f"Ошибка получения отложенных задач: {e}")
+        return []
+
+def mark_delayed_task_completed(task_id: int):
+    """Помечает отложенную задачу как выполненную."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE delayed_tasks SET status = 'completed' WHERE id = ?",
+            (task_id,)
+        )
+        conn.commit()
+        conn.close()
+        logging.info(f"Отложенная задача {task_id} помечена как выполненная")
+    except Exception as e:
+        logging.error(f"Ошибка обновления статуса задачи {task_id}: {e}")
+
+def cleanup_old_delayed_tasks(days_old: int = 7):
+    """Удаляет старые выполненные задачи."""
+    try:
+        cutoff_date = datetime.datetime.now(pytz.utc) - datetime.timedelta(days=days_old)
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM delayed_tasks WHERE status = 'completed' AND created_at < ?",
+            (cutoff_date,)
+        )
+        deleted_count = cur.rowcount
+        conn.commit()
+        conn.close()
+        if deleted_count > 0:
+            logging.info(f"Удалено {deleted_count} старых отложенных задач")
+    except Exception as e:
+        logging.error(f"Ошибка очистки старых задач: {e}")
+
+# --- Функции для работы с данными iiko ---
+
+def save_iiko_nastoika_count(report_date: datetime.date, nastoika_count: int, reported_by_user_id: int) -> bool:
+    """Сохраняет количество настоек из iiko за определенную дату."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        # Используем INSERT OR REPLACE для обновления данных за ту же дату
+        cur.execute(
+            "INSERT OR REPLACE INTO iiko_data (report_date, nastoika_count, reported_by_user_id) VALUES (?, ?, ?)",
+            (report_date, nastoika_count, reported_by_user_id)
+        )
+        conn.commit()
+        conn.close()
+        logging.info(f"Данные iiko сохранены: {report_date} - {nastoika_count} настоек (от пользователя {reported_by_user_id})")
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка сохранения данных iiko: {e}")
+        return False
+
+def get_iiko_nastoika_count_for_date(report_date: datetime.date) -> Optional[int]:
+    """Получает количество настоек из iiko за определенную дату."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT nastoika_count FROM iiko_data WHERE report_date = ?",
+            (report_date,)
+        )
+        result = cur.fetchone()
+        conn.close()
+        return result['nastoika_count'] if result else None
+    except Exception as e:
+        logging.error(f"Ошибка получения данных iiko за {report_date}: {e}")
+        return None
+
+def is_waiting_for_iiko_data(report_date: datetime.date) -> bool:
+    """Проверяет, ожидаются ли данные iiko за определенную дату."""
+    # Данные ожидаются, если они еще не внесены
+    return get_iiko_nastoika_count_for_date(report_date) is None
 
 # --- Функции для работы с Персоналом (staff) ---
 
