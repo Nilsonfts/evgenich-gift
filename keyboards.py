@@ -261,16 +261,32 @@ def get_content_management_menu():
     )
     return keyboard
 
-def get_newsletter_creation_menu():
-    """Меню создания рассылки."""
+def get_newsletter_creation_choice_menu():
+    """Меню выбора способа создания рассылки."""
     keyboard = types.InlineKeyboardMarkup(row_width=1)
     keyboard.add(
-        types.InlineKeyboardButton("📝 Текстовая рассылка", callback_data="admin_newsletter_type_text"),
-        types.InlineKeyboardButton("🖼 Рассылка с картинкой", callback_data="admin_newsletter_type_photo"),
-        types.InlineKeyboardButton("🎥 Рассылка с видео", callback_data="admin_newsletter_type_video")
+        types.InlineKeyboardButton("🎯 Использовать шаблон", callback_data="admin_newsletter_template_choice"),
+        types.InlineKeyboardButton("✏️ Создать свой", callback_data="admin_newsletter_custom_choice")
     )
     keyboard.add(
-        types.InlineKeyboardButton("🔙 Назад", callback_data="admin_menu_content")
+        types.InlineKeyboardButton("🔙 Назад", callback_data="admin_newsletter_main")
+    )
+    return keyboard
+
+def get_newsletter_template_categories():
+    """Меню выбора категории шаблона."""
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        types.InlineKeyboardButton("� Акции и скидки", callback_data="admin_template_promo"),
+        types.InlineKeyboardButton("🍽 Новое меню", callback_data="admin_template_menu")
+    )
+    keyboard.add(
+        types.InlineKeyboardButton("🎵 Мероприятия", callback_data="admin_template_event"),
+        types.InlineKeyboardButton("📅 Бронирование", callback_data="admin_template_booking")
+    )
+    keyboard.add(
+        types.InlineKeyboardButton("👋 Приветствие", callback_data="admin_template_welcome"),
+        types.InlineKeyboardButton("🔙 Назад", callback_data="admin_content_create")
     )
     return keyboard
 
@@ -361,4 +377,56 @@ def create_newsletter_inline_keyboard(buttons_data):
         keyboard.add(
             types.InlineKeyboardButton(button['text'], url=button['url'])
         )
+    return keyboard
+
+def get_newsletter_creation_choice_menu():
+    """Меню выбора способа создания рассылки."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("🎯 Использовать шаблон", callback_data="admin_newsletter_template_choice"),
+        types.InlineKeyboardButton("✏️ Создать свой", callback_data="admin_newsletter_custom_choice")
+    )
+    keyboard.add(
+        types.InlineKeyboardButton("🔙 Назад", callback_data="admin_newsletter_main")
+    )
+    return keyboard
+
+def get_newsletter_template_categories():
+    """Меню выбора категории шаблона."""
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        types.InlineKeyboardButton("🎉 Акции и скидки", callback_data="admin_template_promo"),
+        types.InlineKeyboardButton("🍽 Новое меню", callback_data="admin_template_menu")
+    )
+    keyboard.add(
+        types.InlineKeyboardButton("🎵 Мероприятия", callback_data="admin_template_event"),
+        types.InlineKeyboardButton("📅 Бронирование", callback_data="admin_template_booking")
+    )
+    keyboard.add(
+        types.InlineKeyboardButton("👋 Приветствие", callback_data="admin_template_welcome"),
+        types.InlineKeyboardButton("🔙 Назад", callback_data="admin_content_create")
+    )
+    return keyboard
+
+def get_newsletter_creation_menu():
+    """Меню создания рассылки (оригинальное)."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("📝 Текстовая рассылка", callback_data="admin_newsletter_type_text"),
+        types.InlineKeyboardButton("🖼 Рассылка с картинкой", callback_data="admin_newsletter_type_photo"),
+        types.InlineKeyboardButton("🎥 Рассылка с видео", callback_data="admin_newsletter_type_video")
+    )
+    keyboard.add(
+        types.InlineKeyboardButton("🔙 Назад", callback_data="admin_content_create")
+    )
+    return keyboard
+
+def get_template_preview_keyboard(category: str):
+    """Клавиатура для предпросмотра шаблона."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("✅ Использовать этот шаблон", callback_data=f"admin_use_template_{category}"),
+        types.InlineKeyboardButton("✏️ Редактировать шаблон", callback_data=f"admin_edit_template_{category}"),
+        types.InlineKeyboardButton("🔙 Выбрать другой", callback_data="admin_newsletter_template_choice")
+    )
     return keyboard

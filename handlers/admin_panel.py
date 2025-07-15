@@ -11,6 +11,7 @@ import database
 import texts
 import keyboards
 import settings_manager
+import marketing_templates
 from export_to_sheets import do_export
 from handlers.user_commands import issue_coupon
 from handlers.newsletter_manager import register_newsletter_handlers
@@ -462,6 +463,15 @@ def register_admin_handlers(bot):
                     # Активные для рассылок (исключаем заблокированных)
                     active_for_newsletter = total_users - blocked
                     
+                    # Дополнительная статистика по источникам
+                    cur.execute("SELECT source, COUNT(*) FROM users WHERE status != 'redeemed_and_left' GROUP BY source ORDER BY COUNT(*) DESC LIMIT 5")
+                    top_sources = cur.fetchall()
+                    
+                    # Статистика по времени регистрации (последние 7 дней)
+                    week_ago = datetime.datetime.now() - datetime.timedelta(days=7)
+                    cur.execute("SELECT COUNT(*) FROM users WHERE signup_date >= ? AND status != 'redeemed_and_left'", (week_ago,))
+                    new_week = cur.fetchone()[0]
+                    
                     conn.close()
                     
                     stats_text = (
@@ -471,9 +481,16 @@ def register_admin_handlers(bot):
                         f"🎁 **Получили купоны:** {issued}\n"
                         f"✅ **Погасили купоны:** {redeemed}\n"
                         f"🚫 **Заблокировали бота:** {blocked}\n\n"
-                        f"📧 **Доступно для рассылки:** {active_for_newsletter}\n\n"
-                        f"💡 Рассылка будет отправлена **{active_for_newsletter}** подписчикам"
+                        f"📧 **Доступно для рассылки:** {active_for_newsletter}\n"
+                        f"🆕 **Новых за неделю:** {new_week}\n\n"
+                        f"🎯 **Топ источников:**\n"
                     )
+                    
+                    for source, count in top_sources:
+                        source_name = source or "Неизвестно"
+                        stats_text += f"• {source_name}: {count}\n"
+                    
+                    stats_text += f"\n💡 Рассылка будет отправлена **{active_for_newsletter}** подписчикам"
                     
                     bot.edit_message_text(
                         stats_text,
@@ -486,14 +503,56 @@ def register_admin_handlers(bot):
                     bot.send_message(call.message.chat.id, f"Ошибка получения статистики: {e}")
             
             elif action == 'admin_content_create':
-                # Создание новой рассылки
+                # Создание новой рассылки с выбором шаблонов
                 bot.edit_message_text(
-                    "✉️ **Создание рассылки**\n\nВыберите тип рассылки:",
+                    "✉️ **Создание рассылки**\n\n"
+                    "Выберите способ создания:\n\n"
+                    "🎯 **С шаблоном** — быстро и профессионально\n"
+                    "✏️ **Свой текст** — полная свобода творчества",
+                    call.message.chat.id,
+                    call.message.message_id,
+                    reply_markup=keyboards.get_newsletter_creation_choice_menu(),
+                    parse_mode="Markdown"
+                )
+            
+            # Новые обработчики для шаблонной системы
+            elif action == 'admin_newsletter_template_choice':
+                bot.edit_message_text(
+                    "🎯 **Выбор шаблона рассылки**\n\n"
+                    "Выберите категорию шаблона:\n\n"
+                    "🎉 **Акции и скидки** — промо-кампании\n"
+                    "🍽 **Новое меню** — новинки и блюда дня\n"
+                    "🎵 **Мероприятия** — концерты и события\n"
+                    "📅 **Бронирование** — напоминания о столах\n"
+                    "👋 **Приветствие** — welcome-сообщения",
+                    call.message.chat.id,
+                    call.message.message_id,
+                    reply_markup=keyboards.get_newsletter_template_categories(),
+                    parse_mode="Markdown"
+                )
+            
+            elif action == 'admin_newsletter_custom_choice':
+                bot.edit_message_text(
+                    "✏️ **Создание своей рассылки**\n\n"
+                    "Выберите тип контента:",
                     call.message.chat.id,
                     call.message.message_id,
                     reply_markup=keyboards.get_newsletter_creation_menu(),
                     parse_mode="Markdown"
                 )
+            
+            # Обработчики категорий шаблонов
+            elif action.startswith('admin_template_'):
+                template_category = action.replace('admin_template_', '')
+                _show_template_preview(bot, call.message, template_category)
+            
+            elif action.startswith('admin_use_template_'):
+                template_category = action.replace('admin_use_template_', '')
+                _use_template(bot, call.message, template_category, call.from_user.id)
+            
+            elif action.startswith('admin_edit_template_'):
+                template_category = action.replace('admin_edit_template_', '')
+                _edit_template(bot, call.message, template_category, call.from_user.id)
             
             elif action == 'admin_content_list':
                 # Список рассылок
@@ -807,3 +866,110 @@ def init_admin_handlers(bot, scheduler=None):
     register_newsletter_buttons_handlers(bot)
     
     logging.info("Все обработчики админ-панели инициализированы")
+
+# === ФУНКЦИИ ДЛЯ РАБОТЫ С ШАБЛОНАМИ ===
+
+def _show_template_preview(bot, message, category):
+    """Показывает предпросмотр шаблона."""
+    try:
+        template_data = marketing_templates.get_template_preview(category)
+        
+        preview_text = (
+            f"🎯 **Предпросмотр шаблона: {template_data['category_name']}**\n\n"
+            f"📝 **Заголовок:**\n{template_data['title']}\n\n"
+            f"📄 **Текст:**\n{template_data['content']}\n\n"
+            f"🔗 **Кнопки:**\n"
+        )
+        
+        for button in template_data['buttons']:
+            preview_text += f"• {button['text']}\n"
+        
+        preview_text += (
+            f"\n💡 **Рекомендации:**\n"
+            f"⏰ Лучшее время: {template_data['best_time']}\n"
+            f"📊 UTM-кампания: {template_data['utm_campaign']}\n\n"
+            f"Что делать дальше?"
+        )
+        
+        bot.edit_message_text(
+            preview_text,
+            message.chat.id,
+            message.message_id,
+            reply_markup=keyboards.get_template_preview_keyboard(category),
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Ошибка показа шаблона: {e}")
+
+def _use_template(bot, message, category, user_id):
+    """Использует шаблон для создания рассылки."""
+    try:
+        template_data = marketing_templates.get_template_data(category)
+        
+        # Создаем черновик рассылки с данными шаблона
+        newsletter_id = database.create_newsletter(
+            user_id=user_id,
+            title=template_data['title'],
+            content=template_data['content'],
+            media_type='text',
+            buttons=template_data['buttons'],
+            utm_campaign=template_data['utm_campaign']
+        )
+        
+        success_text = (
+            f"✅ **Шаблон применен!**\n\n"
+            f"📝 Рассылка создана на основе шаблона **{template_data['category_name']}**\n\n"
+            f"🎯 **Следующие шаги:**\n"
+            f"• Проверьте содержание\n"
+            f"• При необходимости отредактируйте\n"
+            f"• Отправьте рассылку\n\n"
+            f"💡 **Совет:** {template_data['marketing_tip']}"
+        )
+        
+        bot.edit_message_text(
+            success_text,
+            message.chat.id,
+            message.message_id,
+            reply_markup=keyboards.get_content_management_menu(),
+            parse_mode="Markdown"
+        )
+        
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Ошибка применения шаблона: {e}")
+
+def _edit_template(bot, message, category, user_id):
+    """Позволяет редактировать шаблон перед использованием."""
+    try:
+        template_data = marketing_templates.get_template_data(category)
+        
+        # Создаем черновик с возможностью редактирования
+        newsletter_id = database.create_newsletter(
+            user_id=user_id,
+            title=template_data['title'],
+            content=template_data['content'],
+            media_type='text',
+            buttons=template_data['buttons'],
+            utm_campaign=template_data['utm_campaign']
+        )
+        
+        edit_text = (
+            f"✏️ **Редактирование шаблона**\n\n"
+            f"📝 Создан черновик на основе шаблона **{template_data['category_name']}**\n\n"
+            f"🎯 **Что можно изменить:**\n"
+            f"• Заголовок рассылки\n"
+            f"• Основной текст\n"
+            f"• Кнопки и ссылки\n"
+            f"• Время отправки\n\n"
+            f"💡 **Рекомендация:** {template_data['marketing_tip']}"
+        )
+        
+        bot.edit_message_text(
+            edit_text,
+            message.chat.id,
+            message.message_id,
+            reply_markup=keyboards.get_content_management_menu(),
+            parse_mode="Markdown"
+        )
+        
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Ошибка редактирования шаблона: {e}")
