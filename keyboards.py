@@ -171,7 +171,8 @@ def get_admin_reports_menu():
     """Меню для просмотра отчетов."""
     keyboard = types.InlineKeyboardMarkup(row_width=1)
     keyboard.add(
-        types.InlineKeyboardButton("📊 Отчет за смену", callback_data="admin_report_manual_daily"),
+        types.InlineKeyboardButton("� Текущая смена (реальное время)", callback_data="admin_report_current_shift"),
+        types.InlineKeyboardButton("�📊 Завершенная смена", callback_data="admin_report_manual_daily"),
         types.InlineKeyboardButton("👷 Статистика сотрудников", callback_data="admin_report_staff_realtime"),
         types.InlineKeyboardButton("🏆 Ударники труда", callback_data="admin_report_leaderboard"),
         types.InlineKeyboardButton("💔 Анализ оттока", callback_data="admin_churn_analysis"),

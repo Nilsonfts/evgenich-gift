@@ -28,7 +28,7 @@ def shorten_name(full_name: str) -> str:
 # --- Функции генерации отчетов ---
 
 # --- Функции генерации отчетов ---
-def generate_daily_report_text(start_time, end_time, general_stats, staff_stats, iiko_count=None):
+def generate_daily_report_text(start_time, end_time, general_stats, staff_stats, iiko_count=None, is_current_shift=False):
     """Формирует текст полного ежедневного отчета."""
     issued, redeemed, _, sources, total_redeem_time = general_stats
     _, left_count = database.get_daily_churn_data(start_time, end_time)
@@ -48,8 +48,12 @@ def generate_daily_report_text(start_time, end_time, general_stats, staff_stats,
         retention_rate_str = f"{retention_rate}%"
 
     report_date = end_time.strftime('%d.%m.%Y')
-    header = f"📊 **ОтчетСмена ({report_date})** 📊\n\n"
-    period_str = f"**Смена:** с {start_time.strftime('%H:%M %d.%m')} по {end_time.strftime('%H:%M %d.%m')}\n\n"
+    if is_current_shift:
+        header = f"� **Текущая смена ({report_date})** 🔥\n\n"
+        period_str = f"**Смена в процессе:** с {start_time.strftime('%H:%M %d.%m')} по сейчас ({end_time.strftime('%H:%M %d.%m')})\n\n"
+    else:
+        header = f"�📊 **Отчет за смену ({report_date})** 📊\n\n"
+        period_str = f"**Завершенная смена:** с {start_time.strftime('%H:%M %d.%m')} по {end_time.strftime('%H:%M %d.%m')}\n\n"
     
     # Добавляем информацию о настойках iiko
     iiko_info = ""
@@ -98,7 +102,7 @@ def generate_daily_report_text(start_time, end_time, general_stats, staff_stats,
 
     return header + period_str + stats_block + sources_block + staff_block
 
-def send_report(bot, chat_id, start_time, end_time):
+def send_report(bot, chat_id, start_time, end_time, is_current_shift=False):
     """Запрашивает все данные и отправляет единый отчет."""
     try:
         general_stats = database.get_report_data_for_period(start_time, end_time)
@@ -108,10 +112,11 @@ def send_report(bot, chat_id, start_time, end_time):
         iiko_count = database.get_iiko_nastoika_count_for_date(end_time.date())
 
         if general_stats[0] == 0:
-            bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета.")
+            period_desc = "текущей смены" if is_current_shift else "указанного периода"
+            bot.send_message(chat_id, f"За период с {start_time.strftime('%d.%m %H:%M')} по {end_time.strftime('%d.%m %H:%M')} нет данных для отчета по {period_desc}.")
             return
 
-        report_text = generate_daily_report_text(start_time, end_time, general_stats, staff_stats, iiko_count)
+        report_text = generate_daily_report_text(start_time, end_time, general_stats, staff_stats, iiko_count, is_current_shift)
         bot.send_message(chat_id, report_text, parse_mode="Markdown")
         
         # Логика для "Ударника дня"
@@ -692,23 +697,39 @@ def register_admin_handlers(bot):
                 bot.send_message(call.message.chat.id, message)
             
             # ОТЧЕТЫ
-            elif action == 'admin_report_manual_daily':
+            elif action == 'admin_report_current_shift':
+                # Отчет по текущей смене в реальном времени
                 tz_moscow = pytz.timezone('Europe/Moscow')
                 current_time = datetime.datetime.now(tz_moscow)
                 
-                # Используем ту же логику, что и в основном отчете
-                if current_time.hour < 12:
-                    end_time = current_time.replace(hour=6, minute=0, second=0, microsecond=0)
-                    start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+                # Определяем начало ТЕКУЩЕЙ смены
+                if current_time.hour >= 12:
+                    # Текущая смена началась сегодня в 12:00
+                    start_time = current_time.replace(hour=12, minute=0, second=0, microsecond=0)
+                    end_time = current_time  # До сейчас
                 else:
-                    end_time = current_time.replace(hour=6, minute=0, second=0, microsecond=0)
-                    if current_time.hour >= 6:
-                        pass
-                    else:
-                        end_time = end_time - datetime.timedelta(days=1)
-                    start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+                    # Текущая смена началась вчера в 12:00
+                    start_time = (current_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+                    end_time = current_time  # До сейчас
                 
-                send_report(bot, call.message.chat.id, start_time, end_time)
+                send_report(bot, call.message.chat.id, start_time, end_time, is_current_shift=True)
+                
+            elif action == 'admin_report_manual_daily':
+                # Отчет за ЗАВЕРШЕННУЮ смену (вчерашнюю)
+                tz_moscow = pytz.timezone('Europe/Moscow')
+                current_time = datetime.datetime.now(tz_moscow)
+                
+                # Всегда берем завершенную смену (вчерашнюю)
+                if current_time.hour >= 12:
+                    # Сейчас дневное время - берем смену: вчера 12:00 - сегодня 06:00
+                    end_time = current_time.replace(hour=6, minute=0, second=0, microsecond=0)
+                    start_time = (current_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+                else:
+                    # Сейчас утро - берем смену: позавчера 12:00 - вчера 06:00
+                    end_time = (current_time - datetime.timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+                    start_time = (current_time - datetime.timedelta(days=2)).replace(hour=12, minute=0, second=0, microsecond=0)
+                
+                send_report(bot, call.message.chat.id, start_time, end_time, is_current_shift=False)
             elif action == 'admin_report_staff_realtime':
                 # Статистика сотрудников в режиме реального времени за текущую смену
                 tz_moscow = pytz.timezone('Europe/Moscow')
