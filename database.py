@@ -1205,7 +1205,7 @@ def get_staff_leaderboard(start_time: datetime, end_time: datetime, limit: int =
             FROM staff s
             LEFT JOIN users u ON s.staff_id = u.brought_by_staff_id 
                 AND u.source = 'staff'
-                AND u.signup_date BETWEEN ? AND ?
+                AND u.registration_time BETWEEN ? AND ?
             WHERE s.status = 'active'
             GROUP BY s.staff_id, s.full_name, s.short_name, s.position, s.unique_code
             ORDER BY attracted_users DESC, issued_coupons DESC
@@ -1237,3 +1237,32 @@ def get_staff_monthly_stats(year: int, month: int) -> list:
     except Exception as e:
         logging.error(f"Ошибка получения месячной статистики: {e}")
         return []
+
+def get_staff_period_stats(start_time: datetime, end_time: datetime) -> dict:
+    """Получает общую статистику по сотрудникам за период."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Получаем общие данные за период
+        cur.execute("""
+            SELECT 
+                COUNT(u.user_id) as total_attracted,
+                COUNT(CASE WHEN u.status IN ('issued', 'redeemed', 'redeemed_and_left') THEN 1 END) as total_issued,
+                COUNT(CASE WHEN u.status IN ('redeemed', 'redeemed_and_left') THEN 1 END) as total_redeemed,
+                COUNT(DISTINCT u.brought_by_staff_id) as active_staff_count
+            FROM users u
+            INNER JOIN staff s ON u.brought_by_staff_id = s.staff_id
+            WHERE u.source = 'staff'
+                AND u.registration_time BETWEEN ? AND ?
+                AND s.status = 'active'
+        """, (start_time, end_time))
+        
+        result = cur.fetchone()
+        conn.close()
+        
+        return dict(result) if result else {}
+        
+    except Exception as e:
+        logging.error(f"Ошибка получения статистики за период: {e}")
+        return {}
