@@ -70,80 +70,92 @@ def register_user_command_handlers(bot):
         """
         Обрабатывает команду /start, регистрирует нового пользователя или показывает главное меню.
         """
-        user_id = message.from_user.id
-        status = database.get_reward_status(user_id)
+        try:
+            user_id = message.from_user.id
+            status = database.get_reward_status(user_id)
 
-        if status in ['redeemed', 'redeemed_and_left']:
-            logging.info(f"Пользователь {user_id} уже получал награду. Показываем основное меню.")
+            if status in ['redeemed', 'redeemed_and_left']:
+                logging.info(f"Пользователь {user_id} уже получал награду. Показываем основное меню.")
+                bot.send_message(
+                    user_id,
+                    texts.ALREADY_REDEEMED_TEXT,
+                    reply_markup=keyboards.get_main_menu_keyboard(user_id),
+                    parse_mode="Markdown"
+                )
+                return
+
+            if status == 'not_found':
+                logging.info(f"Новый пользователь {user_id}. Регистрируем в SQLite...")
+                referrer_id = None
+                brought_by_staff_id = None
+                source = 'direct'
+                
+                args = message.text.split(' ', 1)
+                if len(args) > 1:
+                    payload = args[1]
+                    logging.info(f"Пользователь {user_id} (@{message.from_user.username}) использует payload: {payload}")
+
+                    if payload.startswith('w_'):
+                        staff_code = payload.replace('w_', '')
+                        logging.info(f"🔍 Попытка привязки к сотруднику с кодом: {staff_code} (пользователь: {user_id})")
+                        staff_member = database.find_staff_by_code(staff_code)
+                        if staff_member:
+                            brought_by_staff_id = staff_member['staff_id']
+                            source = "staff"
+                            logging.info(f"✅ Пользователь {user_id} (@{message.from_user.username}) успешно привязан к сотруднику: {staff_member['full_name']} (ID: {staff_member['staff_id']}, код: {staff_code})")
+                            # Отправляем уведомление администраторам о новом переходе по QR-коду сотрудника
+                            bot.send_message(
+                                REPORT_CHAT_ID,
+                                f"📊 QR-переход: Новый гость привлечен сотрудником {staff_member['short_name']} "
+                                f"(@{message.from_user.username or 'без_username'})",
+                                parse_mode="Markdown"
+                            )
+                        else:
+                            logging.warning(f"❌ QR-код сотрудника некорректен! Код '{staff_code}' не найден в базе активных сотрудников. Переход засчитан как 'direct'.")
+                            # При неправильном коде сотрудника считаем переход "прямым"
+                            source = 'direct'
+                            brought_by_staff_id = None
+                    elif payload.startswith('ref_'):
+                        try:
+                            referrer_id = int(payload.replace('ref_', ''))
+                            source = 'Реферал'
+                            logging.info(f"Пользователь {user_id} приглашен рефералом {referrer_id}")
+                        except (ValueError, IndexError):
+                            logging.warning(f"Не удалось распознать ref_id из {payload}")
+                    else:
+                        allowed_sources = {
+                            'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 'qr_toilet': 'QR в туалете',
+                            'vk': 'VK', 'inst': 'Instagram', 'flyer': 'Листовки',
+                            'site': 'Сайт', 'qr_waiter': 'QR от официанта', 'taplink': 'Taplink'
+                        }
+                        if payload in allowed_sources:
+                            source = allowed_sources[payload]
+                            logging.info(f"Пользователь {user_id} пришел из источника: {source}")
+                        else:
+                            logging.warning(f"Неизвестный источник: {payload}. Устанавливаем как direct.")
+
+                logging.info(f"Регистрация пользователя {user_id}: источник='{source}', сотрудник_id={brought_by_staff_id}, реферер={referrer_id}")
+                database.add_new_user(user_id, message.from_user.username, message.from_user.first_name, source, referrer_id, brought_by_staff_id)
+                if referrer_id:
+                    bot.send_message(user_id, texts.NEW_USER_REFERRED_TEXT)
+
+            # Отправляем приветствие
             bot.send_message(
-                user_id,
-                texts.ALREADY_REDEEMED_TEXT,
-                reply_markup=keyboards.get_main_menu_keyboard(user_id),
-                parse_mode="Markdown"
+                message.chat.id,
+                texts.WELCOME_TEXT,
+                reply_markup=keyboards.get_gift_keyboard()
             )
-            return
-
-        if status == 'not_found':
-            logging.info(f"Новый пользователь {user_id}. Регистрируем в SQLite...")
-            referrer_id = None
-            brought_by_staff_id = None
-            source = 'direct'
-            
-            args = message.text.split(' ', 1)
-            if len(args) > 1:
-                payload = args[1]
-                logging.info(f"Пользователь {user_id} (@{message.from_user.username}) использует payload: {payload}")
-
-                if payload.startswith('w_'):
-                    staff_code = payload.replace('w_', '')
-                    logging.info(f"🔍 Попытка привязки к сотруднику с кодом: {staff_code} (пользователь: {user_id})")
-                    staff_member = database.find_staff_by_code(staff_code)
-                    if staff_member:
-                        brought_by_staff_id = staff_member['staff_id']
-                        source = "staff"
-                        logging.info(f"✅ Пользователь {user_id} (@{message.from_user.username}) успешно привязан к сотруднику: {staff_member['full_name']} (ID: {staff_member['staff_id']}, код: {staff_code})")
-                        # Отправляем уведомление администраторам о новом переходе по QR-коду сотрудника
-                        bot.send_message(
-                            REPORT_CHAT_ID,
-                            f"📊 QR-переход: Новый гость привлечен сотрудником {staff_member['short_name']} "
-                            f"(@{message.from_user.username or 'без_username'})",
-                            parse_mode="Markdown"
-                        )
-                    else:
-                        logging.warning(f"❌ QR-код сотрудника некорректен! Код '{staff_code}' не найден в базе активных сотрудников. Переход засчитан как 'direct'.")
-                        # При неправильном коде сотрудника считаем переход "прямым"
-                        source = 'direct'
-                        brought_by_staff_id = None
-                elif payload.startswith('ref_'):
-                    try:
-                        referrer_id = int(payload.replace('ref_', ''))
-                        source = 'Реферал'
-                        logging.info(f"Пользователь {user_id} приглашен рефералом {referrer_id}")
-                    except (ValueError, IndexError):
-                        logging.warning(f"Не удалось распознать ref_id из {payload}")
-                else:
-                    allowed_sources = {
-                        'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 'qr_toilet': 'QR в туалете',
-                        'vk': 'VK', 'inst': 'Instagram', 'flyer': 'Листовки',
-                        'site': 'Сайт', 'qr_waiter': 'QR от официанта', 'taplink': 'Taplink'
-                    }
-                    if payload in allowed_sources:
-                        source = allowed_sources[payload]
-                        logging.info(f"Пользователь {user_id} пришел из источника: {source}")
-                    else:
-                        logging.warning(f"Неизвестный источник: {payload}. Устанавливаем как direct.")
-
-            logging.info(f"Регистрация пользователя {user_id}: источник='{source}', сотрудник_id={brought_by_staff_id}, реферер={referrer_id}")
-            database.add_new_user(user_id, message.from_user.username, message.from_user.first_name, source, referrer_id, brought_by_staff_id)
-            if referrer_id:
-                bot.send_message(user_id, texts.NEW_USER_REFERRED_TEXT)
-
-        # Отправляем приветствие
-        bot.send_message(
-            message.chat.id,
-            texts.WELCOME_TEXT,
-            reply_markup=keyboards.get_gift_keyboard()
-        )
+        
+        except Exception as e:
+            logging.error(f"❌ Ошибка в handle_start для пользователя {message.from_user.id}: {e}")
+            logging.error(f"Тип ошибки: {type(e).__name__}")
+            try:
+                bot.send_message(
+                    message.from_user.id,
+                    "❌ Произошла ошибка при обработке команды. Попробуйте ещё раз через /start"
+                )
+            except:
+                pass  # Если даже отправка сообщения об ошибке не работает
 
     # --- ИСПРАВЛЕННАЯ ЛОГИКА РЕГИСТРАЦИИ ПЕРСОНАЛА ---
 

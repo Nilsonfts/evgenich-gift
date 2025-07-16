@@ -191,4 +191,14 @@ if __name__ == "__main__":
     delayed_tasks_processor.start()
     logging.info("✅ Все обработчики, планировщик и обработчик отложенных задач успешно запущены.")
 
-    bot.infinity_polling(skip_pending=True)
+    # Запуск бота с обработкой ошибок
+    while True:
+        try:
+            logging.info("🚀 Запуск бота...")
+            bot.infinity_polling(skip_pending=True)
+        except Exception as e:
+            logging.error(f"❌ Ошибка в работе бота: {e}")
+            logging.error(f"Тип ошибки: {type(e).__name__}")
+            logging.info("🔄 Перезапуск бота через 5 секунд...")
+            import time
+            time.sleep(5)
