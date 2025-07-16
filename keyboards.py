@@ -6,17 +6,7 @@ from food_menu import FOOD_MENU_DATA
 
 # === ОСНОВНЫЕ REPLY-КЛАВИАТУРЫ ===
 
-d    keyboard.add(
-        types.InlineKeyboardButton("📊 Текущая смена (реальное время)", callback_data="admin_report_current_shift"),
-        types.InlineKeyboardButton("📊 Завершенная смена", callback_data="admin_report_manual_daily"),
-        types.InlineKeyboardButton("👷 Статистика сотрудников", callback_data="admin_report_staff_realtime"),
-        types.InlineKeyboardButton("🔍 Диагностика QR-кодов", callback_data="admin_staff_qr_diagnostics"),
-        types.InlineKeyboardButton("🏆 Ударники труда", callback_data="admin_report_leaderboard"),
-        types.InlineKeyboardButton("💔 Анализ оттока", callback_data="admin_churn_analysis"),
-        types.InlineKeyboardButton("🔬 Воронка по источникам", callback_data="admin_report_source_funnel"),
-        types.InlineKeyboardButton("📈 Анализ оттока по источникам", callback_data="admin_report_churn_by_source"),
-        types.InlineKeyboardButton("🕒 Пики активности гостей", callback_data="admin_report_activity_time")
-    )n_menu_keyboard(user_id):
+def get_main_menu_keyboard(user_id):
     """Возвращает главную клавиатуру для основного меню."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     menu_button = types.KeyboardButton("📖 Меню")
@@ -201,9 +191,10 @@ def get_admin_reports_menu():
     """Меню для просмотра отчетов."""
     keyboard = types.InlineKeyboardMarkup(row_width=1)
     keyboard.add(
-        types.InlineKeyboardButton("� Текущая смена (реальное время)", callback_data="admin_report_current_shift"),
-        types.InlineKeyboardButton("�📊 Завершенная смена", callback_data="admin_report_manual_daily"),
+        types.InlineKeyboardButton("📊 Текущая смена (реальное время)", callback_data="admin_report_current_shift"),
+        types.InlineKeyboardButton("📊 Завершенная смена", callback_data="admin_report_manual_daily"),
         types.InlineKeyboardButton("👷 Статистика сотрудников", callback_data="admin_report_staff_realtime"),
+        types.InlineKeyboardButton("🔍 Диагностика QR-кодов", callback_data="admin_staff_qr_diagnostics"),
         types.InlineKeyboardButton("🏆 Ударники труда", callback_data="admin_report_leaderboard"),
         types.InlineKeyboardButton("💔 Анализ оттока", callback_data="admin_churn_analysis"),
         types.InlineKeyboardButton("🔬 Воронка по источникам", callback_data="admin_report_source_funnel"),
