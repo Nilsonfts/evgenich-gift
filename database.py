@@ -567,13 +567,13 @@ def get_report_data_for_period(start_time: datetime, end_time: datetime) -> tupl
         cur.execute("SELECT source, COUNT(*) FROM users WHERE signup_date BETWEEN ? AND ? GROUP BY source", (start_time, end_time))
         all_sources = {row['source']: row['COUNT(*)'] for row in cur.fetchall()}
         
-        # Фильтруем источники: исключаем переходы по QR-кодам сотрудников
-        sources = {k: v for k, v in all_sources.items() if not k.startswith("Сотрудник:")}
+        # Фильтруем источники: все обычные источники
+        sources = {k: v for k, v in all_sources.items() if k != "staff"}
         
-        # Подсчитываем переходы по QR-кодам сотрудников отдельно
-        staff_qr_count = sum(v for k, v in all_sources.items() if k.startswith("Сотрудник:"))
-        if staff_qr_count > 0:
-            sources["QR-коды сотрудников"] = staff_qr_count
+        # Подсчитываем переходы от сотрудников отдельно
+        staff_count = all_sources.get("staff", 0)
+        if staff_count > 0:
+            sources["staff"] = staff_count
         total_redeem_time_seconds = 0
         if redeemed_count > 0:
             cur.execute("SELECT SUM(strftime('%s', redeem_date) - strftime('%s', signup_date)) FROM users WHERE redeem_date BETWEEN ? AND ? AND status IN ('redeemed', 'redeemed_and_left')", (start_time, end_time))
@@ -1022,13 +1022,22 @@ def find_staff_by_code(unique_code: str) -> Optional[sqlite3.Row]:
         logging.error(f"Ошибка поиска сотрудника по коду {unique_code}: {e}")
         return None
 
-def add_or_update_staff(telegram_id: int, full_name: str, position: str) -> Optional[str]:
+def add_or_update_staff(telegram_id: int, full_name: str, position: str, username: str = None) -> Optional[str]:
     """Добавляет нового сотрудника или обновляет данные существующего."""
     try:
         parts = full_name.split()
         short_name = f"{parts[0]} {parts[1][0]}." if len(parts) > 1 else parts[0]
-        base_code = parts[0].lower().strip().replace(' ', '')
-        unique_code = f"{base_code}{telegram_id % 1000}"
+        
+        # Генерируем уникальный код на основе username (если есть) или имени
+        if username:
+            # Используем username для генерации кода
+            base_code = username.lower().replace('@', '').replace('_', '').replace('-', '')
+            # Добавляем последние цифры telegram_id для уникальности
+            unique_code = f"{base_code}{telegram_id % 1000}"
+        else:
+            # Если нет username, используем имя (на кириллице)
+            base_code = parts[0].lower().strip().replace(' ', '')
+            unique_code = f"{base_code}{telegram_id % 1000}"
 
         conn = get_db_connection()
         cur = conn.cursor()
@@ -1126,15 +1135,15 @@ def get_staff_qr_diagnostics_for_period(start_time: datetime, end_time: datetime
         cur.execute("SELECT staff_id, full_name, short_name, unique_code, position FROM staff WHERE status = 'active'")
         active_staff = cur.fetchall()
         
-        # Получаем успешные переходы по QR-кодам
+        # Получаем успешные переходы по QR-кодам сотрудников
         cur.execute("""
-            SELECT u.source, u.brought_by_staff_id, s.short_name, s.unique_code, COUNT(*) as count
+            SELECT u.brought_by_staff_id, s.full_name, s.short_name, s.unique_code, COUNT(*) as count
             FROM users u
             LEFT JOIN staff s ON u.brought_by_staff_id = s.staff_id
             WHERE u.signup_date BETWEEN ? AND ? 
-                AND u.source LIKE 'Сотрудник:%'
+                AND u.source = 'staff'
                 AND u.brought_by_staff_id IS NOT NULL
-            GROUP BY u.source, u.brought_by_staff_id
+            GROUP BY u.brought_by_staff_id, s.full_name, s.short_name, s.unique_code
             ORDER BY count DESC
         """, (start_time, end_time))
         successful_qr = cur.fetchall()
@@ -1175,3 +1184,56 @@ def get_staff_qr_diagnostics_for_period(start_time: datetime, end_time: datetime
             'invalid_codes': [],
             'direct_count': 0
         }
+
+def get_staff_leaderboard(start_time: datetime, end_time: datetime, limit: int = 10) -> list:
+    """Получает топ самых активных сотрудников за период."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Получаем статистику по каждому сотруднику
+        cur.execute("""
+            SELECT 
+                s.staff_id,
+                s.full_name,
+                s.short_name,
+                s.position,
+                s.unique_code,
+                COUNT(u.user_id) as attracted_users,
+                COUNT(CASE WHEN u.status IN ('issued', 'redeemed', 'redeemed_and_left') THEN 1 END) as issued_coupons,
+                COUNT(CASE WHEN u.status IN ('redeemed', 'redeemed_and_left') THEN 1 END) as redeemed_coupons
+            FROM staff s
+            LEFT JOIN users u ON s.staff_id = u.brought_by_staff_id 
+                AND u.source = 'staff'
+                AND u.signup_date BETWEEN ? AND ?
+            WHERE s.status = 'active'
+            GROUP BY s.staff_id, s.full_name, s.short_name, s.position, s.unique_code
+            ORDER BY attracted_users DESC, issued_coupons DESC
+            LIMIT ?
+        """, (start_time, end_time, limit))
+        
+        staff_stats = cur.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in staff_stats]
+        
+    except Exception as e:
+        logging.error(f"Ошибка получения топа сотрудников: {e}")
+        return []
+
+def get_staff_monthly_stats(year: int, month: int) -> list:
+    """Получает статистику сотрудников за конкретный месяц."""
+    try:
+        from datetime import datetime, timedelta
+        import calendar
+        
+        # Определяем начало и конец месяца
+        start_date = datetime(year, month, 1)
+        last_day = calendar.monthrange(year, month)[1]
+        end_date = datetime(year, month, last_day, 23, 59, 59)
+        
+        return get_staff_leaderboard(start_date, end_date, limit=50)
+        
+    except Exception as e:
+        logging.error(f"Ошибка получения месячной статистики: {e}")
+        return []

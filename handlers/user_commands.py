@@ -100,7 +100,7 @@ def register_user_command_handlers(bot):
                     staff_member = database.find_staff_by_code(staff_code)
                     if staff_member:
                         brought_by_staff_id = staff_member['staff_id']
-                        source = f"Сотрудник: {staff_member['short_name']}"
+                        source = "staff"
                         logging.info(f"✅ Пользователь {user_id} (@{message.from_user.username}) успешно привязан к сотруднику: {staff_member['full_name']} (ID: {staff_member['staff_id']}, код: {staff_code})")
                         # Отправляем уведомление администраторам о новом переходе по QR-коду сотрудника
                         bot.send_message(
