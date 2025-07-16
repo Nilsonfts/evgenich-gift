@@ -18,8 +18,8 @@ EXPORT_SHEET_NAME = "Выгрузка Пользователей"
 
 # --- Конфигурация столбцов ---
 COLUMN_CONFIG = {
-    "signup_date": "Дата Регистрации",
-    "user_id": "ID Пользователя",
+    "registration_time": "Дата Регистрации",
+    "user_id": "ID Пользователя", 
     "first_name": "Имя в Telegram",
     "username": "Юзернейм в Telegram",
     "phone_number": "Номер Телефона",
@@ -28,9 +28,10 @@ COLUMN_CONFIG = {
     "birth_date": "Дата Рождения",
     "profile_completed": "Профиль Завершен",
     "status": "Статус Награды",
-    "source": "Источник Привлечения",
-    "referrer_id": "ID Пригласившего",
-    "redeem_date": "Дата Погашения"
+    "display_source": "Источник Привлечения",
+    "referrer_id": "ID Пригласившего", 
+    "redeem_date": "Дата Погашения",
+    "staff_full_name": "Сотрудник (полное имя)"
 }
 
 def do_export() -> Tuple[bool, str]:
@@ -44,7 +45,18 @@ def do_export() -> Tuple[bool, str]:
         conn = sqlite3.connect(DB_FILE)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-        cur.execute("SELECT * FROM users ORDER BY signup_date DESC")
+        cur.execute("""
+            SELECT u.*, 
+                   CASE 
+                       WHEN u.source = 'staff' AND u.brought_by_staff_id IS NOT NULL 
+                       THEN 'Сотрудник: ' || s.short_name
+                       ELSE u.source 
+                   END as display_source,
+                   s.full_name as staff_full_name
+            FROM users u
+            LEFT JOIN staff s ON u.brought_by_staff_id = s.staff_id
+            ORDER BY u.registration_time DESC
+        """)
         users = cur.fetchall()
         conn.close()
         if not users:
