@@ -780,6 +780,75 @@ def register_admin_handlers(bot):
                         response += "\n"
                     
                     bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+            elif action == 'admin_staff_qr_diagnostics':
+                # Диагностика QR-кодов сотрудников
+                try:
+                    conn = database.get_db_connection()
+                    cur = conn.cursor()
+                    
+                    # Получаем всех активных сотрудников
+                    cur.execute("SELECT staff_id, full_name, short_name, unique_code, position FROM staff WHERE status = 'active'")
+                    active_staff = cur.fetchall()
+                    
+                    # Получаем статистику переходов по QR-кодам за последние 7 дней
+                    tz_moscow = pytz.timezone('Europe/Moscow')
+                    current_time = datetime.datetime.now(tz_moscow)
+                    week_ago = current_time - datetime.timedelta(days=7)
+                    
+                    cur.execute("""
+                        SELECT source, COUNT(*) as count 
+                        FROM users 
+                        WHERE signup_date >= ? AND source LIKE 'Сотрудник:%'
+                        GROUP BY source
+                        ORDER BY count DESC
+                    """, (week_ago,))
+                    qr_stats = cur.fetchall()
+                    
+                    # Получаем переходы с некорректными кодами
+                    cur.execute("""
+                        SELECT source, COUNT(*) as count 
+                        FROM users 
+                        WHERE signup_date >= ? AND source LIKE 'Неизвестный_сотрудник_%'
+                        GROUP BY source
+                    """, (week_ago,))
+                    invalid_codes = cur.fetchall()
+                    
+                    conn.close()
+                    
+                    response = "🔍 **Диагностика QR-кодов сотрудников**\n\n"
+                    response += f"📅 Статистика за последние 7 дней ({week_ago.strftime('%d.%m')} - {current_time.strftime('%d.%m')})\n\n"
+                    
+                    # Показываем активных сотрудников
+                    response += f"👥 **Активные сотрудники:** {len(active_staff)}\n"
+                    for staff in active_staff:
+                        qr_url = f"https://t.me/EvgenichTapBarBot?start=w_{staff['unique_code']}"
+                        response += f"• {staff['short_name']} ({staff['position']}) - код: `{staff['unique_code']}`\n"
+                    
+                    response += "\n📊 **Переходы по QR-кодам:**\n"
+                    if qr_stats:
+                        total_qr_visitors = sum(row['count'] for row in qr_stats)
+                        response += f"✅ Успешных переходов: **{total_qr_visitors}**\n"
+                        for row in qr_stats:
+                            staff_name = row['source'].replace('Сотрудник: ', '')
+                            response += f"  • {staff_name}: {row['count']}\n"
+                    else:
+                        response += "✅ Успешных переходов: **0**\n"
+                    
+                    if invalid_codes:
+                        response += f"\n❌ **Переходы с некорректными кодами:** {sum(row['count'] for row in invalid_codes)}\n"
+                        for row in invalid_codes:
+                            invalid_code = row['source'].replace('Неизвестный_сотрудник_', '')
+                            response += f"  • Код `{invalid_code}`: {row['count']} попыток\n"
+                        response += "\n💡 *Проверьте, что QR-коды генерируются с правильными кодами!*"
+                    else:
+                        response += "\n✅ **Некорректных кодов не обнаружено**"
+                    
+                    response += f"\n\n🔗 **Формат QR-ссылки:**\n`https://t.me/EvgenichTapBarBot?start=w_КОД`"
+                    
+                    bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+                except Exception as e:
+                    logging.error(f"Ошибка диагностики QR-кодов: {e}")
+                    bot.send_message(call.message.chat.id, "❌ Ошибка при получении диагностики QR-кодов.")
             elif action == 'admin_churn_analysis':
                 total_left, distribution = database.get_full_churn_analysis()
                 if total_left == 0:

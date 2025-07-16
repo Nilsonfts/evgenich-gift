@@ -565,7 +565,15 @@ def get_report_data_for_period(start_time: datetime, end_time: datetime) -> tupl
         cur.execute("SELECT COUNT(*) FROM users WHERE redeem_date BETWEEN ? AND ?", (start_time, end_time))
         redeemed_count = cur.fetchone()[0]
         cur.execute("SELECT source, COUNT(*) FROM users WHERE signup_date BETWEEN ? AND ? GROUP BY source", (start_time, end_time))
-        sources = {row['source']: row['COUNT(*)'] for row in cur.fetchall()}
+        all_sources = {row['source']: row['COUNT(*)'] for row in cur.fetchall()}
+        
+        # Фильтруем источники: исключаем переходы по QR-кодам сотрудников
+        sources = {k: v for k, v in all_sources.items() if not k.startswith("Сотрудник:")}
+        
+        # Подсчитываем переходы по QR-кодам сотрудников отдельно
+        staff_qr_count = sum(v for k, v in all_sources.items() if k.startswith("Сотрудник:"))
+        if staff_qr_count > 0:
+            sources["QR-коды сотрудников"] = staff_qr_count
         total_redeem_time_seconds = 0
         if redeemed_count > 0:
             cur.execute("SELECT SUM(strftime('%s', redeem_date) - strftime('%s', signup_date)) FROM users WHERE redeem_date BETWEEN ? AND ? AND status IN ('redeemed', 'redeemed_and_left')", (start_time, end_time))
@@ -1108,37 +1116,62 @@ def get_staff_performance_for_period(start_time: datetime, end_time: datetime) -
         logging.error(f"Ошибка получения статистики по персоналу: {e}")
         return {}
 
-
-# --- Функции для работы с концепциями AI-ассистента ---
-
-def update_user_concept(user_id: int, concept: str) -> bool:
-    """Обновляет концепцию AI-ассистента для пользователя."""
+def get_staff_qr_diagnostics_for_period(start_time: datetime, end_time: datetime) -> Dict:
+    """Получает детальную диагностику по QR-кодам сотрудников за период."""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("UPDATE users SET ai_concept = ? WHERE user_id = ?", (concept, user_id))
-        conn.commit()
-        conn.close()
-        logging.info(f"Обновлена концепция для пользователя {user_id}: {concept}")
-        return True
-    except Exception as e:
-        logging.error(f"Ошибка обновления концепции для пользователя {user_id}: {e}")
-        return False
-
-def get_user_concept(user_id: int) -> str:
-    """Получает текущую концепцию AI-ассистента для пользователя."""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT ai_concept FROM users WHERE user_id = ?", (user_id,))
-        result = cur.fetchone()
+        
+        # Получаем всех активных сотрудников
+        cur.execute("SELECT staff_id, full_name, short_name, unique_code, position FROM staff WHERE status = 'active'")
+        active_staff = cur.fetchall()
+        
+        # Получаем успешные переходы по QR-кодам
+        cur.execute("""
+            SELECT u.source, u.brought_by_staff_id, s.short_name, s.unique_code, COUNT(*) as count
+            FROM users u
+            LEFT JOIN staff s ON u.brought_by_staff_id = s.staff_id
+            WHERE u.signup_date BETWEEN ? AND ? 
+                AND u.source LIKE 'Сотрудник:%'
+                AND u.brought_by_staff_id IS NOT NULL
+            GROUP BY u.source, u.brought_by_staff_id
+            ORDER BY count DESC
+        """, (start_time, end_time))
+        successful_qr = cur.fetchall()
+        
+        # Получаем переходы с некорректными кодами
+        cur.execute("""
+            SELECT source, COUNT(*) as count 
+            FROM users 
+            WHERE signup_date BETWEEN ? AND ? 
+                AND source LIKE 'Неизвестный_сотрудник_%'
+            GROUP BY source
+            ORDER BY count DESC
+        """, (start_time, end_time))
+        invalid_codes = cur.fetchall()
+        
+        # Получаем переходы "direct", которые могли быть некорректными QR-кодами
+        cur.execute("""
+            SELECT COUNT(*) as count 
+            FROM users 
+            WHERE signup_date BETWEEN ? AND ? 
+                AND source = 'direct'
+        """, (start_time, end_time))
+        direct_count = cur.fetchone()['count']
+        
         conn.close()
         
-        if result:
-            return result[0] or 'evgenich'  # По умолчанию возвращаем 'evgenich'
-        else:
-            # Если пользователь не найден, возвращаем концепцию по умолчанию
-            return 'evgenich'
+        return {
+            'active_staff': [dict(row) for row in active_staff],
+            'successful_qr': [dict(row) for row in successful_qr],
+            'invalid_codes': [dict(row) for row in invalid_codes],
+            'direct_count': direct_count
+        }
     except Exception as e:
-        logging.error(f"Ошибка получения концепции для пользователя {user_id}: {e}")
-        return 'evgenich'
+        logging.error(f"Ошибка получения диагностики QR-кодов: {e}")
+        return {
+            'active_staff': [],
+            'successful_qr': [],
+            'invalid_codes': [],
+            'direct_count': 0
+        }

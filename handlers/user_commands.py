@@ -96,15 +96,24 @@ def register_user_command_handlers(bot):
 
                 if payload.startswith('w_'):
                     staff_code = payload.replace('w_', '')
-                    logging.info(f"Попытка привязки к сотруднику с кодом: {staff_code}")
+                    logging.info(f"🔍 Попытка привязки к сотруднику с кодом: {staff_code} (пользователь: {user_id})")
                     staff_member = database.find_staff_by_code(staff_code)
                     if staff_member:
                         brought_by_staff_id = staff_member['staff_id']
                         source = f"Сотрудник: {staff_member['short_name']}"
-                        logging.info(f"✅ Пользователь {user_id} успешно привязан к сотруднику: {staff_member['full_name']} (код: {staff_code})")
+                        logging.info(f"✅ Пользователь {user_id} (@{message.from_user.username}) успешно привязан к сотруднику: {staff_member['full_name']} (ID: {staff_member['staff_id']}, код: {staff_code})")
+                        # Отправляем уведомление администраторам о новом переходе по QR-коду сотрудника
+                        bot.send_message(
+                            REPORT_CHAT_ID,
+                            f"📊 QR-переход: Новый гость привлечен сотрудником {staff_member['short_name']} "
+                            f"(@{message.from_user.username or 'без_username'})",
+                            parse_mode="Markdown"
+                        )
                     else:
-                        logging.warning(f"❌ Не найден активный сотрудник с кодом {staff_code}. Проверьте базу данных сотрудников.")
-                        source = f"Неизвестный_сотрудник_{staff_code}"
+                        logging.warning(f"❌ QR-код сотрудника некорректен! Код '{staff_code}' не найден в базе активных сотрудников. Переход засчитан как 'direct'.")
+                        # При неправильном коде сотрудника считаем переход "прямым"
+                        source = 'direct'
+                        brought_by_staff_id = None
                 elif payload.startswith('ref_'):
                     try:
                         referrer_id = int(payload.replace('ref_', ''))
