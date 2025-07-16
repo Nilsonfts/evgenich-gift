@@ -20,7 +20,34 @@ from .user_commands import issue_coupon
 def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_feedback_func):
     """Регистрирует обработчики для всех inline-кнопок."""
 
-    @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
+    @bot.callback_query_handler(func=lambda call: True)
+    def handle_all_callbacks(call: types.CallbackQuery):
+        """Универсальный обработчик для логгирования всех callback-запросов."""
+        logging.info(f"Получен callback: {call.data} от пользователя {call.from_user.id}")
+        
+        # Передаем управление специфичным обработчикам
+        if call.data == "check_subscription":
+            handle_check_subscription(call)
+        elif call.data == "redeem_reward":
+            handle_redeem_reward(call)
+        elif call.data.startswith("feedback_"):
+            handle_feedback_rating(call)
+        elif call.data == "main_menu_choice":
+            callback_main_menu_choice(call)
+        elif call.data == "menu_nastoiki_main":
+            callback_menu_nastoiki_main(call)
+        elif call.data.startswith("menu_category_"):
+            callback_menu_category(call)
+        elif call.data == "menu_food_main":
+            callback_menu_food_main(call)
+        elif call.data.startswith("food_category_"):
+            callback_food_category(call)
+        elif call.data.startswith("concept_"):
+            callback_concept_choice(call)
+        else:
+            logging.warning(f"Неизвестный callback: {call.data}")
+            bot.answer_callback_query(call.id, "Неизвестная команда")
+
     def handle_check_subscription(call: types.CallbackQuery):
         """
         Проверяет подписку на канал после нажатия кнопки.
@@ -44,7 +71,6 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             logging.error(f"Ошибка при проверке подписки для {user_id}: {e}")
             bot.answer_callback_query(call.id, "Не удалось проверить подписку. Попробуйте позже.", show_alert=True)
 
-    @bot.callback_query_handler(func=lambda call: call.data == "redeem_reward")
     def handle_redeem_reward(call: types.CallbackQuery):
         """
         Обрабатывает погашение купона на настойку.
@@ -100,7 +126,6 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         else:
             bot.answer_callback_query(call.id, "Эта награда уже была использована.", show_alert=True)
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("feedback_"))
     def handle_feedback_rating(call: types.CallbackQuery):
         """Ловит оценку пользователя и сохраняет ее."""
         rating = call.data.split("_")[1]
@@ -114,7 +139,6 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
 
     # --- Обработчики для навигации по меню ---
 
-    @bot.callback_query_handler(func=lambda call: call.data == "main_menu_choice")
     def callback_main_menu_choice(call: types.CallbackQuery):
         """Возвращает к главному выбору меню (Настойки/Кухня)."""
         bot.answer_callback_query(call.id)
@@ -128,7 +152,6 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         except ApiTelegramException as e:
             logging.warning(f"Не удалось вернуться к выбору меню: {e}")
             
-    @bot.callback_query_handler(func=lambda call: call.data == "menu_nastoiki_main")
     def callback_menu_nastoiki_main(call: types.CallbackQuery):
         """Показывает главное меню с категориями настоек."""
         bot.answer_callback_query(call.id)
@@ -143,7 +166,6 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         except ApiTelegramException as e:
              logging.warning(f"Не удалось отредактировать сообщение меню (возможно, двойное нажатие): {e}")
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("menu_category_"))
     def callback_menu_category(call: types.CallbackQuery):
         """Показывает список настоек в выбранной категории."""
         bot.answer_callback_query(call.id)
@@ -165,7 +187,6 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         except ApiTelegramException as e:
             logging.warning(f"Не удалось отредактировать сообщение категории (возможно, двойное нажатие): {e}")
 
-    @bot.callback_query_handler(func=lambda call: call.data == "menu_food_main")
     def callback_menu_food_main(call: types.CallbackQuery):
         """Показывает главное меню с категориями кухни."""
         bot.answer_callback_query(call.id)
@@ -180,7 +201,6 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         except ApiTelegramException as e:
             logging.warning(f"Не удалось отредактировать сообщение меню еды (возможно, двойное нажатие): {e}")
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("food_category_"))
     def callback_food_category(call: types.CallbackQuery):
         """Показывает список блюд в выбранной категории."""
         bot.answer_callback_query(call.id)
@@ -201,3 +221,35 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             )
         except ApiTelegramException as e:
             logging.warning(f"Не удалось отредактировать сообщение категории еды (возможно, двойное нажатие): {e}")
+
+    # --- Обработчики концепций чата ---
+    def callback_concept_choice(call: types.CallbackQuery):
+        """Обрабатывает выбор концепции для AI-ассистента."""
+        bot.answer_callback_query(call.id)
+        concept = call.data.replace("concept_", "")
+        user_id = call.from_user.id
+        
+        # Сохраняем выбранную концепцию в базе данных
+        database.update_user_concept(user_id, concept)
+        
+        concept_names = {
+            "rvv": "РВВ (Руки Вверх Винтаж)",
+            "evgenich": "ЕВГЕНИЧ (Классический)",
+            "nebar": "НЕБАР (Необычный барный стиль)",
+            "spletni": "СПЛЕТНИ (Дружеская болтовня)",
+            "orbita": "ОРБИТА (Космический стиль)"
+        }
+        
+        selected_name = concept_names.get(concept, concept.upper())
+        
+        try:
+            bot.edit_message_text(
+                f"✅ Отлично! Выбрана концепция: **{selected_name}**\n\n"
+                f"Теперь я буду общаться с тобой в этом стиле. "
+                f"Можешь в любой момент изменить концепцию через команду /concept",
+                call.message.chat.id,
+                call.message.message_id,
+                parse_mode="Markdown"
+            )
+        except ApiTelegramException as e:
+            logging.warning(f"Не удалось отредактировать сообщение выбора концепции: {e}")

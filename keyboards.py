@@ -99,6 +99,26 @@ def get_food_items_keyboard():
 
 # === INLINE-КЛАВИАТУРЫ ДЛЯ БРОНИРОВАНИЯ ===
 
+def get_concept_choice_keyboard():
+    """Возвращает клавиатуру для выбора концепции AI-ассистента."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    
+    concepts = [
+        ("РВВ", "concept_rvv"),
+        ("ЕВГЕНИЧ", "concept_evgenich"), 
+        ("НЕБАР", "concept_nebar"),
+        ("СПЛЕТНИ", "concept_spletni"),
+        ("ОРБИТА", "concept_orbita")
+    ]
+    
+    buttons = [
+        types.InlineKeyboardButton(text=name, callback_data=callback_data)
+        for name, callback_data in concepts
+    ]
+    
+    keyboard.add(*buttons)
+    return keyboard
+
 def get_booking_options_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(

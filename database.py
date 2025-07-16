@@ -200,6 +200,13 @@ def init_db():
             cur.execute("ALTER TABLE users ADD COLUMN profile_completed BOOLEAN DEFAULT 0")
             logging.info("База данных обновлена: добавлена колонка profile_completed")
 
+        # Проверка и добавление колонки ai_concept для концепции AI-ассистента
+        try:
+            cur.execute("SELECT ai_concept FROM users LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute("ALTER TABLE users ADD COLUMN ai_concept TEXT DEFAULT 'evgenich'")
+            logging.info("База данных обновлена: добавлена колонка ai_concept")
+
         # --- НОВАЯ ТАБЛИЦА: Персонал (staff) ---
         cur.execute("""
             CREATE TABLE IF NOT EXISTS staff (
@@ -1095,9 +1102,43 @@ def get_staff_performance_for_period(start_time: datetime, end_time: datetime) -
             
         for position in grouped_performance:
             grouped_performance[position].sort(key=lambda x: x['brought'], reverse=True)
-            
+        
         return grouped_performance
-
     except Exception as e:
-        logging.error(f"Ошибка сбора статистики по персоналу: {e}")
+        logging.error(f"Ошибка получения статистики по персоналу: {e}")
         return {}
+
+
+# --- Функции для работы с концепциями AI-ассистента ---
+
+def update_user_concept(user_id: int, concept: str) -> bool:
+    """Обновляет концепцию AI-ассистента для пользователя."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET ai_concept = ? WHERE user_id = ?", (concept, user_id))
+        conn.commit()
+        conn.close()
+        logging.info(f"Обновлена концепция для пользователя {user_id}: {concept}")
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка обновления концепции для пользователя {user_id}: {e}")
+        return False
+
+def get_user_concept(user_id: int) -> str:
+    """Получает текущую концепцию AI-ассистента для пользователя."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT ai_concept FROM users WHERE user_id = ?", (user_id,))
+        result = cur.fetchone()
+        conn.close()
+        
+        if result:
+            return result[0] or 'evgenich'  # По умолчанию возвращаем 'evgenich'
+        else:
+            # Если пользователь не найден, возвращаем концепцию по умолчанию
+            return 'evgenich'
+    except Exception as e:
+        logging.error(f"Ошибка получения концепции для пользователя {user_id}: {e}")
+        return 'evgenich'

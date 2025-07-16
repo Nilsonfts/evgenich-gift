@@ -61,13 +61,17 @@ def register_ai_handlers(bot):
 
         history = database.get_conversation_history(user_id, limit=6)
         daily_updates = database.get_daily_updates()
+        
+        # Получаем выбранную пользователем концепцию
+        user_concept = database.get_user_concept(user_id)
 
         bot.send_chat_action(message.chat.id, 'typing')
 
         ai_response = get_ai_recommendation(
             user_query=user_text,
             conversation_history=history,
-            daily_updates=daily_updates
+            daily_updates=daily_updates,
+            user_concept=user_concept  # Передаем концепцию в AI
         )
 
         database.log_conversation_turn(user_id, "assistant", ai_response)

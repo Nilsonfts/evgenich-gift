@@ -40,6 +40,31 @@ def register_user_command_handlers(bot):
     # Словарь для хранения состояний сбора данных профиля пользователя
     user_profile_data = {} 
 
+    @bot.message_handler(commands=['concept'])
+    def handle_concept_choice(message: types.Message):
+        """Показывает меню выбора концепции для AI-ассистента."""
+        user_id = message.from_user.id
+        
+        current_concept = database.get_user_concept(user_id)
+        concept_names = {
+            "rvv": "РВВ (Руки Вверх Винтаж)",
+            "evgenich": "ЕВГЕНИЧ (Классический)", 
+            "nebar": "НЕБАР (Необычный барный стиль)",
+            "spletni": "СПЛЕТНИ (Дружеская болтовня)",
+            "orbita": "ОРБИТА (Космический стиль)"
+        }
+        
+        current_name = concept_names.get(current_concept, "не выбрана")
+        
+        bot.send_message(
+            message.chat.id,
+            f"🎭 **Мастер настройки чата**\n\n"
+            f"Выберите концепцию для этого чата:\n\n"
+            f"Текущая концепция: **{current_name}**",
+            reply_markup=keyboards.get_concept_choice_keyboard(),
+            parse_mode="Markdown"
+        )
+
     @bot.message_handler(commands=['start'])
     def handle_start(message: types.Message):
         """
