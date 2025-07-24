@@ -13,9 +13,11 @@ def get_main_menu_keyboard(user_id):
     friend_button = types.KeyboardButton("🤝 Привести товарища")
     book_button = types.KeyboardButton("📍 Забронировать стол")
     ai_help_button = types.KeyboardButton("🗣 Спроси у Евгенича")
+    games_button = types.KeyboardButton("🎮 Игры и развлечения")
 
     keyboard.row(menu_button, friend_button)
     keyboard.row(ai_help_button, book_button)
+    keyboard.row(games_button)
 
     if user_id in ADMIN_IDS:
         admin_button = types.KeyboardButton("👑 Админка")
@@ -193,7 +195,8 @@ def get_admin_reports_menu():
     keyboard.add(
         types.InlineKeyboardButton("📊 Текущая смена (реальное время)", callback_data="admin_report_current_shift"),
         types.InlineKeyboardButton("📊 Завершенная смена", callback_data="admin_report_manual_daily"),
-        types.InlineKeyboardButton("👷 Статистика сотрудников", callback_data="admin_report_staff_realtime"),
+        types.InlineKeyboardButton("� Полный отчет за все время", callback_data="admin_report_full_statistics"),
+        types.InlineKeyboardButton("�👷 Статистика сотрудников", callback_data="admin_report_staff_realtime"),
         types.InlineKeyboardButton("🔍 Диагностика QR-кодов", callback_data="admin_staff_qr_diagnostics"),
         types.InlineKeyboardButton("🏆 Ударники труда", callback_data="admin_report_leaderboard"),
         types.InlineKeyboardButton("💔 Анализ оттока", callback_data="admin_churn_analysis"),

@@ -282,6 +282,57 @@ def register_user_command_handlers(bot):
             reply_markup=keyboards.get_menu_choice_keyboard()
         )
 
+    @bot.message_handler(func=lambda message: message.text == "🎮 Игры и развлечения")
+    def handle_games_button(message: types.Message):
+        """Обрабатывает кнопку игр и развлечений."""
+        user_id = message.from_user.id
+        try:
+            from games import get_user_game_stats, can_play_game
+
+            # Получаем статистику игр пользователя
+            stats = get_user_game_stats(user_id)
+            
+            if "error" in stats:
+                bot.send_message(user_id, "Не удалось загрузить статистику игр.")
+                return
+
+            # Проверяем доступность игр
+            quiz_status = can_play_game(user_id, "quiz")
+            wheel_status = can_play_game(user_id, "wheel")
+
+            # Формируем сообщение со статистикой и доступными играми
+            games_text = f"""🎮 **Игры и развлечения от Евгенича**
+
+🎯 **Ваша статистика:**
+• Всего игр: {stats['total_games']}
+• Викторин: {stats['quiz_games']} (правильно: {stats['quiz_correct']})
+• Вращений колеса: {stats['wheel_spins']}
+• Призов выиграно: {stats['prizes_won']}
+• Не забрано призов: {stats['unclaimed_prizes']}
+
+🎲 **Доступные игры:**
+
+🧠 **Викторина от Евгенича** (/quiz)
+{quiz_status['message']}
+Отвечайте на вопросы о баре и получайте баллы!
+
+🎰 **Колесо фортуны** (/wheel)  
+{wheel_status['message']}
+Крутите колесо и выигрывайте призы!
+
+💡 **Подсказка:** Используйте команды /quiz, /wheel или /games для быстрого доступа"""
+
+            bot.send_message(
+                user_id,
+                games_text,
+                parse_mode="Markdown",
+                reply_markup=keyboards.get_main_menu_keyboard(user_id)
+            )
+            
+        except Exception as e:
+            logging.error(f"Ошибка при обработке кнопки игр для пользователя {user_id}: {e}")
+            bot.send_message(user_id, "Не удалось загрузить игры. Попробуйте позже.")
+
     @bot.message_handler(func=lambda message: message.text == "🥃 Получить настойку по талону")
     def handle_redeem_nastoika(message: types.Message):
         """Обрабатывает кнопку получения настойки по талону - начинает сбор профиля."""
@@ -545,3 +596,288 @@ def register_user_command_handlers(bot):
                     texts.BIRTH_DATE_ERROR_TEXT,
                     parse_mode="Markdown"
                 )
+    
+    @bot.message_handler(commands=['recommend'])
+    def handle_recommend(message: types.Message):
+        """
+        Обрабатывает команду /recommend и предоставляет персонализированные рекомендации.
+        """
+        user_id = message.from_user.id
+        try:
+            from ai.assistant import analyze_guest_preferences
+
+            # Получаем рекомендации для пользователя
+            recommendations = analyze_guest_preferences(user_id)
+
+            # Отправляем рекомендации пользователю
+            bot.send_message(
+                user_id,
+                recommendations,
+                parse_mode="Markdown",
+                reply_markup=keyboards.get_main_menu_keyboard(user_id)
+            )
+        except Exception as e:
+            logging.error(f"Ошибка при обработке команды /recommend для пользователя {user_id}: {e}")
+            bot.send_message(
+                user_id,
+                "Не удалось загрузить ваши рекомендации. Попробуйте позже.",
+                parse_mode="Markdown"
+            )
+
+    @bot.message_handler(commands=['quiz'])
+    def handle_quiz(message: types.Message):
+        """
+        Обрабатывает команду /quiz - запуск викторины.
+        """
+        user_id = message.from_user.id
+        try:
+            from games import can_play_game, get_random_quiz_question, QUIZ_QUESTIONS
+
+            # Проверяем, может ли пользователь играть
+            can_play = can_play_game(user_id, "quiz")
+            if not can_play["can_play"]:
+                bot.send_message(user_id, can_play["message"])
+                return
+
+            # Получаем случайный вопрос
+            question = get_random_quiz_question()
+            
+            # Создаем клавиатуру с вариантами ответов
+            keyboard = types.InlineKeyboardMarkup(row_width=1)
+            for i, option in enumerate(question["options"]):
+                callback_data = f"quiz_answer_{QUIZ_QUESTIONS.index(question)}_{i}"
+                keyboard.add(types.InlineKeyboardButton(option, callback_data=callback_data))
+            
+            # Отправляем вопрос
+            bot.send_message(
+                user_id,
+                f"🧠 **Викторина от Евгенича**\n\n{question['question']}",
+                parse_mode="Markdown",
+                reply_markup=keyboard
+            )
+            
+        except Exception as e:
+            logging.error(f"Ошибка при запуске викторины для пользователя {user_id}: {e}")
+            bot.send_message(user_id, "Не удалось запустить викторину. Попробуйте позже.")
+
+    @bot.message_handler(commands=['wheel'])
+    def handle_wheel(message: types.Message):
+        """
+        Обрабатывает команду /wheel - запуск колеса фортуны.
+        """
+        user_id = message.from_user.id
+        try:
+            from games import can_play_game, spin_wheel_of_fortune, save_game_result
+
+            # Проверяем, может ли пользователь играть
+            can_play = can_play_game(user_id, "wheel")
+            if not can_play["can_play"]:
+                bot.send_message(user_id, can_play["message"])
+                return
+
+            # Крутим колесо
+            result = spin_wheel_of_fortune()
+            
+            # Сохраняем результат
+            save_game_result(user_id, "wheel", result)
+            
+            # Отправляем результат
+            message_text = f"{result['message']}\n\n"
+            if result["claim_code"]:
+                message_text += f"🎫 Код для получения: `{result['claim_code']}`\n"
+                message_text += "Покажите этот код администратору или сотруднику."
+            
+            bot.send_message(
+                user_id,
+                message_text,
+                parse_mode="Markdown",
+                reply_markup=keyboards.get_main_menu_keyboard(user_id)
+            )
+            
+        except Exception as e:
+            logging.error(f"Ошибка при запуске колеса фортуны для пользователя {user_id}: {e}")
+            bot.send_message(user_id, "Не удалось запустить колесо фортуны. Попробуйте позже.")
+
+    @bot.message_handler(commands=['games'])
+    def handle_games_menu(message: types.Message):
+        """
+        Обрабатывает команду /games - показывает меню игр и статистику.
+        """
+        user_id = message.from_user.id
+        try:
+            from games import get_user_game_stats
+
+            # Получаем статистику игр пользователя
+            stats = get_user_game_stats(user_id)
+            
+            if "error" in stats:
+                bot.send_message(user_id, "Не удалось загрузить статистику игр.")
+                return
+
+            # Формируем сообщение со статистикой
+            stats_text = f"""🎮 **Игровое меню**
+
+📊 **Ваша статистика:**
+🎯 Всего игр: {stats['total_games']}
+🧠 Викторин: {stats['quiz_games']} (правильно: {stats['quiz_correct']})
+🎰 Вращений колеса: {stats['wheel_spins']}
+🎁 Призов выиграно: {stats['prizes_won']}
+🎫 Не забрано призов: {stats['unclaimed_prizes']}
+
+🎲 **Доступные игры:**
+/quiz - Викторина (каждый час)
+/wheel - Колесо фортуны (каждые 3 часа)"""
+
+            bot.send_message(
+                user_id,
+                stats_text,
+                parse_mode="Markdown",
+                reply_markup=keyboards.get_main_menu_keyboard(user_id)
+            )
+            
+        except Exception as e:
+            logging.error(f"Ошибка при показе меню игр для пользователя {user_id}: {e}")
+            bot.send_message(user_id, "Не удалось загрузить меню игр. Попробуйте позже.")
+
+    @bot.message_handler(commands=['password'])
+    def handle_password_command(message: types.Message):
+        """
+        Обрабатывает команду /password для получения информации о пароле дня.
+        """
+        user_id = message.from_user.id
+        try:
+            from daily_activities import get_password_of_the_day, get_user_password_stats
+
+            # Получаем статистику пользователя
+            stats = get_user_password_stats(user_id)
+            
+            if "error" in stats:
+                bot.send_message(user_id, "Не удалось загрузить информацию о пароле.")
+                return
+
+            # Получаем информацию о пароле дня
+            password_info = get_password_of_the_day()
+            
+            if stats["correct_today"]:
+                message_text = f"""🔐 **Секретный пароль дня**
+
+✅ Сегодня вы уже угадали пароль!
+🎁 Ваша награда: {password_info['reward']}
+
+Новый пароль будет доступен завтра в 00:00"""
+            elif not stats["can_try"]:
+                message_text = f"""🔐 **Секретный пароль дня**
+
+❌ Сегодня вы исчерпали попытки угадать пароль.
+Новый пароль будет доступен завтра в 00:00
+
+💡 Подсказка для завтра: следите за нашими новостями!"""
+            else:
+                # Активируем режим ввода пароля
+                password_attempts[user_id] = True
+                
+                message_text = f"""🔐 **Секретный пароль дня**
+
+🗓 Дата: {password_info['date']}
+🎁 Награда: {password_info['reward']}
+💡 {password_info['hint']}
+
+Попытки сегодня: {stats['attempts_today']}
+
+Введите пароль в следующем сообщении:"""
+
+            bot.send_message(
+                user_id,
+                message_text,
+                parse_mode="Markdown"
+            )
+            
+        except Exception as e:
+            logging.error(f"Ошибка при обработке команды пароля для пользователя {user_id}: {e}")
+            bot.send_message(user_id, "Не удалось загрузить информацию о пароле. Попробуйте позже.")
+
+    @bot.message_handler(commands=['events'])
+    def handle_events_command(message: types.Message):
+        """
+        Обрабатывает команду /events для просмотра предстоящих мероприятий.
+        """
+        user_id = message.from_user.id
+        try:
+            from daily_activities import get_upcoming_events
+
+            # Получаем список предстоящих мероприятий
+            events = get_upcoming_events()
+            
+            if not events:
+                message_text = """🎪 **Мероприятия в баре**
+
+В ближайшие дни мероприятий не запланировано.
+
+Следите за обновлениями в нашем Telegram-канале! 📢"""
+            else:
+                message_text = "🎪 **Предстоящие мероприятия**\n\n"
+                
+                for event in events:
+                    event_date = datetime.fromisoformat(event['event_date'].replace(' ', 'T'))
+                    date_str = event_date.strftime('%d.%m.%Y в %H:%M')
+                    
+                    message_text += f"""📅 **{event['title']}**
+🗓 {date_str}
+📝 {event['description']}
+👥 Участников: {event['current_participants']}
+
+Для регистрации: /register_{event['id']}
+
+---
+
+"""
+                
+                message_text += "💡 Используйте команду /register_[ID] для регистрации на мероприятие"
+
+            bot.send_message(
+                user_id,
+                message_text,
+                parse_mode="Markdown"
+            )
+            
+        except Exception as e:
+            logging.error(f"Ошибка при показе мероприятий для пользователя {user_id}: {e}")
+            bot.send_message(user_id, "Не удалось загрузить мероприятия. Попробуйте позже.")
+
+    # Обработчик для ввода секретного пароля
+    password_attempts = {}  # Словарь для отслеживания состояния ввода пароля
+    
+    @bot.message_handler(func=lambda message: message.from_user.id in password_attempts and message.content_type == 'text')
+    def handle_password_input(message: types.Message):
+        """
+        Обрабатывает ввод секретного пароля пользователем.
+        """
+        user_id = message.from_user.id
+        user_input = message.text.strip()
+        
+        try:
+            from daily_activities import check_daily_password, save_password_attempt, get_user_password_stats
+
+            # Проверяем пароль
+            result = check_daily_password(user_input)
+            
+            # Сохраняем попытку
+            save_password_attempt(user_id, user_input, result["is_correct"])
+            
+            # Отправляем результат
+            bot.send_message(
+                user_id,
+                result["message"],
+                parse_mode="Markdown",
+                reply_markup=keyboards.get_main_menu_keyboard(user_id)
+            )
+            
+            # Убираем пользователя из режима ввода пароля
+            if user_id in password_attempts:
+                del password_attempts[user_id]
+            
+        except Exception as e:
+            logging.error(f"Ошибка при проверке пароля для пользователя {user_id}: {e}")
+            bot.send_message(user_id, "Произошла ошибка при проверке пароля. Попробуйте позже.")
+            if user_id in password_attempts:
+                del password_attempts[user_id]

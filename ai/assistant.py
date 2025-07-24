@@ -111,3 +111,127 @@ def create_system_prompt(updates_string: str, user_concept: str = "evgenich") ->
         f"3.  **Гость спрашивает о баре, меню:** Ответь кратко, опираясь на предоставленный контекст.\n"
         f"4.  **Гость пишет глупость:** Отвечай с доброй иронией в выбранном стиле."
     )
+
+def analyze_guest_preferences(user_id: int) -> str:
+    """
+    Анализирует предпочтения гостя на основе его заказов и активности.
+    Возвращает персонализированные рекомендации.
+    """
+    from db.users import get_user_orders
+
+    try:
+        # Получаем данные о заказах пользователя
+        orders = get_user_orders(user_id)
+        if not orders:
+            return "У вас пока нет заказов, но мы всегда рады предложить что-то новое!"
+
+        # Анализируем заказы
+        favorite_items = {}
+        for order in orders:
+            for item in order.get("items", []):
+                favorite_items[item] = favorite_items.get(item, 0) + 1
+
+        # Находим самые популярные позиции
+        sorted_items = sorted(favorite_items.items(), key=lambda x: x[1], reverse=True)
+        top_items = [item[0] for item in sorted_items[:3]]
+
+        # Формируем рекомендации
+        recommendations = (
+            f"Мы заметили, что вам нравятся: {', '.join(top_items)}. "
+            "Рекомендуем попробовать наши новые предложения, которые могут вам понравиться!"
+        )
+        return recommendations
+
+    except Exception as e:
+        logger.error(f"Ошибка анализа предпочтений для пользователя {user_id}: {e}")
+        return "Не удалось загрузить ваши предпочтения. Попробуйте позже."
+
+
+def generate_full_statistics_report() -> str:
+    """
+    Генерирует полный отчет по статистике бота с момента запуска (10 июля 2025).
+    Включает подписки, отписки, дельту и разбивку по источникам.
+    """
+    import database
+    from datetime import datetime
+    
+    try:
+        # Дата запуска бота
+        bot_start_date = datetime(2025, 7, 10)
+        current_date = datetime.now()
+        days_running = (current_date - bot_start_date).days
+        
+        # Получаем все данные пользователей
+        all_users = database.get_all_users_for_report()
+        
+        if not all_users:
+            return "📊 **Полный отчет за все время**\n\nДанные пользователей не найдены."
+        
+        # Подсчитываем статистику
+        total_subscribed = 0
+        total_unsubscribed = 0
+        sources_stats = {}
+        
+        for user in all_users:
+            # Подсчитываем подписавшихся
+            if user.get('status') in ['issued', 'redeemed', 'redeemed_and_left']:
+                total_subscribed += 1
+            
+            # Подсчитываем отписавшихся (статус 'left' или 'unsubscribed')
+            if user.get('status') in ['left', 'unsubscribed']:
+                total_unsubscribed += 1
+            
+            # Анализируем источники
+            source = user.get('source', 'direct')
+            utm_source = user.get('utm_source', 'unknown')
+            
+            # Определяем канал привлечения
+            if source == 'referral':
+                channel = 'Реферальная программа'
+            elif source == 'staff':
+                channel = 'Через сотрудника'
+            elif utm_source and utm_source != 'unknown':
+                channel = f'UTM: {utm_source}'
+            elif source == 'channel':
+                channel = 'Telegram канал'
+            else:
+                channel = 'Прямой переход'
+            
+            sources_stats[channel] = sources_stats.get(channel, 0) + 1
+        
+        # Вычисляем дельту
+        delta = total_subscribed - total_unsubscribed
+        
+        # Формируем отчет
+        report = f"""📊 **Полный отчет за все время**
+🗓 Период: 10 июля 2025 - {current_date.strftime('%d.%m.%Y')} ({days_running} дней)
+
+📈 **Общая статистика:**
+✅ Всего подписалось: {total_subscribed}
+❌ Всего отписалось: {total_unsubscribed}
+📊 Дельта: {delta:+d}
+👥 Активных пользователей: {len(all_users)}
+
+🎯 **Источники привлечения:**"""
+        
+        # Добавляем разбивку по источникам
+        for channel, count in sorted(sources_stats.items(), key=lambda x: x[1], reverse=True):
+            percentage = (count / len(all_users)) * 100 if all_users else 0
+            report += f"\n• {channel}: {count} чел. ({percentage:.1f}%)"
+        
+        # Добавляем дополнительную аналитику
+        retention_rate = (delta / total_subscribed * 100) if total_subscribed > 0 else 0
+        avg_users_per_day = len(all_users) / days_running if days_running > 0 else 0
+        
+        report += f"""
+
+📈 **Дополнительная аналитика:**
+📌 Коэффициент удержания: {retention_rate:.1f}%
+📅 Среднее пользователей в день: {avg_users_per_day:.1f}
+🎯 Конверсия в активных: {(total_subscribed / len(all_users) * 100):.1f}%"""
+        
+        return report
+        
+    except Exception as e:
+        logger.error(f"Ошибка генерации полного отчета: {e}")
+        return "❌ Не удалось сгенерировать отчет. Попробуйте позже."

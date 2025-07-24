@@ -1266,3 +1266,48 @@ def get_staff_period_stats(start_time: datetime, end_time: datetime) -> dict:
     except Exception as e:
         logging.error(f"Ошибка получения статистики за период: {e}")
         return {}
+
+
+def get_all_users_for_report() -> List[Dict[str, Any]]:
+    """
+    Получает всех пользователей для полного отчета статистики.
+    Возвращает список словарей с данными пользователей.
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT 
+                user_id,
+                first_name,
+                username, 
+                status,
+                source,
+                utm_source,
+                utm_medium,
+                utm_campaign,
+                signup_date,
+                redeem_date,
+                referrer_id,
+                brought_by_staff_id,
+                registration_time
+            FROM users 
+            ORDER BY signup_date ASC
+        """)
+        
+        rows = cur.fetchall()
+        conn.close()
+        
+        # Преобразуем в список словарей
+        users = []
+        for row in rows:
+            user_dict = dict(row)
+            users.append(user_dict)
+        
+        return users
+        
+    except Exception as e:
+        logging.error(f"Ошибка получения всех пользователей для отчета: {e}")
+        return []

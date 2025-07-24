@@ -730,6 +730,18 @@ def register_admin_handlers(bot):
                     start_time = (current_time - datetime.timedelta(days=2)).replace(hour=12, minute=0, second=0, microsecond=0)
                 
                 send_report(bot, call.message.chat.id, start_time, end_time, is_current_shift=False)
+            
+            elif action == 'admin_report_full_statistics':
+                # Полный отчет за все время с момента запуска бота
+                from ai.assistant import generate_full_statistics_report
+                
+                try:
+                    report_text = generate_full_statistics_report()
+                    bot.send_message(call.message.chat.id, report_text, parse_mode="Markdown")
+                except Exception as e:
+                    logging.error(f"Ошибка при генерации полного отчета: {e}")
+                    bot.send_message(call.message.chat.id, "❌ Не удалось сгенерировать полный отчет. Попробуйте позже.")
+            
             elif action == 'admin_report_staff_realtime':
                 # Статистика сотрудников в режиме реального времени за текущую смену
                 tz_moscow = pytz.timezone('Europe/Moscow')

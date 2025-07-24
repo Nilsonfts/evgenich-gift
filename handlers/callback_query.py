@@ -44,6 +44,8 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             callback_food_category(call)
         elif call.data.startswith("concept_"):
             callback_concept_choice(call)
+        elif call.data.startswith("quiz_answer_"):
+            callback_quiz_answer(call)
         else:
             logging.warning(f"Неизвестный callback: {call.data}")
             bot.answer_callback_query(call.id, "Неизвестная команда")
@@ -253,3 +255,51 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             )
         except ApiTelegramException as e:
             logging.warning(f"Не удалось отредактировать сообщение выбора концепции: {e}")
+
+    def callback_quiz_answer(call: types.CallbackQuery):
+        """Обрабатывает ответы на вопросы викторины."""
+        user_id = call.from_user.id
+        
+        try:
+            # Парсим данные callback: quiz_answer_questionIndex_answerIndex
+            parts = call.data.split("_")
+            if len(parts) != 4:
+                bot.answer_callback_query(call.id, "Ошибка данных")
+                return
+                
+            question_index = int(parts[2])
+            user_answer = int(parts[3])
+            
+            from games import check_quiz_answer, save_game_result, QUIZ_QUESTIONS
+            
+            # Проверяем ответ
+            result = check_quiz_answer(question_index, user_answer)
+            
+            if "error" in result:
+                bot.answer_callback_query(call.id, result["error"])
+                return
+            
+            # Сохраняем результат в базу
+            save_game_result(user_id, "quiz", result)
+            
+            # Формируем ответ
+            if result["is_correct"]:
+                response = f"✅ **Правильно!**\n\n{result['explanation']}\n\n{result['reward']}"
+                bot.answer_callback_query(call.id, "Правильно! 🎉", show_alert=True)
+            else:
+                response = f"❌ **Неверно!**\n\nПравильный ответ: {result['correct_answer']}\n\n{result['explanation']}\n\n{result['reward']}"
+                bot.answer_callback_query(call.id, "Неверно 😔", show_alert=True)
+            
+            # Обновляем сообщение с результатом
+            bot.edit_message_text(
+                response,
+                call.message.chat.id,
+                call.message.message_id,
+                parse_mode="Markdown",
+                reply_markup=keyboards.get_main_menu_keyboard(user_id)
+            )
+            
+        except Exception as e:
+            logging.error(f"Ошибка при обработке ответа викторины для пользователя {user_id}: {e}")
+            bot.answer_callback_query(call.id, "Произошла ошибка")
+            bot.send_message(user_id, "Произошла ошибка при обработке ответа. Попробуйте еще раз.")
