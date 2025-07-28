@@ -277,7 +277,7 @@ def get_booking_confirmation_text(data: dict[str, str]) -> str:
         'source_vk': 'ВКонтакте',
         'source_inst': 'Instagram', 
         'source_bot_tg': 'Бот в ТГ',
-        'source_tg': 'ТГ-канал'
+        'source_tg': 'Забронируй Евгенича'
     }
     source_display = source_names.get(data.get('source', ''), data.get('source', 'не указано'))
     

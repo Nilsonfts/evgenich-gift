@@ -210,7 +210,7 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
             'source_vk': 'ВКонтакте',
             'source_inst': 'Instagram', 
             'source_bot_tg': 'Бот в ТГ',
-            'source_tg': 'ТГ-канал'
+            'source_tg': 'Забронируй Евгенича'
         }
         
         # Маппинг источников трафика для тегов АМО
@@ -225,7 +225,7 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
         amo_tag = amo_tag_mapping.get(booking_data.get('source', ''), 'unknown')
         admin_name = get_admin_name_by_id(admin_id)
         
-        # Формируем строку для добавления
+        # Формируем строку для добавления (теперь с UTM колонками L-P)
         row_data = [
             creation_datetime,          # A: Дата Заявки
             booking_data.get('name', ''),           # B: Имя Гостя
@@ -237,7 +237,12 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
             amo_tag,                                # H: ТЕГ для АМО
             booking_data.get('reason', ''),         # I: Повод Визита
             admin_name,                             # J: Кто создал заявку
-            'Новая'                                 # K: Статус - всегда "Новая" при создании
+            'Новая',                                # K: Статус - всегда "Новая" при создании
+            '',                                     # L: UTM Source
+            '',                                     # M: UTM Medium
+            '',                                     # N: UTM Campaign
+            '',                                     # O: Комментарий
+            ''                                      # P: ID заявки
         ]
         
         # Добавляем строку в таблицу

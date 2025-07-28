@@ -160,7 +160,7 @@ def get_traffic_source_keyboard():
     )
     keyboard.add(
         types.InlineKeyboardButton("🤖 Бот в ТГ", callback_data="source_bot_tg"),
-        types.InlineKeyboardButton("📢 ТГ-канал", callback_data="source_tg")
+        types.InlineKeyboardButton("📢 Забронируй Евгенича", callback_data="source_tg")
     )
     return keyboard
 
