@@ -12,7 +12,12 @@ import keyboards
 import settings_manager # Наш новый менеджер настроек
 
 # Импортируем функцию экспорта в соцсети
-from social_bookings_export import export_social_booking_to_sheets, parse_booking_date, parse_booking_time
+from social_bookings_export import (
+    export_social_booking_to_sheets, 
+    export_guest_booking_to_sheets,
+    parse_booking_date, 
+    parse_booking_time
+)
 
 # Инициализация базы данных для бронирований
 db = TinyDB('booking_data.json')
@@ -154,6 +159,16 @@ def register_booking_handlers(bot):
                         logging.error(f"Ошибка экспорта админской заявки в Google Sheets. Админ: {user_id}")
                 except Exception as e:
                     logging.error(f"Исключение при экспорте админской заявки: {e}")
+            else:
+                # Если это гостевое бронирование, экспортируем в таблицу без источника
+                try:
+                    export_success = export_guest_booking_to_sheets(booking_data)
+                    if export_success:
+                        logging.info(f"Гостевая заявка успешно экспортирована в Google Sheets. Гость: {booking_data.get('name', '')}")
+                    else:
+                        logging.error(f"Ошибка экспорта гостевой заявки в Google Sheets. Гость: {booking_data.get('name', '')}")
+                except Exception as e:
+                    logging.error(f"Исключение при экспорте гостевой заявки: {e}")
             
             # Создаем отчет с указанием создателя брони
             report_text = texts.get_booking_report_text(booking_data, user_id)

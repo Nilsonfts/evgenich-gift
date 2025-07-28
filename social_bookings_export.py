@@ -425,6 +425,90 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
         logging.error(f"Ошибка при экспорте заявки в Google Sheets: {e}")
         return False
 
+def export_guest_booking_to_sheets(booking_data: Dict[str, Any]) -> bool:
+    """
+    Экспортирует данные гостевого бронирования в Google Sheets на вкладку "Заявки из Соц сетей".
+    
+    Args:
+        booking_data: Словарь с данными гостевого бронирования (без источника)
+    
+    Returns:
+        bool: True если успешно, False если ошибка
+    """
+    try:
+        # Подключение к Google Sheets
+        credentials_info = json.loads(GOOGLE_CREDENTIALS_JSON)
+        credentials = Credentials.from_service_account_info(
+            credentials_info,
+            scopes=['https://www.googleapis.com/auth/spreadsheets']
+        )
+        
+        gc = gspread.authorize(credentials)
+        sheet = gc.open_by_key(GOOGLE_SHEET_KEY)
+        
+        # Открываем нужную вкладку по gid
+        worksheet = None
+        for ws in sheet.worksheets():
+            if str(ws.id) == SOCIAL_BOOKINGS_SHEET_GID:
+                worksheet = ws
+                break
+        
+        if not worksheet:
+            logging.error(f"Не найдена вкладка с gid={SOCIAL_BOOKINGS_SHEET_GID}")
+            return False
+        
+        # Обработка данных
+        now = datetime.now()
+        creation_datetime = now.strftime('%d.%m.%Y %H:%M')
+        
+        # Парсим дату бронирования
+        booking_date = parse_booking_date(booking_data.get('date', ''))
+        
+        # Для гостевых бронирований без источника используем специальные значения
+        source_display = "🤖 Гостевое бронирование (бот)"
+        amo_tag = "guest_bot"
+        creator_name = "👤 Посетитель (через бота)"
+        
+        # UTM-данные для гостевого бронирования через бота
+        utm_data = {
+            'utm_source': 'telegram_bot',
+            'utm_medium': 'guest_booking',
+            'utm_campaign': 'direct_guest',
+            'utm_content': 'bot_guest_booking',
+            'utm_term': 'guest_direct'
+        }
+        
+        # Формируем строку для добавления
+        row_data = [
+            creation_datetime,                      # A: Дата Заявки
+            booking_data.get('name', ''),           # B: Имя Гостя
+            booking_data.get('phone', ''),          # C: Телефон
+            booking_date,                           # D: Дата посещения
+            booking_data.get('time', ''),           # E: Время
+            booking_data.get('guests', ''),         # F: Кол-во гостей
+            source_display,                         # G: Источник
+            amo_tag,                                # H: ТЕГ для АМО
+            booking_data.get('reason', ''),         # I: Повод Визита
+            creator_name,                           # J: Кто создал заявку
+            'Новая',                                # K: Статус - всегда "Новая" при создании
+            utm_data.get('utm_source', ''),         # L: UTM Source (Источник)
+            utm_data.get('utm_medium', ''),         # M: UTM Medium (Канал)
+            utm_data.get('utm_campaign', ''),       # N: UTM Campaign (Кампания)
+            utm_data.get('utm_content', ''),        # O: UTM Content (Содержание)
+            utm_data.get('utm_term', ''),           # P: UTM Term (Ключ/Дата)
+            f"BID-{int(time.time())}"               # Q: ID заявки
+        ]
+        
+        # Добавляем строку в таблицу
+        worksheet.append_row(row_data)
+        
+        logging.info(f"Гостевая заявка успешно экспортирована в таблицу. Клиент: {booking_data.get('name', '')}")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Ошибка при экспорте гостевой заявки в Google Sheets: {e}")
+        return False
+
 def test_date_parsing():
     """Тестовая функция для проверки парсинга дат."""
     test_dates = [
