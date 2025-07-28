@@ -4,12 +4,18 @@ AI-логика и интеграция с OpenAI.
 """
 import logging
 from ai.knowledge import find_relevant_info
-import openai
+from openai import OpenAI
 from config import OPENAI_API_KEY
 
-# Инициализация OpenAI API
+# Инициализация OpenAI клиента
+openai_client = None
 if OPENAI_API_KEY:
-    openai.api_key = OPENAI_API_KEY
+    try:
+        openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        logging.info("OpenAI клиент успешно инициализирован")
+    except Exception as e:
+        logging.error(f"Ошибка инициализации OpenAI клиента: {e}")
+        openai_client = None
 else:
     logging.warning("OPENAI_API_KEY не установлен. AI функции будут недоступны.")
 
@@ -29,8 +35,8 @@ def get_ai_recommendation(
     logger.info("Получен запрос: %s", user_query)
     
     # Проверяем доступность API ключа
-    if not OPENAI_API_KEY:
-        logger.error("OPENAI_API_KEY не установлен")
+    if not openai_client:
+        logger.error("OpenAI клиент не инициализирован")
         return "Товарищ, мой мыслительный аппарат не подключён к сети. Попроси администратора настроить подключение к AI."
     
     relevant_context = find_relevant_info(user_query)
@@ -49,7 +55,7 @@ def get_ai_recommendation(
     messages.append({"role": "user", "content": user_content})
     try:
         logger.info("Отправка запроса в OpenAI API…")
-        completion = openai.chat.completions.create(
+        completion = openai_client.chat.completions.create(
             model=model,
             messages=messages,
             temperature=temperature,
