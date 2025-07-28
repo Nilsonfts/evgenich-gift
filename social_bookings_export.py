@@ -3,6 +3,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import json
 import logging
+import time
 from datetime import datetime, timedelta
 import re
 from typing import Optional, Dict, Any
@@ -221,13 +222,45 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
             'source_tg': 'tg'
         }
         
+        # Маппинг UTM-меток для источников
+        utm_mapping = {
+            'source_vk': {
+                'utm_source': 'vk',
+                'utm_medium': 'social',
+                'utm_campaign': 'admin_booking'
+            },
+            'source_inst': {
+                'utm_source': 'instagram',
+                'utm_medium': 'social', 
+                'utm_campaign': 'admin_booking'
+            },
+            'source_bot_tg': {
+                'utm_source': 'telegram',
+                'utm_medium': 'bot',
+                'utm_campaign': 'direct'
+            },
+            'source_tg': {
+                'utm_source': 'telegram',
+                'utm_medium': 'channel',
+                'utm_campaign': 'bookevgenich'
+            }
+        }
+        
         source_display = source_mapping.get(booking_data.get('source', ''), booking_data.get('source', 'Неизвестно'))
         amo_tag = amo_tag_mapping.get(booking_data.get('source', ''), 'unknown')
         admin_name = get_admin_name_by_id(admin_id)
         
+        # Получаем UTM-данные для источника
+        source = booking_data.get('source', '')
+        utm_data = utm_mapping.get(source, {
+            'utm_source': '',
+            'utm_medium': '',
+            'utm_campaign': ''
+        })
+        
         # Формируем строку для добавления (теперь с UTM колонками L-P)
         row_data = [
-            creation_datetime,          # A: Дата Заявки
+            creation_datetime,                      # A: Дата Заявки
             booking_data.get('name', ''),           # B: Имя Гостя
             booking_data.get('phone', ''),          # C: Телефон
             booking_date,                           # D: Дата посещения
@@ -238,11 +271,11 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
             booking_data.get('reason', ''),         # I: Повод Визита
             admin_name,                             # J: Кто создал заявку
             'Новая',                                # K: Статус - всегда "Новая" при создании
-            '',                                     # L: UTM Source
-            '',                                     # M: UTM Medium
-            '',                                     # N: UTM Campaign
+            utm_data.get('utm_source', ''),         # L: UTM Source
+            utm_data.get('utm_medium', ''),         # M: UTM Medium
+            utm_data.get('utm_campaign', ''),       # N: UTM Campaign
             '',                                     # O: Комментарий
-            ''                                      # P: ID заявки
+            f"BID-{int(time.time())}"               # P: ID заявки
         ]
         
         # Добавляем строку в таблицу
