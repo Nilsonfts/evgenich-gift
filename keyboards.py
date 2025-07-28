@@ -156,11 +156,11 @@ def get_traffic_source_keyboard():
     keyboard = types.InlineKeyboardMarkup(row_width=2)
     keyboard.add(
         types.InlineKeyboardButton("📘 ВКонтакте", callback_data="source_vk"),
-        types.InlineKeyboardButton("📸 Instagram", callback_data="source_instagram")
+        types.InlineKeyboardButton("📸 Instagram", callback_data="source_inst")
     )
     keyboard.add(
-        types.InlineKeyboardButton("💬 ТГ-чат броней", callback_data="source_tg_booking"),
-        types.InlineKeyboardButton("📢 ТГ-канал", callback_data="source_tg_channel")
+        types.InlineKeyboardButton("🤖 Бот в ТГ", callback_data="source_bot_tg"),
+        types.InlineKeyboardButton("📢 ТГ-канал", callback_data="source_tg")
     )
     return keyboard
 

@@ -260,9 +260,9 @@ def get_booking_confirmation_text(data: dict[str, str]) -> str:
     """Собрать текст подтверждения брони."""
     source_names = {
         'source_vk': 'ВКонтакте',
-        'source_instagram': 'Instagram', 
-        'source_tg_booking': 'ТГ-чат броней',
-        'source_tg_channel': 'ТГ-канал'
+        'source_inst': 'Instagram', 
+        'source_bot_tg': 'Бот в ТГ',
+        'source_tg': 'ТГ-канал'
     }
     source_display = source_names.get(data.get('source', ''), data.get('source', 'не указано'))
     
@@ -281,9 +281,9 @@ def get_booking_report_text(data: dict[str, str]) -> str:
     """Формат внутреннего отчёта для бармена."""
     source_names = {
         'source_vk': 'ВКонтакте',
-        'source_instagram': 'Instagram',
-        'source_tg_booking': 'ТГ-чат броней', 
-        'source_tg_channel': 'ТГ-канал'
+        'source_inst': 'Instagram',
+        'source_bot_tg': 'Бот в ТГ', 
+        'source_tg': 'ТГ-канал'
     }
     source_display = source_names.get(data.get('source', ''), data.get('source', 'не указано'))
     

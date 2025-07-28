@@ -131,29 +131,39 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
         # Парсим дату бронирования
         booking_date = parse_booking_date(booking_data.get('date', ''))
         
-        # Маппинг источников трафика
+        # Маппинг источников трафика для отображения
         source_mapping = {
             'source_vk': 'ВКонтакте',
-            'source_instagram': 'Instagram', 
-            'source_tg_booking': 'ТГ-чат броней',
-            'source_tg_channel': 'ТГ-канал'
+            'source_inst': 'Instagram', 
+            'source_bot_tg': 'Бот в ТГ',
+            'source_tg': 'ТГ-канал'
+        }
+        
+        # Маппинг источников трафика для тегов АМО
+        amo_tag_mapping = {
+            'source_vk': 'vk',
+            'source_inst': 'inst', 
+            'source_bot_tg': 'bot_tg',
+            'source_tg': 'tg'
         }
         
         source_display = source_mapping.get(booking_data.get('source', ''), booking_data.get('source', 'Неизвестно'))
+        amo_tag = amo_tag_mapping.get(booking_data.get('source', ''), 'unknown')
         admin_name = get_admin_name_by_id(admin_id)
         
         # Формируем строку для добавления
         row_data = [
-            creation_datetime,          # Дата и время создания
-            booking_data.get('name', ''),           # Имя клиента
-            booking_data.get('phone', ''),          # Телефон
-            booking_date,                           # Дата бронирования
-            booking_data.get('time', ''),           # Время бронирования
-            booking_data.get('guests', ''),         # Количество гостей
-            source_display,                         # Источник трафика
-            booking_data.get('reason', ''),         # Повод
-            admin_name,                             # Кто создал заявку
-            'Новая'                                 # Статус
+            creation_datetime,          # A: Дата Заявки
+            booking_data.get('name', ''),           # B: Имя Гостя
+            booking_data.get('phone', ''),          # C: Телефон
+            booking_date,                           # D: Дата посещения
+            booking_data.get('time', ''),           # E: Время
+            booking_data.get('guests', ''),         # F: Кол-во гостей
+            source_display,                         # G: Источник
+            amo_tag,                                # H: ТЕГ для АМО
+            booking_data.get('reason', ''),         # I: Повод Визита
+            admin_name,                             # J: Кто создал заявку
+            'Новая'                                 # K: Статус - всегда "Новая" при создании
         ]
         
         # Добавляем строку в таблицу
