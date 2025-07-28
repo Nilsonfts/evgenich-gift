@@ -201,6 +201,7 @@ def get_admin_name_by_id(admin_id: int) -> str:
     admin_tags = {
         196614680: "@nilfts",
         208281210: "@kristina_evgenich",
+        1334453330: "@xquerel",
         12345678: "@test_admin"
     }
     return admin_tags.get(admin_id, f"@admin_{admin_id}")
