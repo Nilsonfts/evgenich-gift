@@ -199,13 +199,12 @@ def register_booking_handlers(bot):
 
         # Выбираем нужный маршрутизатор
         prompts = admin_prompts if is_admin_booking else user_prompts
-        
-        # Для админского бронирования переименовываем admin_name в name
-        if step == 'admin_name':
-            current_data['name'] = current_data.pop('admin_name')
-            step = 'name'
 
         if step in prompts:
+            # Для админского бронирования переименовываем admin_name в name в данных
+            if step == 'admin_name':
+                current_data['name'] = current_data.pop('admin_name')
+                
             # Если это не последний шаг, переводим на следующий
             next_step_info = prompts[step]
             db.update({'step': next_step_info['next_step'], 'data': current_data}, User.user_id == user_id)
