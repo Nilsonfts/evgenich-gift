@@ -5,6 +5,13 @@ AI-логика и интеграция с OpenAI.
 import logging
 from ai.knowledge import find_relevant_info
 import openai
+from config import OPENAI_API_KEY
+
+# Инициализация OpenAI API
+if OPENAI_API_KEY:
+    openai.api_key = OPENAI_API_KEY
+else:
+    logging.warning("OPENAI_API_KEY не установлен. AI функции будут недоступны.")
 
 logger = logging.getLogger("evgenich_ai")
 
@@ -20,6 +27,12 @@ def get_ai_recommendation(
     max_tokens: int = 200,
 ) -> str:
     logger.info("Получен запрос: %s", user_query)
+    
+    # Проверяем доступность API ключа
+    if not OPENAI_API_KEY:
+        logger.error("OPENAI_API_KEY не установлен")
+        return "Товарищ, мой мыслительный аппарат не подключён к сети. Попроси администратора настроить подключение к AI."
+    
     relevant_context = find_relevant_info(user_query)
     logger.info("Найденный релевантный контекст: %s", relevant_context)
     updates_string = f"Спецпредложение сегодня: {daily_updates.get('special', 'нет')}. В стоп‑листе: {daily_updates.get('stop-list', 'ничего')}" if daily_updates else "нет оперативных данных"
