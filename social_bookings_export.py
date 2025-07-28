@@ -471,7 +471,7 @@ def export_guest_booking_to_sheets(booking_data: Dict[str, Any]) -> bool:
         
         # UTM-данные для гостевого бронирования через бота
         utm_data = {
-            'utm_source': 'telegram_bot',
+            'utm_source': 'bot_tg',
             'utm_medium': 'guest_booking',
             'utm_campaign': 'direct_guest',
             'utm_content': 'bot_guest_booking',
