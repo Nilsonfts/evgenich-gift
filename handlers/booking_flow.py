@@ -60,7 +60,45 @@ def register_booking_handlers(bot):
             reply_markup=keyboards.get_booking_options_keyboard()
         )
 
+    @bot.message_handler(func=lambda message: message.text == "📨 Отправить БРОНЬ")
+    def handle_admin_booking_entry(message: types.Message):
+        from config import ADMIN_IDS
+        if message.from_user.id not in ADMIN_IDS:
+            return
+            
+        if db.contains(User.user_id == message.from_user.id):
+            bot.reply_to(message, "Уже создаётся бронь. Завершите текущую или /cancel")
+            return
+
+        logging.info(f"Админ {message.from_user.id} начал создание брони.")
+        db.upsert({'user_id': message.from_user.id, 'step': 'admin_name', 'data': {'is_admin_booking': True}}, User.user_id == message.from_user.id)
+        bot.send_message(message.chat.id, texts.ADMIN_BOOKING_START)
+
     # --- Обработчики нажатий на кнопки ---
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("source_"))
+    def handle_traffic_source_callback(call: types.CallbackQuery):
+        user_id = call.from_user.id
+        bot.answer_callback_query(call.id)
+        try:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+        except ApiTelegramException:
+            pass
+
+        user_entry = db.get(User.user_id == user_id)
+        if not user_entry:
+            return
+
+        current_data = user_entry.get('data', {})
+        current_data['source'] = call.data
+        
+        # Переходим к следующему шагу (повод)
+        db.update({'step': 'reason', 'data': current_data}, User.user_id == user_id)
+        
+        if current_data.get('is_admin_booking'):
+            bot.send_message(call.message.chat.id, texts.ADMIN_BOOKING_REASON)
+        else:
+            bot.send_message(call.message.chat.id, texts.BOOKING_ASK_REASON)
+
     @bot.callback_query_handler(func=lambda call: call.data.startswith("booking_"))
     def handle_booking_option_callback(call: types.CallbackQuery):
         bot.answer_callback_query(call.id)
@@ -130,32 +168,54 @@ def register_booking_handlers(bot):
 
         step = user_entry.get('step')
         current_data = user_entry.get('data', {})
+        is_admin_booking = current_data.get('is_admin_booking', False)
 
         # Проверяем ввод на шаге 'гости'
         if step == 'guests':
-            # .strip() убирает пробелы, .isdigit() проверяет, состоит ли строка только из цифр
             if not message.text.strip().isdigit():
                 bot.send_message(message.chat.id, "Товарищ, укажи количество гостей цифрой, пожалуйста. Например: 4")
-                # Важно: выходим из функции, не переходя на следующий шаг, чтобы пользователь мог исправить ввод.
                 return
 
         # Сохраняем ответ пользователя в его данные
         current_data[step] = message.text
 
-        # Словарь-маршрутизатор по шагам
-        prompts = {
-            'name': {'next_step': 'date', 'prompt': texts.BOOKING_ASK_DATE},
+        # Словарь-маршрутизатор по шагам для обычного бронирования
+        user_prompts = {
+            'name': {'next_step': 'phone', 'prompt': texts.BOOKING_ASK_PHONE},
+            'phone': {'next_step': 'date', 'prompt': texts.BOOKING_ASK_DATE},
             'date': {'next_step': 'time', 'prompt': texts.BOOKING_ASK_TIME},
             'time': {'next_step': 'guests', 'prompt': texts.BOOKING_ASK_GUESTS},
-            'guests': {'next_step': 'phone', 'prompt': texts.BOOKING_ASK_PHONE},
-            'phone': {'next_step': 'reason', 'prompt': texts.BOOKING_ASK_REASON},
+            'guests': {'next_step': 'source', 'prompt': texts.BOOKING_ASK_SOURCE, 'keyboard': keyboards.get_traffic_source_keyboard()},
         }
+
+        # Словарь-маршрутизатор для админского бронирования
+        admin_prompts = {
+            'admin_name': {'next_step': 'phone', 'prompt': texts.ADMIN_BOOKING_PHONE},
+            'phone': {'next_step': 'date', 'prompt': texts.ADMIN_BOOKING_DATE},
+            'date': {'next_step': 'time', 'prompt': texts.ADMIN_BOOKING_TIME},
+            'time': {'next_step': 'guests', 'prompt': texts.ADMIN_BOOKING_GUESTS},
+            'guests': {'next_step': 'source', 'prompt': texts.ADMIN_BOOKING_SOURCE, 'keyboard': keyboards.get_traffic_source_keyboard()},
+        }
+
+        # Выбираем нужный маршрутизатор
+        prompts = admin_prompts if is_admin_booking else user_prompts
+        
+        # Для админского бронирования переименовываем admin_name в name
+        if step == 'admin_name':
+            current_data['name'] = current_data.pop('admin_name')
+            step = 'name'
 
         if step in prompts:
             # Если это не последний шаг, переводим на следующий
             next_step_info = prompts[step]
             db.update({'step': next_step_info['next_step'], 'data': current_data}, User.user_id == user_id)
-            bot.send_message(message.chat.id, next_step_info['prompt'])
+            
+            # Отправляем сообщение с клавиатурой если есть
+            if 'keyboard' in next_step_info:
+                bot.send_message(message.chat.id, next_step_info['prompt'], reply_markup=next_step_info['keyboard'])
+            else:
+                bot.send_message(message.chat.id, next_step_info['prompt'])
+                
         elif step == 'reason':
             # Если это был последний шаг, показываем подтверждение
             db.update({'step': 'confirmation', 'data': current_data}, User.user_id == user_id)

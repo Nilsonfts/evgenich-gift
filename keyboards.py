@@ -18,8 +18,9 @@ def get_main_menu_keyboard(user_id):
     keyboard.row(book_button, friend_button)
 
     if user_id in ADMIN_IDS:
+        admin_booking_button = types.KeyboardButton("📨 Отправить БРОНЬ")
         admin_button = types.KeyboardButton("👑 Админка")
-        keyboard.row(admin_button)
+        keyboard.row(admin_booking_button, admin_button)
 
     return keyboard
 
@@ -141,6 +142,19 @@ def get_secret_chat_keyboard():
     keyboard = types.InlineKeyboardMarkup()
     url_button = types.InlineKeyboardButton(text="👉 Перейти в секретный чат", url="https://t.me/stolik_evgenicha")
     keyboard.add(url_button)
+    return keyboard
+
+def get_traffic_source_keyboard():
+    """Клавиатура для выбора источника трафика при бронировании."""
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        types.InlineKeyboardButton("📘 ВКонтакте", callback_data="source_vk"),
+        types.InlineKeyboardButton("📸 Instagram", callback_data="source_instagram")
+    )
+    keyboard.add(
+        types.InlineKeyboardButton("💬 ТГ-чат броней", callback_data="source_tg_booking"),
+        types.InlineKeyboardButton("📢 ТГ-канал", callback_data="source_tg_channel")
+    )
     return keyboard
 
 # === НОВАЯ СТРУКТУРА АДМИН-ПАНЕЛИ ===
