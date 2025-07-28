@@ -301,20 +301,13 @@ def get_booking_report_text(data: dict[str, str], creator_id: int = None) -> str
         creator_id: ID пользователя, создавшего бронь (None для бронирований от посетителей)
     """
     import time
-    from social_bookings_export import SOURCE_UTM_DATA, get_admin_name_by_id
-    
-    source_names = {
-        'source_vk': 'ВКонтакте',
-        'source_inst': 'Instagram',
-        'source_bot_tg': 'Бот в ТГ', 
-        'source_tg': 'ТГ-канал'
-    }
+    from social_bookings_export import ALL_SOURCE_UTM_DATA, ALL_SOURCE_DISPLAY_NAMES, get_admin_name_by_id
     
     source = data.get('source', '')
-    source_display = source_names.get(source, data.get('source', 'не указано'))
+    source_display = ALL_SOURCE_DISPLAY_NAMES.get(source, data.get('source', 'не указано'))
     
     # Получаем UTM-данные для источника
-    utm_data = SOURCE_UTM_DATA.get(source, {})
+    utm_data = ALL_SOURCE_UTM_DATA.get(source, {})
     
     # Определяем создателя
     creator_name = "👤 Посетитель (через бота)"

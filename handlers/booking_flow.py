@@ -103,6 +103,33 @@ def register_booking_handlers(bot):
         else:
             bot.send_message(call.message.chat.id, texts.BOOKING_ASK_REASON)
 
+    # Обработчик гостевых источников трафика
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("guest_source_"))
+    def handle_guest_source_callback(call: types.CallbackQuery):
+        user_id = call.from_user.id
+        bot.answer_callback_query(call.id)
+        try:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+        except ApiTelegramException:
+            pass
+
+        user_entry = db.get(User.user_id == user_id)
+        if not user_entry:
+            return
+
+        current_data = user_entry.get('data', {})
+        
+        # Если выбран вариант "Другое"
+        if call.data == "guest_source_other":
+            current_data['waiting_custom_source'] = True
+            db.update({'step': 'custom_source', 'data': current_data}, User.user_id == user_id)
+            bot.send_message(call.message.chat.id, "✏️ Напишите, пожалуйста, откуда вы о нас узнали:")
+        else:
+            # Для всех остальных источников
+            current_data['source'] = call.data
+            db.update({'step': 'reason', 'data': current_data}, User.user_id == user_id)
+            bot.send_message(call.message.chat.id, texts.BOOKING_ASK_REASON)
+
     @bot.callback_query_handler(func=lambda call: call.data.startswith("booking_"))
     def handle_booking_option_callback(call: types.CallbackQuery):
         bot.answer_callback_query(call.id)
@@ -118,7 +145,14 @@ def register_booking_handlers(bot):
         elif call.data == "booking_secret":
             bot.send_message(call.message.chat.id, texts.BOOKING_SECRET_CHAT_TEXT, reply_markup=keyboards.get_secret_chat_keyboard())
         elif call.data == "booking_bot":
-            _start_booking_process(call.message.chat.id, call.from_user.id)
+            # Начинаем бронирование для гостя
+            db.upsert({'user_id': call.from_user.id, 'step': 'guest_source', 'data': {'is_guest_booking': True}}, User.user_id == call.from_user.id)
+            bot.send_message(
+                call.message.chat.id, 
+                "🌟 Отлично! Давайте забронируем для вас столик.\n\n"
+                "Но сначала расскажите, как вы узнали о нас? 🤔",
+                reply_markup=keyboards.get_guest_source_keyboard()
+            )
 
     @bot.callback_query_handler(func=lambda call: call.data in ["confirm_booking", "cancel_booking"])
     def handle_booking_confirmation_callback(call: types.CallbackQuery):
@@ -211,6 +245,9 @@ def register_booking_handlers(bot):
             # Показываем распознанное время пользователю
             if parsed_time != message.text:
                 bot.send_message(message.chat.id, f"Понял, время: {parsed_time}")
+        # Обрабатываем кастомный источник
+        elif step == 'custom_source':
+            current_data['source'] = message.text  # Сохраняем как источник
         else:
             # Сохраняем ответ пользователя в его данные как есть
             current_data[step] = message.text
@@ -221,7 +258,8 @@ def register_booking_handlers(bot):
             'phone': {'next_step': 'date', 'prompt': texts.BOOKING_ASK_DATE, 'keyboard': keyboards.get_cancel_booking_keyboard()},
             'date': {'next_step': 'time', 'prompt': texts.BOOKING_ASK_TIME, 'keyboard': keyboards.get_cancel_booking_keyboard()},
             'time': {'next_step': 'guests', 'prompt': texts.BOOKING_ASK_GUESTS, 'keyboard': keyboards.get_cancel_booking_keyboard()},
-            'guests': {'next_step': 'source', 'prompt': texts.BOOKING_ASK_SOURCE, 'keyboard': keyboards.get_traffic_source_keyboard()},
+            'guests': {'next_step': 'source', 'prompt': texts.BOOKING_ASK_SOURCE, 'keyboard': keyboards.get_guest_source_keyboard()},
+            'custom_source': {'next_step': 'reason', 'prompt': texts.BOOKING_ASK_REASON, 'keyboard': keyboards.get_cancel_booking_keyboard()},
         }
 
         # Словарь-маршрутизатор для админского бронирования

@@ -54,6 +54,100 @@ SOURCE_UTM_DATA = {
     }
 }
 
+# UTM-метки для гостевых источников
+GUEST_SOURCE_UTM_DATA = {
+    'guest_source_yandex': {
+        'utm_source': 'yandex',
+        'utm_medium': 'organic',
+        'utm_campaign': 'guest_booking',
+        'utm_content': 'search',
+        'utm_term': 'organic_search'
+    },
+    'guest_source_google': {
+        'utm_source': 'google',
+        'utm_medium': 'organic',
+        'utm_campaign': 'guest_booking',
+        'utm_content': 'search',
+        'utm_term': 'organic_search'
+    },
+    'guest_source_2gis': {
+        'utm_source': '2gis',
+        'utm_medium': 'maps',
+        'utm_campaign': 'guest_booking',
+        'utm_content': 'maps_listing',
+        'utm_term': 'local_search'
+    },
+    'guest_source_restorating': {
+        'utm_source': 'restorating',
+        'utm_medium': 'aggregator',
+        'utm_campaign': 'guest_booking',
+        'utm_content': 'restaurant_listing',
+        'utm_term': 'aggregator'
+    },
+    'guest_source_instagram': {
+        'utm_source': 'instagram',
+        'utm_medium': 'social',
+        'utm_campaign': 'guest_booking',
+        'utm_content': 'profile_link',
+        'utm_term': 'social_organic'
+    },
+    'guest_source_vkontakte': {
+        'utm_source': 'vkontakte',
+        'utm_medium': 'social',
+        'utm_campaign': 'guest_booking',
+        'utm_content': 'profile_link',
+        'utm_term': 'social_organic'
+    },
+    'guest_source_friends': {
+        'utm_source': 'word_of_mouth',
+        'utm_medium': 'referral',
+        'utm_campaign': 'guest_booking',
+        'utm_content': 'friends_recommendation',
+        'utm_term': 'referral'
+    },
+    'guest_source_telegram': {
+        'utm_source': 'telegram',
+        'utm_medium': 'messenger',
+        'utm_campaign': 'guest_booking',
+        'utm_content': 'bot_booking',
+        'utm_term': 'direct_booking'
+    },
+    'guest_source_other': {
+        'utm_source': 'other',
+        'utm_medium': 'other',
+        'utm_campaign': 'guest_booking',
+        'utm_content': 'custom_source',
+        'utm_term': 'user_defined'
+    }
+}
+
+# Объединенные UTM-данные
+ALL_SOURCE_UTM_DATA = {**SOURCE_UTM_DATA, **GUEST_SOURCE_UTM_DATA}
+
+# Маппинг источников для отображения
+SOURCE_DISPLAY_NAMES = {
+    'source_vk': 'ВКонтакте',
+    'source_inst': 'Instagram',
+    'source_bot_tg': 'Бот в ТГ',
+    'source_tg': 'ТГ-канал'
+}
+
+# Маппинг гостевых источников для отображения
+GUEST_SOURCE_DISPLAY_NAMES = {
+    'guest_source_yandex': 'Яндекс',
+    'guest_source_google': 'Google',
+    'guest_source_2gis': '2ГИС',
+    'guest_source_restorating': 'Ресторейтинг',
+    'guest_source_instagram': 'Instagram',
+    'guest_source_vkontakte': 'ВКонтакте',
+    'guest_source_friends': 'Рассказали друзья',
+    'guest_source_telegram': 'Telegram',
+    'guest_source_other': 'Другое'
+}
+
+# Объединенные названия источников
+ALL_SOURCE_DISPLAY_NAMES = {**SOURCE_DISPLAY_NAMES, **GUEST_SOURCE_DISPLAY_NAMES}
+
 def parse_booking_date(date_text: str) -> str:
     """
     Преобразует текст даты в формат DD.MM.YYYY.
