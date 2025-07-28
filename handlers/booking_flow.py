@@ -11,6 +11,9 @@ import texts
 import keyboards
 import settings_manager # Наш новый менеджер настроек
 
+# Импортируем функцию экспорта в соцсети
+from social_bookings_export import export_social_booking_to_sheets
+
 # Инициализация базы данных для бронирований
 db = TinyDB('booking_data.json')
 User = Query()
@@ -131,6 +134,19 @@ def register_booking_handlers(bot):
 
         if call.data == "confirm_booking":
             booking_data = user_entry.get('data', {})
+            is_admin_booking = booking_data.get('is_admin_booking', False)
+            
+            # Если это админская бронировка, экспортируем в таблицу соцсетей
+            if is_admin_booking:
+                try:
+                    export_success = export_social_booking_to_sheets(booking_data, user_id)
+                    if export_success:
+                        logging.info(f"Админская заявка успешно экспортирована в Google Sheets. Админ: {user_id}")
+                    else:
+                        logging.error(f"Ошибка экспорта админской заявки в Google Sheets. Админ: {user_id}")
+                except Exception as e:
+                    logging.error(f"Исключение при экспорте админской заявки: {e}")
+            
             report_text = texts.get_booking_report_text(booking_data)
 
             promo = settings_manager.get_setting("promotions.group_bonus")
