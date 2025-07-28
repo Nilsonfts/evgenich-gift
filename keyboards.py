@@ -15,9 +15,10 @@ def get_main_menu_keyboard(user_id):
     ai_help_button = types.KeyboardButton("🗣 Спроси у Евгенича")
     games_button = types.KeyboardButton("🎮 Игры и развлечения")
 
-    keyboard.row(menu_button, friend_button)
+    keyboard.row(menu_button)
     keyboard.row(book_button, ai_help_button)
     keyboard.row(games_button)
+    keyboard.row(friend_button)
 
     if user_id in ADMIN_IDS:
         admin_button = types.KeyboardButton("👑 Админка")
