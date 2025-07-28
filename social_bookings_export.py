@@ -15,6 +15,45 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # ID вкладки "Заявки из Соц сетей"
 SOCIAL_BOOKINGS_SHEET_GID = "1842872487"
 
+# UTM-метки для каждого источника
+SOURCE_UTM_DATA = {
+    'source_vk': {
+        'utm_source': 'vk',
+        'utm_medium': 'social',
+        'utm_campaign': 'direct',
+        'utm_content': 'vkontakte_page',
+        'utm_term': 'client_booking'
+    },
+    'source_inst': {
+        'utm_source': 'instagram',
+        'utm_medium': 'social',
+        'utm_campaign': 'direct',
+        'utm_content': 'instagram_account',
+        'utm_term': 'client_booking'
+    },
+    'source_bot_tg': {
+        'utm_source': 'telegram',
+        'utm_medium': 'bot',
+        'utm_campaign': 'direct',
+        'utm_content': 'telegram_bot',
+        'utm_term': 'bot_booking'
+    },
+    'source_tg': {
+        'utm_source': 'telegram',
+        'utm_medium': 'channel',
+        'utm_campaign': 'bookevgenich',
+        'utm_content': 'telegram_channel',
+        'utm_term': 'channel_booking'
+    },
+    'admin_booking': {
+        'utm_source': 'admin',
+        'utm_medium': 'manual',
+        'utm_campaign': 'admin_booking',
+        'utm_content': 'admin_panel_booking',
+        'utm_term': 'manager_booking'
+    }
+}
+
 def parse_booking_date(date_text: str) -> str:
     """
     Преобразует текст даты в формат DD.MM.YYYY.

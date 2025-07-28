@@ -148,7 +148,8 @@ def register_booking_handlers(bot):
                 except Exception as e:
                     logging.error(f"Исключение при экспорте админской заявки: {e}")
             
-            report_text = texts.get_booking_report_text(booking_data)
+            # Создаем отчет с указанием создателя брони
+            report_text = texts.get_booking_report_text(booking_data, user_id)
 
             promo = settings_manager.get_setting("promotions.group_bonus")
             try:
@@ -156,14 +157,16 @@ def register_booking_handlers(bot):
                 num_guests = int(booking_data.get('guests', '0').strip())
                 if promo and promo.get('is_active') and num_guests >= promo.get('min_guests', 4):
                     bonus_text_for_report = promo.get('bonus_text', 'графин')
-                    report_text += f"\n\n🚨 ВНИМАНИЕ: Гость идет с бонусом '{bonus_text_for_report}'!"
+                    # Добавляем информацию о бонусе
+                    report_text += f"\n\n🚨 <b>ВНИМАНИЕ:</b> Гость идет с бонусом '<b>{bonus_text_for_report}</b>'!"
                     bot.send_message(user_id, texts.get_group_bonus_text(bonus_text_for_report), parse_mode="Markdown")
             except (ValueError, TypeError) as e:
                 # Эта ошибка теперь будет возникать гораздо реже, но оставим логирование на всякий случай
                 logging.warning(f"Не удалось определить кол-во гостей для бонуса (ошибка при конвертации): {e}")
                 pass
 
-            bot.send_message(REPORT_CHAT_ID, report_text)
+            # Отправляем отчет с поддержкой HTML-разметки
+            bot.send_message(REPORT_CHAT_ID, report_text, parse_mode="HTML")
             bot.send_message(
                 user_id,
                 texts.BOOKING_CONFIRMATION_SUCCESS,

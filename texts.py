@@ -292,25 +292,55 @@ def get_booking_confirmation_text(data: dict[str, str]) -> str:
         f"🎉 Повод: {data.get('reason', 'не указано')}"
     )
 
-def get_booking_report_text(data: dict[str, str]) -> str:
-    """Формат внутреннего отчёта для бармена."""
+def get_booking_report_text(data: dict[str, str], creator_id: int = None) -> str:
+    """
+    Формат внутреннего отчёта для бармена.
+    
+    Args:
+        data: Данные бронирования
+        creator_id: ID пользователя, создавшего бронь (None для бронирований от посетителей)
+    """
+    import time
+    from social_bookings_export import SOURCE_UTM_DATA, get_admin_name_by_id
+    
     source_names = {
         'source_vk': 'ВКонтакте',
         'source_inst': 'Instagram',
         'source_bot_tg': 'Бот в ТГ', 
         'source_tg': 'ТГ-канал'
     }
-    source_display = source_names.get(data.get('source', ''), data.get('source', 'не указано'))
     
+    source = data.get('source', '')
+    source_display = source_names.get(source, data.get('source', 'не указано'))
+    
+    # Получаем UTM-данные для источника
+    utm_data = SOURCE_UTM_DATA.get(source, {})
+    
+    # Определяем создателя
+    creator_name = "Посетитель"
+    if creator_id:
+        creator_name = get_admin_name_by_id(creator_id)
+    
+    # Формируем красивое сообщение с HTML форматированием
     return (
-        "🚨 Новая бронь!\n\n"
-        f"Имя: {data.get('name', 'не указано')}\n"
-        f"Телефон: {data.get('phone', 'не указано')}\n"
-        f"Дата: {data.get('date', 'не указано')}\n"
-        f"Время: {data.get('time', 'не указано')}\n"
-        f"Гости: {data.get('guests', 'не указано')}\n"
-        f"Источник: {source_display}\n"
-        f"Повод: {data.get('reason', 'не указано')}"
+        f"🚨 <b>НОВАЯ БРОНЬ!</b>\n\n"
+        f"👤 <b>Имя:</b> {data.get('name', 'не указано')}\n"
+        f"📞 <b>Телефон:</b> {data.get('phone', 'не указано')}\n"
+        f"📅 <b>Дата:</b> {data.get('date', 'не указано')}\n"
+        f"⏰ <b>Время:</b> {data.get('time', 'не указано')}\n"
+        f"👥 <b>Гости:</b> {data.get('guests', 'не указано')}\n"
+        f"📊 <b>Источник:</b> {source_display}\n"
+        f"📝 <b>Повод:</b> {data.get('reason', 'не указано')}\n\n"
+        
+        f"📊 <b>UTM-метки:</b>\n"
+        f"- Source: {utm_data.get('utm_source', '-')}\n"
+        f"- Medium: {utm_data.get('utm_medium', '-')}\n"
+        f"- Campaign: {utm_data.get('utm_campaign', '-')}\n"
+        f"- Content: {utm_data.get('utm_content', '-')}\n"
+        f"- Term: {utm_data.get('utm_term', '-')}\n\n"
+        
+        f"🆔 <b>ID:</b> BID-{int(time.time())}\n"
+        f"👤 <b>Создал:</b> {creator_name}"
     )
 
 # === /help ===
