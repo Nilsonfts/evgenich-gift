@@ -329,8 +329,9 @@ def get_booking_report_text(data: dict[str, str], creator_id: int = None) -> str
     return (
         f"🚨 <b>НОВАЯ БРОНЬ!</b>\n\n"
         f"#бронь_соц_сети\n"
-        f"📅 <b>Дата заявки:</b> {current_datetime}\n\n"
+        f"� <b>Создано:</b> {current_datetime}\n\n"
         
+        f"📋 <b>Детали бронирования:</b>\n"
         f"👤 <b>Имя:</b> {data.get('name', 'не указано')}\n"
         f"📞 <b>Телефон:</b> {data.get('phone', 'не указано')}\n"
         f"📅 <b>Дата:</b> {data.get('date', 'не указано')}\n"
