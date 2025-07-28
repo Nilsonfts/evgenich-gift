@@ -317,7 +317,7 @@ def get_booking_report_text(data: dict[str, str], creator_id: int = None) -> str
     utm_data = SOURCE_UTM_DATA.get(source, {})
     
     # Определяем создателя
-    creator_name = "Посетитель"
+    creator_name = "👤 Посетитель (через бота)"
     if creator_id:
         creator_name = get_admin_name_by_id(creator_id)
     

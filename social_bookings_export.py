@@ -196,14 +196,14 @@ def parse_booking_time(time_text: str) -> str:
     return time_text
 
 def get_admin_name_by_id(admin_id: int) -> str:
-    """Возвращает имя админа по его ID."""
-    # Словарь админов (можно вынести в config)
-    admin_names = {
-        196614680: "Нил Витальевич",
-        208281210: "Кристина",
-        12345678: "Тест Сотрудникович"
+    """Возвращает Telegram-тег админа по его ID."""
+    # Словарь админов с их Telegram-тегами
+    admin_tags = {
+        196614680: "@nilfts",
+        208281210: "@kristina_evgenich",
+        12345678: "@test_admin"
     }
-    return admin_names.get(admin_id, f"Админ {admin_id}")
+    return admin_tags.get(admin_id, f"@admin_{admin_id}")
 
 def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int) -> bool:
     """
