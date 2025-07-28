@@ -77,13 +77,6 @@ GUEST_SOURCE_UTM_DATA = {
         'utm_content': 'maps_listing',
         'utm_term': 'local_search'
     },
-    'guest_source_restorating': {
-        'utm_source': 'restorating',
-        'utm_medium': 'aggregator',
-        'utm_campaign': 'guest_booking',
-        'utm_content': 'restaurant_listing',
-        'utm_term': 'aggregator'
-    },
     'guest_source_instagram': {
         'utm_source': 'instagram',
         'utm_medium': 'social',
@@ -137,7 +130,6 @@ GUEST_SOURCE_DISPLAY_NAMES = {
     'guest_source_yandex': 'Яндекс',
     'guest_source_google': 'Google',
     'guest_source_2gis': '2ГИС',
-    'guest_source_restorating': 'Ресторейтинг',
     'guest_source_instagram': 'Instagram',
     'guest_source_vkontakte': 'ВКонтакте',
     'guest_source_friends': 'Рассказали друзья',

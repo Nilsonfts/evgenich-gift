@@ -176,8 +176,7 @@ def get_guest_source_keyboard():
     
     # Второй ряд - карты и агрегаторы
     keyboard.add(
-        types.InlineKeyboardButton("📍 2ГИС", callback_data="guest_source_2gis"),
-        types.InlineKeyboardButton("🍽 Ресторейтинг", callback_data="guest_source_restorating")
+        types.InlineKeyboardButton("📍 2ГИС", callback_data="guest_source_2gis")
     )
     
     # Третий ряд - соцсети
