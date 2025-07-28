@@ -12,13 +12,13 @@ from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # --- Настройки ---
-# Путь к БД должен быть абсолютным, чтобы работать с любого места
-DB_FILE = "/data/evgenich_data.db"
+# Путь к БД должен быть абсолютным, чтобы работать с любого места  
+DB_FILE = "data/evgenich_data.db"
 EXPORT_SHEET_NAME = "Выгрузка Пользователей" 
 
 # --- Конфигурация столбцов ---
 COLUMN_CONFIG = {
-    "registration_time": "Дата Регистрации",
+    "signup_date": "Дата Регистрации",
     "user_id": "ID Пользователя", 
     "first_name": "Имя в Telegram",
     "username": "Юзернейм в Telegram",
@@ -55,7 +55,7 @@ def do_export() -> Tuple[bool, str]:
                    s.full_name as staff_full_name
             FROM users u
             LEFT JOIN staff s ON u.brought_by_staff_id = s.staff_id
-            ORDER BY u.registration_time DESC
+            ORDER BY u.signup_date DESC
         """)
         users = cur.fetchall()
         conn.close()

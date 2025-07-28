@@ -124,9 +124,17 @@ def register_user_command_handlers(bot):
                             logging.warning(f"Не удалось распознать ref_id из {payload}")
                     else:
                         allowed_sources = {
-                            'qr_tv': 'QR с ТВ', 'qr_bar': 'QR на баре', 'qr_toilet': 'QR в туалете',
-                            'vk': 'VK', 'inst': 'Instagram', 'flyer': 'Листовки',
-                            'site': 'Сайт', 'qr_waiter': 'QR от официанта', 'taplink': 'Taplink'
+                            'qr_tv': 'QR-код на ТВ', 
+                            'qr_bar': 'QR-код на баре', 
+                            'qr_waiter': 'QR от официанта',
+                            'vk': 'Ссылка из ВКонтакте', 
+                            'inst': 'Ссылка из Instagram', 
+                            'menu': 'Меню в баре',
+                            'flyer': 'Листовка на улице', 
+                            'streat': 'Уличное Меню',
+                            '2gis': '2ГИС Кнопка',
+                            'site': 'Кнопка Сайт',
+                            'taplink': 'Таплинк на ТВ'
                         }
                         if payload in allowed_sources:
                             source = allowed_sources[payload]
