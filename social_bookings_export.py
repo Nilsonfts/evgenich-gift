@@ -225,28 +225,28 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
         # Расширенный маппинг UTM-меток (полная структура как на сайте)
         utm_mapping = {
             'source_vk': {
-                'utm_source': 'vk',
+                'utm_source': 'vk',                    # соответствует АМО тегу
                 'utm_medium': 'social',
                 'utm_campaign': 'admin_booking',
                 'utm_content': 'admin_panel_booking',
                 'utm_term': 'vk_social_booking'
             },
             'source_inst': {
-                'utm_source': 'instagram',
+                'utm_source': 'inst',                  # соответствует АМО тегу  
                 'utm_medium': 'social', 
                 'utm_campaign': 'admin_booking',
                 'utm_content': 'admin_panel_booking',
                 'utm_term': 'instagram_social_booking'
             },
             'source_bot_tg': {
-                'utm_source': 'telegram',
+                'utm_source': 'bot_tg',                # соответствует АМО тегу
                 'utm_medium': 'bot',
                 'utm_campaign': 'direct',
                 'utm_content': 'telegram_bot',
                 'utm_term': 'direct_booking'
             },
             'source_tg': {
-                'utm_source': 'telegram',
+                'utm_source': 'tg',                    # соответствует АМО тегу
                 'utm_medium': 'channel',
                 'utm_campaign': 'bookevgenich',
                 'utm_content': 'telegram_channel',
