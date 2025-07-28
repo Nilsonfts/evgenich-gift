@@ -8,7 +8,7 @@ from typing import Dict, Any
 import database
 import keyboards
 import texts
-from config import ADMIN_IDS
+from config import ALL_ADMINS
 
 class NewsletterButtonsManager:
     def __init__(self, bot):
@@ -20,7 +20,7 @@ class NewsletterButtonsManager:
         
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith('admin_button_'))
         def handle_button_callbacks(call):
-            if call.from_user.id not in ADMIN_IDS:
+            if call.from_user.id not in ALL_ADMINS:
                 self.bot.answer_callback_query(call.id, "Доступ запрещен", show_alert=True)
                 return
                 

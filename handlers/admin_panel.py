@@ -6,7 +6,7 @@ from telebot import types
 from telebot.apihelper import ApiTelegramException
 import pytz
 
-from config import ADMIN_IDS
+from config import ALL_ADMINS
 import database
 import texts
 import keyboards
@@ -145,7 +145,7 @@ def register_admin_handlers(bot):
     admin_states = {}
 
     def is_admin(user_id):
-        return user_id in ADMIN_IDS
+        return user_id in ALL_ADMINS
 
     def _show_newsletter_audience_stats(message):
         """Показывает статистику базы для рассылок."""

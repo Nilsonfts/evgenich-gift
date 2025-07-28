@@ -65,8 +65,9 @@ def register_booking_handlers(bot):
 
     @bot.message_handler(func=lambda message: message.text == "📨 Отправить БРОНЬ")
     def handle_admin_booking_entry(message: types.Message):
-        from config import ADMIN_IDS
-        if message.from_user.id not in ADMIN_IDS:
+        from config import ALL_BOOKING_STAFF
+        if message.from_user.id not in ALL_BOOKING_STAFF:
+            bot.reply_to(message, "❌ У вас нет доступа к созданию броней.")
             return
             
         if db.contains(User.user_id == message.from_user.id):

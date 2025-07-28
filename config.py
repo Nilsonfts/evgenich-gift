@@ -7,9 +7,40 @@ load_dotenv()
 # --- Telegram ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
+
+# === НОВАЯ СИСТЕМА РОЛЕЙ ===
+
+# BOSS - полный доступ ко всему (только самые главные)
 BOSS_ID_STR = os.getenv("BOSS_ID", "")
-ADMIN_IDS = [int(admin_id.strip()) for admin_id in BOSS_ID_STR.split(',') if admin_id.strip()]
-REPORT_CHAT_ID = os.getenv("REPORT_CHAT_ID") # <-- Вот эта переменная
+if BOSS_ID_STR:
+    BOSS_IDS = [int(id.strip()) for id in BOSS_ID_STR.replace(',', ' ').split() if id.strip().isdigit()]
+    BOSS_ID = BOSS_IDS[0] if BOSS_IDS else None  # Основной босс для обратной совместимости
+else:
+    BOSS_IDS = []
+    BOSS_ID = None
+
+# ADMIN - доступ к админке + отправка броней
+ADMIN_ID_STR = os.getenv("ADMIN_IDS", "")
+if ADMIN_ID_STR:
+    ADMIN_IDS_LIST = [int(id.strip()) for id in ADMIN_ID_STR.replace(',', ' ').split() if id.strip().isdigit()]
+else:
+    ADMIN_IDS_LIST = []
+
+# SMM - только отправка броней (для СММщиков)
+SMM_ID_STR = os.getenv("SMM_IDS", "")
+if SMM_ID_STR:
+    SMM_IDS = [int(id.strip()) for id in SMM_ID_STR.replace(',', ' ').split() if id.strip().isdigit()]
+else:
+    SMM_IDS = []
+
+# Объединенные списки для удобства проверки
+ALL_ADMINS = BOSS_IDS + ADMIN_IDS_LIST  # Кто имеет доступ к админке
+ALL_BOOKING_STAFF = BOSS_IDS + ADMIN_IDS_LIST + SMM_IDS  # Кто может отправлять брони
+
+# Старая переменная ADMIN_IDS для обратной совместимости
+ADMIN_IDS = ALL_ADMINS
+
+REPORT_CHAT_ID = os.getenv("REPORT_CHAT_ID")
 
 # --- Google Sheets ---
 GOOGLE_SHEET_KEY = os.getenv("GOOGLE_SHEET_KEY")

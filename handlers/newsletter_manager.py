@@ -11,7 +11,7 @@ from telebot import types
 import database
 import keyboards
 import texts
-from config import ADMIN_IDS
+from config import ALL_ADMINS
 
 class NewsletterManager:
     def __init__(self, bot, scheduler):
@@ -24,7 +24,7 @@ class NewsletterManager:
         
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith('admin_content_'))
         def handle_content_callbacks(call):
-            if call.from_user.id not in ADMIN_IDS:
+            if call.from_user.id not in ALL_ADMINS:
                 self.bot.answer_callback_query(call.id, "Доступ запрещен", show_alert=True)
                 return
                 
@@ -42,7 +42,7 @@ class NewsletterManager:
                 
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith('admin_newsletter_'))
         def handle_newsletter_callbacks(call):
-            if call.from_user.id not in ADMIN_IDS:
+            if call.from_user.id not in ALL_ADMINS:
                 self.bot.answer_callback_query(call.id, "Доступ запрещен", show_alert=True)
                 return
                 
@@ -73,7 +73,7 @@ class NewsletterManager:
                 
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith('admin_button_'))
         def handle_button_callbacks(call):
-            if call.from_user.id not in ADMIN_IDS:
+            if call.from_user.id not in ALL_ADMINS:
                 self.bot.answer_callback_query(call.id, "Доступ запрещен", show_alert=True)
                 return
                 

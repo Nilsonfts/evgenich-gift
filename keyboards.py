@@ -1,6 +1,6 @@
 # keyboards.py
 from telebot import types
-from config import ADMIN_IDS, MENU_URL
+from config import ALL_ADMINS, ALL_BOOKING_STAFF, MENU_URL
 from menu_nastoiki import MENU_DATA
 from food_menu import FOOD_MENU_DATA
 
@@ -17,10 +17,17 @@ def get_main_menu_keyboard(user_id):
     keyboard.row(ai_help_button, menu_button)
     keyboard.row(book_button, friend_button)
 
-    if user_id in ADMIN_IDS:
+    # Кнопка "Отправить БРОНЬ" для всех, кто может создавать брони (BOSS + ADMIN + SMM)
+    if user_id in ALL_BOOKING_STAFF:
         admin_booking_button = types.KeyboardButton("📨 Отправить БРОНЬ")
-        admin_button = types.KeyboardButton("👑 Админка")
-        keyboard.row(admin_booking_button, admin_button)
+        
+        # Кнопка админки только для BOSS и ADMIN (не для SMM)
+        if user_id in ALL_ADMINS:
+            admin_button = types.KeyboardButton("👑 Админка")
+            keyboard.row(admin_booking_button, admin_button)
+        else:
+            # Только кнопка брони для SMM
+            keyboard.row(admin_booking_button)
 
     return keyboard
 

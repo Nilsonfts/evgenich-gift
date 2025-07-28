@@ -4,7 +4,7 @@ import logging
 import datetime
 from telebot import types
 
-from config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ADMIN_IDS, REPORT_CHAT_ID
+from config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ALL_ADMINS, REPORT_CHAT_ID
 import database
 import settings_manager
 import texts
@@ -377,7 +377,7 @@ def register_user_command_handlers(bot):
     def handle_help_command(message: types.Message):
         bot.send_message(
             message.chat.id,
-            texts.get_help_text(message.from_user.id, ADMIN_IDS),
+            texts.get_help_text(message.from_user.id, ALL_ADMINS),
             parse_mode="Markdown"
         )
 
@@ -386,7 +386,7 @@ def register_user_command_handlers(bot):
         """Команда для админов для сброса состояния пользователя (для тестирования)."""
         user_id = message.from_user.id
         
-        if user_id in ADMIN_IDS:
+        if user_id in ALL_ADMINS:
             # Удаляем пользователя из базы данных
             success, msg = database.delete_user(user_id)
             

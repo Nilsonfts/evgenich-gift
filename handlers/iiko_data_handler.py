@@ -6,7 +6,7 @@ import datetime
 import logging
 import re
 from telebot import types
-from config import REPORT_CHAT_ID, ADMIN_IDS
+from config import REPORT_CHAT_ID, ALL_ADMINS
 from database import save_iiko_nastoika_count, is_waiting_for_iiko_data
 from texts import IIKO_DATA_RECEIVED_TEXT, IIKO_DATA_ERROR_TEXT
 
@@ -15,7 +15,7 @@ def register_iiko_data_handlers(bot):
     
     @bot.message_handler(func=lambda message: (
         message.chat.id == REPORT_CHAT_ID and
-        message.from_user.id in ADMIN_IDS and
+        message.from_user.id in ALL_ADMINS and
         message.text and
         message.text.isdigit() and
         is_waiting_for_iiko_data(datetime.date.today())
