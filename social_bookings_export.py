@@ -222,27 +222,35 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
             'source_tg': 'tg'
         }
         
-        # Маппинг UTM-меток для источников
+        # Расширенный маппинг UTM-меток (полная структура как на сайте)
         utm_mapping = {
             'source_vk': {
                 'utm_source': 'vk',
                 'utm_medium': 'social',
-                'utm_campaign': 'admin_booking'
+                'utm_campaign': 'admin_booking',
+                'utm_content': 'admin_panel_booking',
+                'utm_term': 'vk_social_booking'
             },
             'source_inst': {
                 'utm_source': 'instagram',
                 'utm_medium': 'social', 
-                'utm_campaign': 'admin_booking'
+                'utm_campaign': 'admin_booking',
+                'utm_content': 'admin_panel_booking',
+                'utm_term': 'instagram_social_booking'
             },
             'source_bot_tg': {
                 'utm_source': 'telegram',
                 'utm_medium': 'bot',
-                'utm_campaign': 'direct'
+                'utm_campaign': 'direct',
+                'utm_content': 'telegram_bot',
+                'utm_term': 'direct_booking'
             },
             'source_tg': {
                 'utm_source': 'telegram',
                 'utm_medium': 'channel',
-                'utm_campaign': 'bookevgenich'
+                'utm_campaign': 'bookevgenich',
+                'utm_content': 'telegram_channel',
+                'utm_term': 'channel_booking'
             }
         }
         
@@ -255,10 +263,12 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
         utm_data = utm_mapping.get(source, {
             'utm_source': '',
             'utm_medium': '',
-            'utm_campaign': ''
+            'utm_campaign': '',
+            'utm_content': '',
+            'utm_term': ''
         })
         
-        # Формируем строку для добавления (теперь с UTM колонками L-P)
+        # Формируем строку для добавления (теперь с полными UTM колонками L-Q)
         row_data = [
             creation_datetime,                      # A: Дата Заявки
             booking_data.get('name', ''),           # B: Имя Гостя
@@ -271,11 +281,12 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
             booking_data.get('reason', ''),         # I: Повод Визита
             admin_name,                             # J: Кто создал заявку
             'Новая',                                # K: Статус - всегда "Новая" при создании
-            utm_data.get('utm_source', ''),         # L: UTM Source
-            utm_data.get('utm_medium', ''),         # M: UTM Medium
-            utm_data.get('utm_campaign', ''),       # N: UTM Campaign
-            '',                                     # O: Комментарий
-            f"BID-{int(time.time())}"               # P: ID заявки
+            utm_data.get('utm_source', ''),         # L: UTM Source (Источник)
+            utm_data.get('utm_medium', ''),         # M: UTM Medium (Канал)
+            utm_data.get('utm_campaign', ''),       # N: UTM Campaign (Кампания)
+            utm_data.get('utm_content', ''),        # O: UTM Content (Содержание)
+            utm_data.get('utm_term', ''),           # P: UTM Term (Ключ/Дата)
+            f"BID-{int(time.time())}"               # Q: ID заявки
         ]
         
         # Добавляем строку в таблицу
