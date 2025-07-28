@@ -6,14 +6,13 @@ import json
 import logging
 from typing import Tuple
 from datetime import datetime
-from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
+from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON, DATABASE_PATH
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # --- Настройки ---
-# Путь к БД должен быть абсолютным, чтобы работать с любого места  
-DB_FILE = "data/evgenich_data.db"
+DB_FILE = DATABASE_PATH  # Используем путь из переменной окружения
 EXPORT_SHEET_NAME = "Выгрузка Пользователей" 
 
 # --- Конфигурация столбцов ---

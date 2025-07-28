@@ -10,7 +10,8 @@ from typing import Dict, Tuple
 def get_report_data_for_period(start_time: datetime.datetime, end_time: datetime.datetime) -> Tuple[int, int, Dict]:
     """Имитирует функцию из database.py для тестирования."""
     try:
-        conn = sqlite3.connect("data/evgenich_data.db")
+        from config import DATABASE_PATH
+        conn = sqlite3.connect(DATABASE_PATH)
         cur = conn.cursor()
         
         # Подсчет выданных купонов

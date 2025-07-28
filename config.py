@@ -27,6 +27,9 @@ FRIEND_BONUS_STICKER_ID = os.getenv("FRIEND_BONUS_STICKER_ID")
 # --- Ссылки ---
 MENU_URL = os.getenv("MENU_URL")
 
+# --- База данных ---
+DATABASE_PATH = os.getenv("DATABASE_PATH", "data/evgenich_data.db")
+
 # --- Проверки ---
 if not all([
     BOT_TOKEN, CHANNEL_ID, ADMIN_IDS,

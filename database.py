@@ -13,11 +13,10 @@ import gspread
 import threading
 from collections import defaultdict
 from google.oauth2.service_account import Credentials
-from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
+from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON, DATABASE_PATH
 
 # --- Настройки ---
-DATA_DIR = "data"  # Используем локальную папку data
-DB_FILE = os.path.join(DATA_DIR, "evgenich_data.db")
+DB_FILE = DATABASE_PATH  # Используем путь из переменной окружения
 SHEET_NAME = "Выгрузка Пользователей"
 
 # Проверяем доступность Google Sheets
@@ -134,7 +133,11 @@ def _update_status_in_sheets_in_background(user_id: int, new_status: str, redeem
 
 # --- Секция работы с локальной базой SQLite ---
 def get_db_connection():
-    os.makedirs(DATA_DIR, exist_ok=True)
+    # Создаем директорию для базы данных если её нет
+    db_dir = os.path.dirname(DB_FILE)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
+    
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn

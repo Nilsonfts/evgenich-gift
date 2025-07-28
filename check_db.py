@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 import sqlite3
 import os
+from config import DATABASE_PATH
 
 print("🔍 Проверка базы данных...")
 
-db_path = "data/evgenich_data.db"
+db_path = DATABASE_PATH
 
 if not os.path.exists(db_path):
     print(f"❌ База данных не найдена: {db_path}")

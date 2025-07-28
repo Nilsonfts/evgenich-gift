@@ -20,8 +20,9 @@ def test_new_sources():
         # Инициализируем базу данных
         import sqlite3
         from datetime import datetime, timedelta
+        from config import DATABASE_PATH
 
-        db_path = "data/evgenich_data.db"
+        db_path = DATABASE_PATH
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
 
