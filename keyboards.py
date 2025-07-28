@@ -164,40 +164,6 @@ def get_traffic_source_keyboard():
     )
     return keyboard
 
-def get_guest_source_keyboard():
-    """Клавиатура для выбора источника трафика при самостоятельном бронировании гостем."""
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
-    
-    # Первый ряд - поисковые системы
-    keyboard.add(
-        types.InlineKeyboardButton("🔍 Яндекс", callback_data="guest_source_yandex"),
-        types.InlineKeyboardButton("🔍 Google", callback_data="guest_source_google")
-    )
-    
-    # Второй ряд - карты и агрегаторы
-    keyboard.add(
-        types.InlineKeyboardButton("📍 2ГИС", callback_data="guest_source_2gis")
-    )
-    
-    # Третий ряд - соцсети
-    keyboard.add(
-        types.InlineKeyboardButton("📸 Instagram", callback_data="guest_source_instagram"),
-        types.InlineKeyboardButton("📘 ВКонтакте", callback_data="guest_source_vkontakte")
-    )
-    
-    # Четвертый ряд - другие источники
-    keyboard.add(
-        types.InlineKeyboardButton("👥 Рассказали друзья", callback_data="guest_source_friends"),
-        types.InlineKeyboardButton("💬 Telegram", callback_data="guest_source_telegram")
-    )
-    
-    # Пятый ряд - свой вариант
-    keyboard.add(
-        types.InlineKeyboardButton("✏️ Другое (напишу сам)", callback_data="guest_source_other")
-    )
-    
-    return keyboard
-
 def get_cancel_booking_keyboard():
     """Клавиатура с кнопкой отмены бронирования."""
     keyboard = types.InlineKeyboardMarkup(row_width=1)

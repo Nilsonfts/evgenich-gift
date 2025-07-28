@@ -304,10 +304,15 @@ def get_booking_report_text(data: dict[str, str], creator_id: int = None) -> str
     from social_bookings_export import ALL_SOURCE_UTM_DATA, ALL_SOURCE_DISPLAY_NAMES, get_admin_name_by_id
     
     source = data.get('source', '')
-    source_display = ALL_SOURCE_DISPLAY_NAMES.get(source, data.get('source', 'не указано'))
+    is_guest_booking = data.get('is_guest_booking', False)
     
-    # Получаем UTM-данные для источника
-    utm_data = ALL_SOURCE_UTM_DATA.get(source, {})
+    # Для гостевого бронирования без источника убираем UTM данные
+    if is_guest_booking and not source:
+        source_display = None
+        utm_data = {}
+    else:
+        source_display = ALL_SOURCE_DISPLAY_NAMES.get(source, data.get('source', 'не указано'))
+        utm_data = ALL_SOURCE_UTM_DATA.get(source, {})
     
     # Определяем создателя
     creator_name = "👤 Посетитель (через бота)"
@@ -330,15 +335,16 @@ def get_booking_report_text(data: dict[str, str], creator_id: int = None) -> str
         f"📅 <b>Дата:</b> {data.get('date', 'не указано')}\n"
         f"⏰ <b>Время:</b> {data.get('time', 'не указано')}\n"
         f"👥 <b>Гости:</b> {data.get('guests', 'не указано')}\n"
-        f"📊 <b>Источник:</b> {source_display}\n"
-        f"📝 <b>Повод:</b> {data.get('reason', 'не указано')}\n\n"
+        f" <b>Повод:</b> {data.get('reason', 'не указано')}\n"
+        + (f"📊 <b>Источник:</b> {source_display}\n" if source_display else "") +
+        f"\n"
         
-        f"📊 <b>UTM-метки:</b>\n"
+        + (f"📊 <b>UTM-метки:</b>\n"
         f"- Source: {utm_data.get('utm_source', '-')}\n"
         f"- Medium: {utm_data.get('utm_medium', '-')}\n"
         f"- Campaign: {utm_data.get('utm_campaign', '-')}\n"
         f"- Content: {utm_data.get('utm_content', '-')}\n"
-        f"- Term: {utm_data.get('utm_term', '-')}\n\n"
+        f"- Term: {utm_data.get('utm_term', '-')}\n\n" if utm_data else "") +
         
         f"🆔 <b>ID:</b> BID-{int(time.time())}\n"
         f"👤 <b>Создал:</b> {creator_name}"
