@@ -164,6 +164,14 @@ def get_traffic_source_keyboard():
     )
     return keyboard
 
+def get_cancel_booking_keyboard():
+    """Клавиатура с кнопкой отмены бронирования."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("❌ Отменить бронь", callback_data="cancel_booking")
+    )
+    return keyboard
+
 # === НОВАЯ СТРУКТУРА АДМИН-ПАНЕЛИ ===
 
 def get_admin_main_menu():

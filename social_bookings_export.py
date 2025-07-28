@@ -18,20 +18,30 @@ def parse_booking_date(date_text: str) -> str:
     """
     Преобразует текст даты в формат DD.MM.YYYY.
     Обрабатывает: завтра, послезавтра, дни недели, конкретные даты.
+    Поддерживает форматы: "11 Августа", "11 08", "11.08", "в субботу"
     """
     today = datetime.now()
     date_text = date_text.lower().strip()
     
+    # Месяцы по названию
+    months = {
+        'января': 1, 'февраля': 2, 'марта': 3, 'апреля': 4,
+        'мая': 5, 'июня': 6, 'июля': 7, 'августа': 8,
+        'сентября': 9, 'октября': 10, 'ноября': 11, 'декабря': 12,
+        'янв': 1, 'фев': 2, 'мар': 3, 'апр': 4,
+        'май': 5, 'июн': 6, 'июл': 7, 'авг': 8,
+        'сен': 9, 'окт': 10, 'ноя': 11, 'дек': 12
+    }
+    
     # Дни недели (с предлогами и без) и их склонения
     weekdays = {
-        'понедельник': 0, 'понедельник': 0,
-        'вторник': 1, 'вторник': 1,
-        'среда': 2, 'среду': 2,
-        'четверг': 3, 'четверг': 3,
-        'пятница': 4, 'пятницу': 4,
-        'суббота': 5, 'субботу': 5,
-        'воскресенье': 6, 'воскресенье': 6,
-        'пн': 0, 'вт': 1, 'ср': 2, 'чт': 3, 'пт': 4, 'сб': 5, 'вс': 6
+        'понедельник': 0, 'понедельника': 0, 'пн': 0,
+        'вторник': 1, 'вторника': 1, 'вт': 1,
+        'среда': 2, 'среду': 2, 'среды': 2, 'ср': 2,
+        'четверг': 3, 'четверга': 3, 'чт': 3,
+        'пятница': 4, 'пятницу': 4, 'пятницы': 4, 'пт': 4,
+        'суббота': 5, 'субботу': 5, 'субботы': 5, 'сб': 5,
+        'воскресенье': 6, 'воскресенья': 6, 'вс': 6
     }
     
     # Сегодня
@@ -60,11 +70,31 @@ def parse_booking_date(date_text: str) -> str:
                 target_date = today + timedelta(days=days_ahead)
                 return target_date.strftime('%d.%m.%Y')
     
-    # Попытка распарсить числовую дату
-    # Форматы: 15.08, 15.08.2025, 15/08, 15/08/2025, 15 августа и т.д.
+    # Парсим даты с названиями месяцев: "11 августа", "15 июля"
+    month_pattern = r'(\d{1,2})\s+([а-яё]+)'
+    month_match = re.search(month_pattern, date_text)
+    if month_match:
+        day = int(month_match.group(1))
+        month_name = month_match.group(2).lower()
+        
+        if month_name in months:
+            month = months[month_name]
+            year = today.year
+            
+            try:
+                target_date = datetime(year, month, day)
+                # Если дата уже прошла в этом году, берем следующий год
+                if target_date < today:
+                    target_date = datetime(year + 1, month, day)
+                return target_date.strftime('%d.%m.%Y')
+            except ValueError:
+                pass
     
-    # DD.MM или DD/MM
-    date_pattern = r'(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?'
+    # Попытка распарсить числовую дату
+    # Форматы: 15.08, 15.08.2025, 15/08, 15/08/2025, 15 08
+    
+    # DD.MM, DD/MM или DD MM (с пробелом)
+    date_pattern = r'(\d{1,2})[./ ](\d{1,2})(?:[./](\d{2,4}))?'
     match = re.search(date_pattern, date_text)
     if match:
         day, month = int(match.group(1)), int(match.group(2))
@@ -74,6 +104,9 @@ def parse_booking_date(date_text: str) -> str:
         
         try:
             target_date = datetime(year, month, day)
+            # Если дата уже прошла в этом году, берем следующий год
+            if target_date < today and not match.group(3):  # Если год не указан явно
+                target_date = datetime(year + 1, month, day)
             return target_date.strftime('%d.%m.%Y')
         except ValueError:
             pass
@@ -81,11 +114,52 @@ def parse_booking_date(date_text: str) -> str:
     # Если ничего не распознали, просто возвращаем исходный текст
     return date_text
 
+def parse_booking_time(time_text: str) -> str:
+    """
+    Преобразует текст времени в формат ЧЧ:ММ.
+    Принимает: "19:30", "19.30", "19 30", "1930", "7:30", "7.30"
+    """
+    time_text = time_text.strip()
+    
+    # Паттерн для времени: ЧЧ:ММ, ЧЧ.ММ, ЧЧ ММ
+    time_pattern = r'(\d{1,2})[:.\s](\d{2})'
+    match = re.search(time_pattern, time_text)
+    
+    if match:
+        hours = int(match.group(1))
+        minutes = int(match.group(2))
+        
+        # Валидация времени
+        if 0 <= hours <= 23 and 0 <= minutes <= 59:
+            return f"{hours:02d}:{minutes:02d}"
+    
+    # Паттерн для времени без разделителя: ЧЧЧМ или ЧЧММ
+    time_pattern_no_sep = r'^(\d{3,4})$'
+    match = re.search(time_pattern_no_sep, time_text)
+    
+    if match:
+        time_str = match.group(1)
+        if len(time_str) == 3:  # ЧЧМ -> Ч:ММ
+            hours = int(time_str[0])
+            minutes = int(time_str[1:3])
+        elif len(time_str) == 4:  # ЧЧММ
+            hours = int(time_str[0:2])
+            minutes = int(time_str[2:4])
+        else:
+            return time_text
+            
+        # Валидация времени
+        if 0 <= hours <= 23 and 0 <= minutes <= 59:
+            return f"{hours:02d}:{minutes:02d}"
+    
+    # Если ничего не распознали, возвращаем исходный текст
+    return time_text
+
 def get_admin_name_by_id(admin_id: int) -> str:
     """Возвращает имя админа по его ID."""
     # Словарь админов (можно вынести в config)
     admin_names = {
-        196614680: "Нил Владимирович",
+        196614680: "Нил Витальевич",
         208281210: "Кристина",
         12345678: "Тест Сотрудникович"
     }

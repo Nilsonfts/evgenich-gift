@@ -12,7 +12,7 @@ import keyboards
 import settings_manager # Наш новый менеджер настроек
 
 # Импортируем функцию экспорта в соцсети
-from social_bookings_export import export_social_booking_to_sheets
+from social_bookings_export import export_social_booking_to_sheets, parse_booking_date, parse_booking_time
 
 # Инициализация базы данных для бронирований
 db = TinyDB('booking_data.json')
@@ -190,27 +190,43 @@ def register_booking_handlers(bot):
         # Проверяем ввод на шаге 'гости'
         if step == 'guests':
             if not message.text.strip().isdigit():
-                bot.send_message(message.chat.id, "Товарищ, укажи количество гостей цифрой, пожалуйста. Например: 4")
+                bot.send_message(message.chat.id, "Товарищ, укажи количество гостей цифрой, пожалуйста. Например: 4", 
+                               reply_markup=keyboards.get_cancel_booking_keyboard())
                 return
 
-        # Сохраняем ответ пользователя в его данные
-        current_data[step] = message.text
+        # Обрабатываем дату - парсим и проверяем
+        if step == 'date':
+            parsed_date = parse_booking_date(message.text)
+            current_data[step] = parsed_date
+            # Показываем распознанную дату пользователю
+            if parsed_date != message.text:
+                bot.send_message(message.chat.id, f"Понял, дата: {parsed_date}")
+        # Обрабатываем время - парсим в формат ЧЧ:ММ  
+        elif step == 'time':
+            parsed_time = parse_booking_time(message.text)
+            current_data[step] = parsed_time
+            # Показываем распознанное время пользователю
+            if parsed_time != message.text:
+                bot.send_message(message.chat.id, f"Понял, время: {parsed_time}")
+        else:
+            # Сохраняем ответ пользователя в его данные как есть
+            current_data[step] = message.text
 
         # Словарь-маршрутизатор по шагам для обычного бронирования
         user_prompts = {
-            'name': {'next_step': 'phone', 'prompt': texts.BOOKING_ASK_PHONE},
-            'phone': {'next_step': 'date', 'prompt': texts.BOOKING_ASK_DATE},
-            'date': {'next_step': 'time', 'prompt': texts.BOOKING_ASK_TIME},
-            'time': {'next_step': 'guests', 'prompt': texts.BOOKING_ASK_GUESTS},
+            'name': {'next_step': 'phone', 'prompt': texts.BOOKING_ASK_PHONE, 'keyboard': keyboards.get_cancel_booking_keyboard()},
+            'phone': {'next_step': 'date', 'prompt': texts.BOOKING_ASK_DATE, 'keyboard': keyboards.get_cancel_booking_keyboard()},
+            'date': {'next_step': 'time', 'prompt': texts.BOOKING_ASK_TIME, 'keyboard': keyboards.get_cancel_booking_keyboard()},
+            'time': {'next_step': 'guests', 'prompt': texts.BOOKING_ASK_GUESTS, 'keyboard': keyboards.get_cancel_booking_keyboard()},
             'guests': {'next_step': 'source', 'prompt': texts.BOOKING_ASK_SOURCE, 'keyboard': keyboards.get_traffic_source_keyboard()},
         }
 
         # Словарь-маршрутизатор для админского бронирования
         admin_prompts = {
-            'admin_name': {'next_step': 'phone', 'prompt': texts.ADMIN_BOOKING_PHONE},
-            'phone': {'next_step': 'date', 'prompt': texts.ADMIN_BOOKING_DATE},
-            'date': {'next_step': 'time', 'prompt': texts.ADMIN_BOOKING_TIME},
-            'time': {'next_step': 'guests', 'prompt': texts.ADMIN_BOOKING_GUESTS},
+            'admin_name': {'next_step': 'phone', 'prompt': texts.ADMIN_BOOKING_PHONE, 'keyboard': keyboards.get_cancel_booking_keyboard()},
+            'phone': {'next_step': 'date', 'prompt': texts.ADMIN_BOOKING_DATE, 'keyboard': keyboards.get_cancel_booking_keyboard()},
+            'date': {'next_step': 'time', 'prompt': texts.ADMIN_BOOKING_TIME, 'keyboard': keyboards.get_cancel_booking_keyboard()},
+            'time': {'next_step': 'guests', 'prompt': texts.ADMIN_BOOKING_GUESTS, 'keyboard': keyboards.get_cancel_booking_keyboard()},
             'guests': {'next_step': 'source', 'prompt': texts.ADMIN_BOOKING_SOURCE, 'keyboard': keyboards.get_traffic_source_keyboard()},
         }
 

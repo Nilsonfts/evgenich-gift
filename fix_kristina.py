@@ -62,7 +62,7 @@ def fix_kristina():
     cur.execute("""
         INSERT INTO staff (telegram_id, full_name, short_name, position, unique_code, status)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, (nil_telegram_id, "Нил Владимирович", "Нил В.", "Администратор", str(nil_telegram_id), "active"))
+    """, (nil_telegram_id, "Нил Витальевич", "Нил В.", "Администратор", str(nil_telegram_id), "active"))
     
     print(f"   ✅ Нил добавлен с кодом: {nil_telegram_id}")
     
