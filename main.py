@@ -8,7 +8,7 @@ from apscheduler.triggers.cron import CronTrigger
 import datetime
 import pytz
 
-from config import BOT_TOKEN, FRIEND_BONUS_STICKER_ID, REPORT_CHAT_ID, CHANNEL_ID
+from config import BOT_TOKEN, FRIEND_BONUS_STICKER_ID, REPORT_CHAT_ID, CHANNEL_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID
 import database
 import keyboards
 import texts
@@ -86,13 +86,13 @@ def request_iiko_data_before_report(report_date: datetime.date, start_time: date
     # Проверяем, нужны ли данные за эту дату
     if is_waiting_for_iiko_data(report_date):
         try:
-            # Отправляем запрос в чат отчетов в 05:30
+            # Отправляем запрос в чат для настоек в 05:30
             bot.send_message(
-                REPORT_CHAT_ID,
+                NASTOYKA_NOTIFICATIONS_CHAT_ID,
                 IIKO_DATA_REQUEST_TEXT,
                 parse_mode='Markdown'
             )
-            logging.info(f"Отправлен запрос данных iiko за {report_date}")
+            logging.info(f"Отправлен запрос данных iiko за {report_date} в чат настоек {NASTOYKA_NOTIFICATIONS_CHAT_ID}")
             
             # Планируем отправку отчета через 35 минут (в 06:05)
             scheduler.add_job(
@@ -114,10 +114,16 @@ def request_iiko_data_before_report(report_date: datetime.date, start_time: date
 def send_final_report_with_iiko(start_time: datetime.datetime, end_time: datetime.datetime):
     """Отправляет финальный отчет с данными iiko (если есть)."""
     try:
-        send_report(bot, REPORT_CHAT_ID, start_time, end_time)
-        logging.info(f"Scheduler: Ежедневный отчет успешно отправлен в чат {REPORT_CHAT_ID}.")
+        send_report(bot, NASTOYKA_NOTIFICATIONS_CHAT_ID, start_time, end_time)
+        logging.info(f"Scheduler: Ежедневный отчет успешно отправлен в чат настоек {NASTOYKA_NOTIFICATIONS_CHAT_ID}.")
     except Exception as e:
         logging.error(f"Ошибка отправки финального отчета: {e}")
+        # Fallback - отправляем в старый чат если новый недоступен
+        try:
+            send_report(bot, REPORT_CHAT_ID, start_time, end_time)
+            logging.info(f"Финальный отчет отправлен в резервный чат {REPORT_CHAT_ID}")
+        except Exception as fallback_error:
+            logging.error(f"Ошибка отправки в резервный чат: {fallback_error}")
 
 def run_nightly_auditor_job():
     """

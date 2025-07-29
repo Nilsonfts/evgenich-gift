@@ -4,7 +4,7 @@ import logging
 import datetime
 from telebot import types
 
-from config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ALL_ADMINS, REPORT_CHAT_ID
+from config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ALL_ADMINS, REPORT_CHAT_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID
 import database
 import settings_manager
 import texts
@@ -105,7 +105,7 @@ def register_user_command_handlers(bot):
                             logging.info(f"✅ Пользователь {user_id} (@{message.from_user.username}) успешно привязан к сотруднику: {staff_member['full_name']} (ID: {staff_member['staff_id']}, код: {staff_code})")
                             # Отправляем уведомление администраторам о новом переходе по QR-коду сотрудника
                             bot.send_message(
-                                REPORT_CHAT_ID,
+                                NASTOYKA_NOTIFICATIONS_CHAT_ID,
                                 f"📊 QR-переход: Новый гость привлечен сотрудником {staff_member['short_name']} "
                                 f"(@{message.from_user.username or 'без_username'})",
                                 parse_mode="Markdown"

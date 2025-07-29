@@ -9,7 +9,7 @@ from ai_assistant import get_ai_recommendation
 import database
 import texts
 import keyboards
-from config import REPORT_CHAT_ID  # <--- ИЗМЕНЕНИЕ: Импортируем ID чата для отчетов
+from config import REPORT_CHAT_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID  # <--- ИЗМЕНЕНИЕ: Импортируем ID чатов для отчетов
 
 db = TinyDB('booking_data.json')
 User = Query()
@@ -32,16 +32,17 @@ def register_ai_handlers(bot):
         Обрабатывает любой текстовый запрос, который не был перехвачен
         другими обработчиками (командами, шагами бронирования).
         """
-        # --- ИЗМЕНЕНИЕ: Проверяем, что сообщение пришло не из чата для отчетов ---
+        # --- ИЗМЕНЕНИЕ: Проверяем, что сообщение пришло не из служебных чатов ---
         try:
-            # Сравниваем ID текущего чата с ID чата для отчетов из конфига.
-            # Так как REPORT_CHAT_ID - это строка, а message.chat.id - число,
-            # приводим строку к числу перед сравнением.
-            if message.chat.id == int(REPORT_CHAT_ID):
-                return  # Если ID совпадают, просто выходим из функции, ничего не делая.
+            # Проверяем все служебные чаты (отчеты, настойки, бронирования)
+            service_chats = [int(REPORT_CHAT_ID)] if REPORT_CHAT_ID else []
+            service_chats.extend([NASTOYKA_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID])
+            
+            if message.chat.id in service_chats:
+                return  # Если это служебный чат, просто выходим из функции
         except (ValueError, TypeError):
-            # Эта проверка на случай, если REPORT_CHAT_ID не задан или имеет неверный формат
-            logging.warning("Не удалось сравнить chat_id с REPORT_CHAT_ID. Проверьте переменную окружения.")
+            # Эта проверка на случай, если переменные не заданы или имеют неверный формат
+            logging.warning("Не удалось сравнить chat_id со служебными чатами. Проверьте переменные окружения.")
             pass
         # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 

@@ -6,14 +6,10 @@ from telebot.apihelper import ApiTelegramException
 from tinydb import TinyDB, Query
 
 # Импортируем конфиги, тексты и клавиатуры
-from config import REPORT_CHAT_ID
+from config import BOOKING_NOTIFICATIONS_CHAT_ID, REPORT_CHAT_ID
 import texts
 import keyboards
 import settings_manager # Наш новый менеджер настроек
-
-# === НАСТРОЙКА ЧАТА ДЛЯ УВЕДОМЛЕНИЙ ===
-# Изменить здесь ID чата для отправки уведомлений о бронированиях
-BOOKING_NOTIFICATIONS_CHAT_ID = -1002655754865  # Новый чат для заявок
 
 # Импортируем функцию экспорта в соцсети
 from social_bookings_export import (
@@ -192,7 +188,17 @@ def register_booking_handlers(bot):
                 pass
 
             # Отправляем отчет с поддержкой HTML-разметки
-            bot.send_message(BOOKING_NOTIFICATIONS_CHAT_ID, report_text, parse_mode="HTML")
+            try:
+                bot.send_message(BOOKING_NOTIFICATIONS_CHAT_ID, report_text, parse_mode="HTML")
+                logging.info(f"Уведомление о бронировании успешно отправлено в чат {BOOKING_NOTIFICATIONS_CHAT_ID}")
+            except Exception as e:
+                logging.error(f"Ошибка отправки уведомления в чат {BOOKING_NOTIFICATIONS_CHAT_ID}: {e}")
+                # Fallback - отправляем в старый чат если новый недоступен
+                try:
+                    bot.send_message(REPORT_CHAT_ID, report_text, parse_mode="HTML")
+                    logging.info(f"Уведомление отправлено в резервный чат {REPORT_CHAT_ID}")
+                except Exception as fallback_error:
+                    logging.error(f"Ошибка отправки в резервный чат: {fallback_error}")
             bot.send_message(
                 user_id,
                 texts.BOOKING_CONFIRMATION_SUCCESS,
