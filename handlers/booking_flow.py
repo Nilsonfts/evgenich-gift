@@ -162,7 +162,7 @@ def register_booking_handlers(bot):
             else:
                 # Если это гостевое бронирование, экспортируем в таблицу без источника
                 try:
-                    export_success = export_guest_booking_to_sheets(booking_data)
+                    export_success = export_guest_booking_to_sheets(booking_data, user_id)
                     if export_success:
                         logging.info(f"Гостевая заявка успешно экспортирована в Google Sheets. Гость: {booking_data.get('name', '')}")
                     else:

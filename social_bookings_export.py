@@ -394,7 +394,7 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
             'utm_term': ''
         })
         
-        # Формируем строку для добавления (теперь с полными UTM колонками L-Q)
+        # Формируем строку для добавления (теперь с полными UTM колонками L-Q и Telegram ID в R)
         row_data = [
             creation_datetime,                      # A: Дата Заявки
             booking_data.get('name', ''),           # B: Имя Гостя
@@ -412,7 +412,8 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
             utm_data.get('utm_campaign', ''),       # N: UTM Campaign (Кампания)
             utm_data.get('utm_content', ''),        # O: UTM Content (Содержание)
             utm_data.get('utm_term', ''),           # P: UTM Term (Ключ/Дата)
-            f"BID-{int(time.time())}"               # Q: ID заявки
+            f"BID-{int(time.time())}",              # Q: ID заявки
+            admin_id                                # R: Telegram ID создателя заявки
         ]
         
         # Добавляем строку в таблицу
@@ -425,12 +426,13 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
         logging.error(f"Ошибка при экспорте заявки в Google Sheets: {e}")
         return False
 
-def export_guest_booking_to_sheets(booking_data: Dict[str, Any]) -> bool:
+def export_guest_booking_to_sheets(booking_data: Dict[str, Any], user_id: int = None) -> bool:
     """
     Экспортирует данные гостевого бронирования в Google Sheets на вкладку "Заявки из Соц сетей".
     
     Args:
         booking_data: Словарь с данными гостевого бронирования (без источника)
+        user_id: Telegram ID пользователя, который создал заявку (опционально)
     
     Returns:
         bool: True если успешно, False если ошибка
@@ -496,7 +498,8 @@ def export_guest_booking_to_sheets(booking_data: Dict[str, Any]) -> bool:
             utm_data.get('utm_campaign', ''),       # N: UTM Campaign (Кампания)
             utm_data.get('utm_content', ''),        # O: UTM Content (Содержание)
             utm_data.get('utm_term', ''),           # P: UTM Term (Ключ/Дата)
-            f"BID-{int(time.time())}"               # Q: ID заявки
+            f"BID-{int(time.time())}",              # Q: ID заявки
+            user_id if user_id else ""              # R: Telegram ID создателя заявки
         ]
         
         # Добавляем строку в таблицу
