@@ -394,26 +394,28 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
             'utm_term': ''
         })
         
-        # Формируем строку для добавления (теперь с полными UTM колонками L-Q и Telegram ID в R)
+        # Объединяем дату и время в одну колонку
+        datetime_combined = f"{booking_date} {booking_data.get('time', '')}" if booking_data.get('time', '') else booking_date
+        
+        # Формируем строку для добавления (дата и время объединены, колонки сдвинуты)
         row_data = [
             creation_datetime,                      # A: Дата Заявки
             booking_data.get('name', ''),           # B: Имя Гостя
             booking_data.get('phone', ''),          # C: Телефон
-            booking_date,                           # D: Дата посещения
-            booking_data.get('time', ''),           # E: Время
-            booking_data.get('guests', ''),         # F: Кол-во гостей
-            source_display,                         # G: Источник
-            amo_tag,                                # H: ТЕГ для АМО
-            booking_data.get('reason', ''),         # I: Повод Визита
-            admin_name,                             # J: Кто создал заявку
-            'Новая',                                # K: Статус - всегда "Новая" при создании
-            utm_data.get('utm_source', ''),         # L: UTM Source (Источник)
-            utm_data.get('utm_medium', ''),         # M: UTM Medium (Канал)
-            utm_data.get('utm_campaign', ''),       # N: UTM Campaign (Кампания)
-            utm_data.get('utm_content', ''),        # O: UTM Content (Содержание)
-            utm_data.get('utm_term', ''),           # P: UTM Term (Ключ/Дата)
-            f"BID-{int(time.time())}",              # Q: ID заявки
-            admin_id                                # R: Telegram ID создателя заявки
+            datetime_combined,                      # D: Дата и время посещения
+            booking_data.get('guests', ''),         # E: Кол-во гостей (было F)
+            source_display,                         # F: Источник (было G)
+            amo_tag,                                # G: ТЕГ для АМО (было H)
+            booking_data.get('reason', ''),         # H: Повод Визита (было I)
+            admin_name,                             # I: Кто создал заявку (было J)
+            'Новая',                                # J: Статус (было K)
+            utm_data.get('utm_source', ''),         # K: UTM Source (было L)
+            utm_data.get('utm_medium', ''),         # L: UTM Medium (было M)
+            utm_data.get('utm_campaign', ''),       # M: UTM Campaign (было N)
+            utm_data.get('utm_content', ''),        # N: UTM Content (было O)
+            utm_data.get('utm_term', ''),           # O: UTM Term (было P)
+            f"BID-{int(time.time())}",              # P: ID заявки (было Q)
+            admin_id                                # Q: Telegram ID создателя (было R)
         ]
         
         # Добавляем строку в таблицу
@@ -480,26 +482,28 @@ def export_guest_booking_to_sheets(booking_data: Dict[str, Any], user_id: int = 
             'utm_term': 'guest_direct'
         }
         
+        # Объединяем дату и время в одну колонку
+        datetime_combined = f"{booking_date} {booking_data.get('time', '')}" if booking_data.get('time', '') else booking_date
+        
         # Формируем строку для добавления
         row_data = [
             creation_datetime,                      # A: Дата Заявки
             booking_data.get('name', ''),           # B: Имя Гостя
             booking_data.get('phone', ''),          # C: Телефон
-            booking_date,                           # D: Дата посещения
-            booking_data.get('time', ''),           # E: Время
-            booking_data.get('guests', ''),         # F: Кол-во гостей
-            source_display,                         # G: Источник
-            amo_tag,                                # H: ТЕГ для АМО
-            booking_data.get('reason', ''),         # I: Повод Визита
-            creator_name,                           # J: Кто создал заявку
-            'Новая',                                # K: Статус - всегда "Новая" при создании
-            utm_data.get('utm_source', ''),         # L: UTM Source (Источник)
-            utm_data.get('utm_medium', ''),         # M: UTM Medium (Канал)
-            utm_data.get('utm_campaign', ''),       # N: UTM Campaign (Кампания)
-            utm_data.get('utm_content', ''),        # O: UTM Content (Содержание)
-            utm_data.get('utm_term', ''),           # P: UTM Term (Ключ/Дата)
-            f"BID-{int(time.time())}",              # Q: ID заявки
-            user_id if user_id else ""              # R: Telegram ID создателя заявки
+            datetime_combined,                      # D: Дата и время посещения
+            booking_data.get('guests', ''),         # E: Кол-во гостей (было F)
+            source_display,                         # F: Источник (было G)
+            amo_tag,                                # G: ТЕГ для АМО (было H)
+            booking_data.get('reason', ''),         # H: Повод Визита (было I)
+            creator_name,                           # I: Кто создал заявку (было J)
+            'Новая',                                # J: Статус (было K)
+            utm_data.get('utm_source', ''),         # K: UTM Source (было L)
+            utm_data.get('utm_medium', ''),         # L: UTM Medium (было M)
+            utm_data.get('utm_campaign', ''),       # M: UTM Campaign (было N)
+            utm_data.get('utm_content', ''),        # N: UTM Content (было O)
+            utm_data.get('utm_term', ''),           # O: UTM Term (было P)
+            f"BID-{int(time.time())}",              # P: ID заявки (было Q)
+            user_id if user_id else ""              # Q: Telegram ID создателя (было R)
         ]
         
         # Добавляем строку в таблицу
