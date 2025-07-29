@@ -15,6 +15,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # ID вкладки "Заявки из Соц сетей"
 SOCIAL_BOOKINGS_SHEET_GID = "1842872487"
 
+# ID вкладки дополнительной таблицы
+SECONDARY_BOOKINGS_SHEET_GID = "871899838"
+
 # ID вкладки для дополнительной таблицы
 SECONDARY_BOOKINGS_SHEET_GID = "871899838"
 
