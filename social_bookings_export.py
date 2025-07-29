@@ -151,9 +151,16 @@ def get_moscow_time() -> str:
     Returns:
         str: Время в формате "dd.mm.yyyy HH:MM"
     """
-    moscow_tz = pytz.timezone('Europe/Moscow')
-    moscow_time = datetime.now(moscow_tz)
-    return moscow_time.strftime('%d.%m.%Y %H:%M')
+    try:
+        moscow_tz = pytz.timezone('Europe/Moscow')
+        moscow_time = datetime.now(moscow_tz)
+        return moscow_time.strftime('%d.%m.%Y %H:%M')
+    except Exception as e:
+        logging.warning(f"Ошибка получения московского времени: {e}, используем UTC+3")
+        # Fallback: UTC + 3 часа
+        utc_time = datetime.utcnow()
+        moscow_time = utc_time + timedelta(hours=3)
+        return moscow_time.strftime('%d.%m.%Y %H:%M')
 
 def parse_booking_date(date_text: str) -> str:
     """
@@ -506,6 +513,7 @@ def export_guest_booking_to_sheets(booking_data: Dict[str, Any], user_id: int = 
         datetime_combined = f"{booking_date} {booking_data.get('time', '')}" if booking_data.get('time', '') else booking_date
         
         # Формируем строку для добавления
+        # Формируем строку для добавления (дата и время объединены, колонки сдвинуты)
         row_data = [
             creation_datetime,                      # A: Дата Заявки
             booking_data.get('name', ''),           # B: Имя Гостя
@@ -526,10 +534,24 @@ def export_guest_booking_to_sheets(booking_data: Dict[str, Any], user_id: int = 
             user_id if user_id else ""              # Q: Telegram ID создателя (было R)
         ]
         
-        # Добавляем строку в таблицу
-        worksheet.append_row(row_data)
+        # Проверяем корректность данных
+        for i, value in enumerate(row_data):
+            if value is None:
+                row_data[i] = ""
+            elif not isinstance(value, (str, int, float)):
+                row_data[i] = str(value)
         
-        logging.info(f"Гостевая заявка успешно экспортирована в таблицу. Клиент: {booking_data.get('name', '')}")
+        logging.info(f"Подготовлена строка для экспорта: {len(row_data)} колонок")
+        
+        # Добавляем строку в таблицу
+        try:
+            logging.info(f"Добавляем гостевую заявку в таблицу. Данные: {len(row_data)} колонок")
+            worksheet.append_row(row_data)
+            logging.info(f"Гостевая заявка успешно экспортирована в таблицу. Клиент: {booking_data.get('name', '')}")
+        except Exception as append_error:
+            logging.error(f"Ошибка при добавлении строки в Google Sheets: {append_error}")
+            logging.error(f"Данные строки: {row_data}")
+            raise append_error
         
         # Также экспортируем в дополнительную таблицу
         try:
