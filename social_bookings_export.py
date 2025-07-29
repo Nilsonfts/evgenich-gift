@@ -5,6 +5,7 @@ import json
 import logging
 import time
 from datetime import datetime, timedelta
+import pytz
 import re
 from typing import Optional, Dict, Any
 from config import GOOGLE_SHEET_KEY, GOOGLE_SHEET_KEY_SECONDARY, GOOGLE_CREDENTIALS_JSON
@@ -15,10 +16,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # ID вкладки "Заявки из Соц сетей"
 SOCIAL_BOOKINGS_SHEET_GID = "1842872487"
 
-# ID вкладки дополнительной таблицы
-SECONDARY_BOOKINGS_SHEET_GID = "871899838"
-
-# ID вкладки для дополнительной таблицы
+# ID вкладки дополнительной таблицы "Заявки Соц сети"  
 SECONDARY_BOOKINGS_SHEET_GID = "871899838"
 
 # UTM-метки для каждого источника
@@ -145,6 +143,17 @@ GUEST_SOURCE_DISPLAY_NAMES = {
 
 # Объединенные названия источников
 ALL_SOURCE_DISPLAY_NAMES = {**SOURCE_DISPLAY_NAMES, **GUEST_SOURCE_DISPLAY_NAMES}
+
+def get_moscow_time() -> str:
+    """
+    Возвращает текущее время в московском часовом поясе (UTC+3).
+    
+    Returns:
+        str: Время в формате "dd.mm.yyyy HH:MM"
+    """
+    moscow_tz = pytz.timezone('Europe/Moscow')
+    moscow_time = datetime.now(moscow_tz)
+    return moscow_time.strftime('%d.%m.%Y %H:%M')
 
 def parse_booking_date(date_text: str) -> str:
     """
@@ -332,8 +341,7 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
             return False
         
         # Обработка данных
-        now = datetime.now()
-        creation_datetime = now.strftime('%d.%m.%Y %H:%M')
+        creation_datetime = get_moscow_time()  # Московское время UTC+3
         
         # Парсим дату бронирования
         booking_date = parse_booking_date(booking_data.get('date', ''))
@@ -475,8 +483,7 @@ def export_guest_booking_to_sheets(booking_data: Dict[str, Any], user_id: int = 
             return False
         
         # Обработка данных
-        now = datetime.now()
-        creation_datetime = now.strftime('%d.%m.%Y %H:%M')
+        creation_datetime = get_moscow_time()  # Московское время UTC+3
         
         # Парсим дату бронирования
         booking_date = parse_booking_date(booking_data.get('date', ''))
@@ -563,6 +570,10 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
         gc = gspread.authorize(credentials)
         sheet = gc.open_by_key(GOOGLE_SHEET_KEY_SECONDARY)
         
+        # Отладочная информация
+        logging.info(f"Открыта дополнительная таблица с ключом: {GOOGLE_SHEET_KEY_SECONDARY}")
+        logging.info(f"Доступные вкладки: {[f'{ws.title} (id={ws.id})' for ws in sheet.worksheets()]}")
+        
         # Открываем нужную вкладку по gid
         worksheet = None
         for ws in sheet.worksheets():
@@ -575,8 +586,7 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
             return False
         
         # Обработка данных
-        now = datetime.now()
-        creation_datetime = now.strftime('%d.%m.%Y %H:%M')
+        creation_datetime = get_moscow_time()  # Московское время UTC+3
         
         # Парсим дату бронирования
         booking_date = parse_booking_date(booking_data.get('date', ''))
