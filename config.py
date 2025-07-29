@@ -50,18 +50,9 @@ BOOKING_NOTIFICATIONS_CHAT_ID = -1002655754865  # Чат для заявок н�
 NASTOYKA_NOTIFICATIONS_CHAT_ID = -1002813620544  # Чат для уведомлений о настойках (отчеты, купоны)
 
 # --- Google Sheets ---
-GOOGLE_SHEET_KEY_RAW = os.getenv("GOOGLE_SHEET_KEY")
+GOOGLE_SHEET_KEY = os.getenv("GOOGLE_SHEET_KEY")  # Основная таблица
+GOOGLE_SHEET_KEY_SECONDARY = os.getenv("GOOGLE_SHEET_KEY_SECONDARY")  # Дополнительная таблица
 GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
-
-# Парсим ключи Google Sheets (может быть несколько через запятую)
-if GOOGLE_SHEET_KEY_RAW:
-    GOOGLE_SHEET_KEYS = [key.strip() for key in GOOGLE_SHEET_KEY_RAW.split(',') if key.strip()]
-    GOOGLE_SHEET_KEY = GOOGLE_SHEET_KEYS[0] if GOOGLE_SHEET_KEYS else None
-    # Дополнительные таблицы
-    GOOGLE_SHEET_KEY_SECONDARY = GOOGLE_SHEET_KEYS[1] if len(GOOGLE_SHEET_KEYS) > 1 else None
-else:
-    GOOGLE_SHEET_KEY = None
-    GOOGLE_SHEET_KEY_SECONDARY = None
 
 # --- Нейросеть (Новое) ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
