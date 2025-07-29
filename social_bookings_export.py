@@ -612,6 +612,14 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
         
         logging.info(f"✅ Найдена вкладка: {worksheet.title} (id={worksheet.id})")
         
+        # Проверяем количество колонок в таблице
+        try:
+            headers = worksheet.row_values(1)
+            logging.info(f"📋 Заголовки в таблице: {len(headers)} колонок")
+            logging.info(f"📋 Заголовки: {headers}")
+        except Exception as header_error:
+            logging.warning(f"⚠️ Не удалось получить заголовки: {header_error}")
+        
         # Обработка данных
         creation_datetime = get_moscow_time()  # Московское время UTC+3
         
@@ -699,11 +707,30 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
             user_id                                 # P: ID TG
         ]
         
+        # Проверяем и валидируем данные
+        if len(row_data) != 16:
+            logging.error(f"❌ Неправильное количество колонок: {len(row_data)}, ожидается 16")
+            return False
+        
+        # Валидация типов данных
+        for i, value in enumerate(row_data):
+            if value is None:
+                row_data[i] = ""
+            elif not isinstance(value, (str, int, float)):
+                row_data[i] = str(value)
+        
         # Добавляем строку в таблицу
         logging.info(f"📊 Подготовленная строка для второй таблицы: {len(row_data)} колонок")
         logging.info(f"📊 Данные: {row_data[:3]}...{row_data[-3:]}")  # Показываем первые и последние элементы
         
-        worksheet.append_row(row_data)
+        try:
+            logging.info("🔄 Начинаю запись в таблицу...")
+            worksheet.append_row(row_data)
+            logging.info("✅ Строка успешно записана в таблицу")
+        except Exception as append_error:
+            logging.error(f"❌ Ошибка при записи в таблицу: {append_error}")
+            logging.error(f"❌ Тип ошибки: {type(append_error)}")
+            raise append_error
         
         logging.info(f"✅ Заявка успешно экспортирована в дополнительную таблицу. Клиент: {booking_data.get('name', '')}, TG ID: {user_id}")
         return True
