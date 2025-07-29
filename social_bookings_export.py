@@ -577,8 +577,10 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
     Returns:
         bool: True если успешно, False если ошибка
     """
+    logging.info(f"🔄 Начинаю экспорт во вторую таблицу: user_id={user_id}, is_admin={is_admin_booking}")
+    
     if not GOOGLE_SHEET_KEY_SECONDARY:
-        logging.warning("Дополнительная таблица не настроена - GOOGLE_SHEET_KEY_SECONDARY отсутствует")
+        logging.warning("❌ Дополнительная таблица не настроена - GOOGLE_SHEET_KEY_SECONDARY отсутствует")
         return False
         
     try:
@@ -604,8 +606,11 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
                 break
         
         if not worksheet:
-            logging.error(f"Не найдена вкладка с gid={SECONDARY_BOOKINGS_SHEET_GID} в дополнительной таблице")
+            logging.error(f"❌ Не найдена вкладка с gid={SECONDARY_BOOKINGS_SHEET_GID} в дополнительной таблице")
+            logging.error(f"🔍 Доступные вкладки: {[f'{ws.title} (id={ws.id})' for ws in sheet.worksheets()]}")
             return False
+        
+        logging.info(f"✅ Найдена вкладка: {worksheet.title} (id={worksheet.id})")
         
         # Обработка данных
         creation_datetime = get_moscow_time()  # Московское время UTC+3
@@ -695,9 +700,12 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
         ]
         
         # Добавляем строку в таблицу
+        logging.info(f"📊 Подготовленная строка для второй таблицы: {len(row_data)} колонок")
+        logging.info(f"📊 Данные: {row_data[:3]}...{row_data[-3:]}")  # Показываем первые и последние элементы
+        
         worksheet.append_row(row_data)
         
-        logging.info(f"Заявка успешно экспортирована в дополнительную таблицу. Клиент: {booking_data.get('name', '')}, TG ID: {user_id}")
+        logging.info(f"✅ Заявка успешно экспортирована в дополнительную таблицу. Клиент: {booking_data.get('name', '')}, TG ID: {user_id}")
         return True
         
     except Exception as e:
