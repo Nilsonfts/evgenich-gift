@@ -7,13 +7,16 @@ import time
 from datetime import datetime, timedelta
 import re
 from typing import Optional, Dict, Any
-from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON
+from config import GOOGLE_SHEET_KEY, GOOGLE_SHEET_KEY_SECONDARY, GOOGLE_CREDENTIALS_JSON
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # ID вкладки "Заявки из Соц сетей"
 SOCIAL_BOOKINGS_SHEET_GID = "1842872487"
+
+# ID вкладки для дополнительной таблицы
+SECONDARY_BOOKINGS_SHEET_GID = "871899838"
 
 # UTM-метки для каждого источника
 SOURCE_UTM_DATA = {
@@ -422,6 +425,13 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
         worksheet.append_row(row_data)
         
         logging.info(f"Заявка успешно экспортирована в таблицу. Клиент: {booking_data.get('name', '')}, Админ: {admin_name}")
+        
+        # Также экспортируем в дополнительную таблицу
+        try:
+            export_booking_to_secondary_table(booking_data, admin_id, is_admin_booking=True)
+        except Exception as e:
+            logging.error(f"Ошибка экспорта в дополнительную таблицу: {e}")
+        
         return True
         
     except Exception as e:
@@ -510,10 +520,153 @@ def export_guest_booking_to_sheets(booking_data: Dict[str, Any], user_id: int = 
         worksheet.append_row(row_data)
         
         logging.info(f"Гостевая заявка успешно экспортирована в таблицу. Клиент: {booking_data.get('name', '')}")
+        
+        # Также экспортируем в дополнительную таблицу
+        try:
+            export_booking_to_secondary_table(booking_data, user_id, is_admin_booking=False)
+        except Exception as e:
+            logging.error(f"Ошибка экспорта в дополнительную таблицу: {e}")
+        
         return True
         
     except Exception as e:
         logging.error(f"Ошибка при экспорте гостевой заявки в Google Sheets: {e}")
+        return False
+
+def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int, is_admin_booking: bool = False) -> bool:
+    """
+    Экспортирует заявку в дополнительную таблицу с упрощенной структурой.
+    
+    Args:
+        booking_data: Словарь с данными бронирования
+        user_id: Telegram ID создателя заявки
+        is_admin_booking: Флаг админской заявки (для определения канала)
+    
+    Returns:
+        bool: True если успешно, False если ошибка
+    """
+    if not GOOGLE_SHEET_KEY_SECONDARY:
+        logging.warning("Дополнительная таблица не настроена - GOOGLE_SHEET_KEY_SECONDARY отсутствует")
+        return False
+        
+    try:
+        # Подключение к Google Sheets
+        credentials_info = json.loads(GOOGLE_CREDENTIALS_JSON)
+        credentials = Credentials.from_service_account_info(
+            credentials_info,
+            scopes=['https://www.googleapis.com/auth/spreadsheets']
+        )
+        
+        gc = gspread.authorize(credentials)
+        sheet = gc.open_by_key(GOOGLE_SHEET_KEY_SECONDARY)
+        
+        # Открываем нужную вкладку по gid
+        worksheet = None
+        for ws in sheet.worksheets():
+            if str(ws.id) == SECONDARY_BOOKINGS_SHEET_GID:
+                worksheet = ws
+                break
+        
+        if not worksheet:
+            logging.error(f"Не найдена вкладка с gid={SECONDARY_BOOKINGS_SHEET_GID} в дополнительной таблице")
+            return False
+        
+        # Обработка данных
+        now = datetime.now()
+        creation_datetime = now.strftime('%d.%m.%Y %H:%M')
+        
+        # Парсим дату бронирования
+        booking_date = parse_booking_date(booking_data.get('date', ''))
+        
+        # Объединяем дату и время
+        datetime_combined = f"{booking_date} {booking_data.get('time', '')}" if booking_data.get('time', '') else booking_date
+        
+        # Определяем канал и создателя
+        if is_admin_booking:
+            channel = "Админ-панель"
+            creator_name = get_admin_name_by_id(user_id)
+        else:
+            channel = "Гостевое бронирование"
+            creator_name = "👤 Посетитель (через бота)"
+        
+        # Получаем UTM-данные
+        if is_admin_booking:
+            source = booking_data.get('source', '')
+            utm_mapping = {
+                'source_vk': {
+                    'utm_source': 'vk',
+                    'utm_medium': 'social',
+                    'utm_campaign': 'admin_booking',
+                    'utm_content': 'admin_panel_booking',
+                    'utm_term': 'vk_social_booking'
+                },
+                'source_inst': {
+                    'utm_source': 'inst',
+                    'utm_medium': 'social', 
+                    'utm_campaign': 'admin_booking',
+                    'utm_content': 'admin_panel_booking',
+                    'utm_term': 'instagram_social_booking'
+                },
+                'source_bot_tg': {
+                    'utm_source': 'bot_tg',
+                    'utm_medium': 'bot',
+                    'utm_campaign': 'direct',
+                    'utm_content': 'telegram_bot',
+                    'utm_term': 'direct_booking'
+                },
+                'source_tg': {
+                    'utm_source': 'tg',
+                    'utm_medium': 'channel',
+                    'utm_campaign': 'bookevgenich',
+                    'utm_content': 'telegram_channel',
+                    'utm_term': 'channel_booking'
+                }
+            }
+            utm_data = utm_mapping.get(source, {
+                'utm_source': '',
+                'utm_medium': '',
+                'utm_campaign': '',
+                'utm_content': '',
+                'utm_term': ''
+            })
+        else:
+            # Для гостевых бронирований
+            utm_data = {
+                'utm_source': 'bot_tg',
+                'utm_medium': 'guest_booking', 
+                'utm_campaign': 'direct_guest',
+                'utm_content': 'bot_guest_booking',
+                'utm_term': 'guest_direct'
+            }
+        
+        # Формируем строку для новой таблицы (колонки A-P)
+        row_data = [
+            creation_datetime,                      # A: Дата Заявки
+            channel,                                # B: Канал
+            creator_name,                           # C: Кто создал заявку
+            'Новая',                                # D: Статус
+            f"BID-{int(time.time())}",              # E: ID us (ID заявки)
+            booking_data.get('name', ''),           # F: Имя Гостя
+            booking_data.get('phone', ''),          # G: Телефон
+            datetime_combined,                      # H: Дата / Время
+            booking_data.get('guests', ''),         # I: Кол-во гостей
+            booking_data.get('reason', ''),         # J: Повод Визита
+            utm_data.get('utm_source', ''),         # K: UTM Source (Источник)
+            utm_data.get('utm_medium', ''),         # L: UTM Medium (Канал)
+            utm_data.get('utm_campaign', ''),       # M: UTM Campaign (Кампания)
+            utm_data.get('utm_content', ''),        # N: UTM Content (Содержание)
+            utm_data.get('utm_term', ''),           # O: UTM Term (Ключ/Дата)
+            user_id                                 # P: ID TG
+        ]
+        
+        # Добавляем строку в таблицу
+        worksheet.append_row(row_data)
+        
+        logging.info(f"Заявка успешно экспортирована в дополнительную таблицу. Клиент: {booking_data.get('name', '')}, TG ID: {user_id}")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Ошибка при экспорте заявки в дополнительную таблицу: {e}")
         return False
 
 def test_date_parsing():
