@@ -689,22 +689,22 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
         
         # Формируем строку для новой таблицы (колонки A-P)
         row_data = [
-            creation_datetime,                      # A: Дата Заявки
-            channel,                                # B: Канал
-            creator_name,                           # C: Кто создал заявку
-            'Новая',                                # D: Статус
-            f"BID-{int(time.time())}",              # E: ID us (ID заявки)
-            booking_data.get('name', ''),           # F: Имя Гостя
-            booking_data.get('phone', ''),          # G: Телефон
-            datetime_combined,                      # H: Дата / Время
-            booking_data.get('guests', ''),         # I: Кол-во гостей
-            booking_data.get('reason', ''),         # J: Повод Визита
-            utm_data.get('utm_source', ''),         # K: UTM Source (Источник)
-            utm_data.get('utm_medium', ''),         # L: UTM Medium (Канал)
-            utm_data.get('utm_campaign', ''),       # M: UTM Campaign (Кампания)
-            utm_data.get('utm_content', ''),        # N: UTM Content (Содержание)
-            utm_data.get('utm_term', ''),           # O: UTM Term (Ключ/Дата)
-            user_id                                 # P: ID TG
+            booking_data.get('name', ''),           # A: Имя Гостя
+            booking_data.get('phone', ''),          # B: Телефон
+            datetime_combined,                      # C: Дата / Время
+            booking_data.get('guests', ''),         # D: Кол-во гостей
+            utm_data.get('utm_source', ''),         # E: UTM Source (Источник)
+            booking_data.get('reason', ''),         # F: Повод Визита
+            utm_data.get('utm_medium', ''),         # G: UTM Medium (Канал)
+            utm_data.get('utm_campaign', ''),       # H: UTM Campaign (Кампания)
+            utm_data.get('utm_content', ''),        # I: UTM Content (Содержание)
+            utm_data.get('utm_term', ''),           # J: UTM Term (Ключ/Дата)
+            user_id,                                # K: ID username
+            creation_datetime,                      # L: Дата Заявки
+            channel,                                # M: Канал
+            creator_name,                           # N: Кто создал заявку
+            'Новая',                                # O: Статус
+            f"BID-{int(time.time())}"               # P: ID us
         ]
         
         # Проверяем и валидируем данные
