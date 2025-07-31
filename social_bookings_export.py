@@ -687,29 +687,34 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
                 'utm_term': 'guest_direct'
             }
         
-        # Формируем строку для новой таблицы (колонки A-P)
+        # Формируем строку для новой таблицы (колонки A-R)
+        # Генерируем название сделки: ЕВГ_СПБ (имя) номер
+        deal_name = f"ЕВГ_СПБ ({booking_data.get('name', '')}) {booking_data.get('phone', '')}"
+        
         row_data = [
-            booking_data.get('name', ''),           # A: Имя Гостя
-            booking_data.get('phone', ''),          # B: Телефон
-            datetime_combined,                      # C: Дата / Время
-            booking_data.get('guests', ''),         # D: Кол-во гостей
-            utm_data.get('utm_source', ''),         # E: UTM Source (Источник)
-            booking_data.get('reason', ''),         # F: Повод Визита
-            utm_data.get('utm_medium', ''),         # G: UTM Medium (Канал)
-            utm_data.get('utm_campaign', ''),       # H: UTM Campaign (Кампания)
-            utm_data.get('utm_content', ''),        # I: UTM Content (Содержание)
-            utm_data.get('utm_term', ''),           # J: UTM Term (Ключ/Дата)
-            user_id,                                # K: ID username
-            creation_datetime,                      # L: Дата Заявки
-            channel,                                # M: Канал
-            creator_name,                           # N: Кто создал заявку
-            'Новая',                                # O: Статус
-            f"BID-{int(time.time())}"               # P: ID us
+            deal_name,                              # A: Сделка.Название
+            datetime_combined,                      # B: Сделка.Время прихода
+            booking_data.get('guests', ''),         # C: Сделка.Кол-во гостей
+            utm_data.get('utm_source', ''),         # D: Сделка.R.Источник сделки
+            "ЕВГ_СПБ",                              # E: Сделка.R.Тег города (автоматом)
+            booking_data.get('name', ''),           # F: Контакт.ФИО
+            booking_data.get('phone', ''),          # G: Контакт.Телефон
+            booking_data.get('reason', ''),         # H: Повод Визита
+            utm_data.get('utm_medium', ''),         # I: UTM Medium (Канал)
+            utm_data.get('utm_campaign', ''),       # J: UTM Campaign (Кампания)
+            utm_data.get('utm_content', ''),        # K: UTM Content (Содержание)
+            utm_data.get('utm_term', ''),           # L: UTM Term (Ключ/Дата)
+            user_id,                                # M: ID username
+            creation_datetime,                      # N: Дата Заявки
+            channel,                                # O: Канал
+            creator_name,                           # P: Кто создал заявку
+            'Новая',                                # Q: Статус
+            f"BID-{int(time.time())}"               # R: ID us
         ]
         
         # Проверяем и валидируем данные
-        if len(row_data) != 16:
-            logging.error(f"❌ Неправильное количество колонок: {len(row_data)}, ожидается 16")
+        if len(row_data) != 18:
+            logging.error(f"❌ Неправильное количество колонок: {len(row_data)}, ожидается 18")
             return False
         
         # Валидация типов данных
@@ -720,7 +725,7 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
                 row_data[i] = str(value)
         
         # Добавляем строку в таблицу
-        logging.info(f"📊 Подготовленная строка для второй таблицы: {len(row_data)} колонок")
+        logging.info(f"📊 Подготовленная строка для второй таблицы: {len(row_data)} колонок (A-R)")
         logging.info(f"📊 Данные: {row_data[:3]}...{row_data[-3:]}")  # Показываем первые и последние элементы
         
         try:
