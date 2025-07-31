@@ -1,0 +1,16 @@
+# Автоматически определять текстовые файлы и нормализовать их окончания строк
+* text=auto
+
+# Явно объявляем файлы, которые всегда должны использовать LF
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.json text eol=lf
+
+# Двоичные файлы, которые не должны быть изменены
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.db binary

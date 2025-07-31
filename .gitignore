@@ -2,10 +2,31 @@
 .env
 .venv
 venv/
+env/
+ENV/
+.python-version
 
 # Python cache
 __pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
 
 # Log files
 *.log
+logs/*.log
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Database files
+*.db
+*.sqlite3
 *.db
