@@ -8,7 +8,7 @@ from apscheduler.triggers.cron import CronTrigger
 import datetime
 import pytz
 
-from config import BOT_TOKEN, FRIEND_BONUS_STICKER_ID, REPORT_CHAT_ID, CHANNEL_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID
+from config import BOT_TOKEN, FRIEND_BONUS_STICKER_ID, REPORT_CHAT_ID, CHANNEL_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, USE_POSTGRES, DATABASE_URL, DATABASE_PATH
 import database
 import keyboards
 import texts
@@ -163,7 +163,14 @@ def run_nightly_auditor_job():
     logging.info(f"Аудитор: Проверка завершена. Найдено {left_count} отписавшихся.")
 
 if __name__ == "__main__":
-    logging.info("🔧 Инициализация базы данных...")
+    # Информация о подключении к базе данных
+    if USE_POSTGRES:
+        logging.info("🔧 Инициализация PostgreSQL базы данных...")
+        logging.info(f"📊 PostgreSQL URL: {DATABASE_URL.split('@')[-1] if DATABASE_URL else 'Не настроен'}")
+    else:
+        logging.info("🔧 Инициализация SQLite базы данных...")
+        logging.info(f"📄 SQLite DB path: {DATABASE_PATH}")
+    
     database.init_db()
 
     logging.info("🤖 Начинаю регистрацию обработчиков...")

@@ -69,6 +69,13 @@ MENU_URL = os.getenv("MENU_URL")
 # --- База данных ---
 DATABASE_PATH = os.getenv("DATABASE_PATH", "data/evgenich_data.db")
 
+# PostgreSQL
+USE_POSTGRES = os.getenv("USE_POSTGRES", "false").lower() == "true"
+DATABASE_URL = os.getenv("DATABASE_URL")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "railway")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+
 # --- Проверки ---
 if not all([
     BOT_TOKEN, CHANNEL_ID, ADMIN_IDS,

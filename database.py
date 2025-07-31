@@ -1,6 +1,6 @@
 # database.py
 """
-Модуль для управления базой данных SQLite с асинхронным дублированием в Google Sheets.
+Модуль для управления базой данных (SQLite или PostgreSQL) с асинхронным дублированием в Google Sheets.
 """
 import sqlite3
 import logging
@@ -13,7 +13,12 @@ import gspread
 import threading
 from collections import defaultdict
 from google.oauth2.service_account import Credentials
-from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON, DATABASE_PATH
+from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON, DATABASE_PATH, USE_POSTGRES, DATABASE_URL
+
+# Импортируем PostgreSQL клиент, если включен режим PostgreSQL
+if USE_POSTGRES:
+    from db.postgres_client import PostgresClient
+    pg_client = PostgresClient()
 
 # --- Настройки ---
 DB_FILE = DATABASE_PATH  # Используем путь из переменной окружения
@@ -319,19 +324,39 @@ def init_db():
 def add_new_user(user_id: int, username: str, first_name: str, source: str, referrer_id: Optional[int] = None, brought_by_staff_id: Optional[int] = None):
     """Добавляет нового пользователя, возможно с привязкой к сотруднику."""
     signup_time = datetime.datetime.now(pytz.utc)
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT OR IGNORE INTO users (user_id, username, first_name, source, referrer_id, brought_by_staff_id, signup_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (user_id, username or "N/A", first_name, source, referrer_id, brought_by_staff_id, signup_time)
-        )
-        conn.commit()
-        conn.close()
-        logging.info(f"SQLite | Пользователь {user_id} добавлен. Источник: {source}, Сотрудник: {brought_by_staff_id}")
-    except Exception as e:
-        logging.error(f"SQLite | Ошибка добавления пользователя {user_id}: {e}")
-        return
+    
+    if USE_POSTGRES:
+        # Добавление пользователя через PostgreSQL
+        try:
+            success = pg_client.add_new_user(
+                user_id=user_id,
+                username=username or "N/A",
+                first_name=first_name,
+                source=source,
+                referrer_id=referrer_id,
+                brought_by_staff_id=brought_by_staff_id
+            )
+            if not success:
+                logging.warning(f"PostgreSQL | Пользователь {user_id} уже существует или произошла ошибка")
+                return
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка добавления пользователя {user_id}: {e}")
+            return
+    else:
+        # Добавление пользователя через SQLite
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT OR IGNORE INTO users (user_id, username, first_name, source, referrer_id, brought_by_staff_id, signup_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, username or "N/A", first_name, source, referrer_id, brought_by_staff_id, signup_time)
+            )
+            conn.commit()
+            conn.close()
+            logging.info(f"SQLite | Пользователь {user_id} добавлен. Источник: {source}, Сотрудник: {brought_by_staff_id}")
+        except Exception as e:
+            logging.error(f"SQLite | Ошибка добавления пользователя {user_id}: {e}")
+            return
     # Логика для Google Sheets
     row_data = [
         signup_time.strftime('%Y-%m-%d %H:%M:%S'), user_id, first_name,
@@ -345,25 +370,41 @@ def add_new_user(user_id: int, username: str, first_name: str, source: str, refe
 def update_status(user_id: int, new_status: str) -> bool:
     redeem_time = datetime.datetime.now(pytz.utc) if new_status == 'redeemed' else None
     updated = False
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        if redeem_time:
-            # При погашении сразу ставим дату проверки, чтобы аудитор его проверил
-            cur.execute("UPDATE users SET status = ?, redeem_date = ?, last_check_date = ? WHERE user_id = ?", (new_status, redeem_time, datetime.datetime.now(pytz.utc), user_id))
-        else:
-            cur.execute("UPDATE users SET status = ? WHERE user_id = ?", (new_status, user_id))
-        updated = cur.rowcount > 0
-        conn.commit()
-        conn.close()
-        if updated:
-            logging.info(f"SQLite | Статус пользователя {user_id} обновлен на {new_status}.")
-            # Планируем отложенное сообщение при погашении купона
-            if new_status == 'redeemed':
+    
+    if USE_POSTGRES:
+        # Обновление статуса через PostgreSQL
+        try:
+            updated = pg_client.update_status(user_id, new_status)
+            
+            if updated and new_status == 'redeemed':
+                # Дополнительно сохраняем дату погашения и планируем сообщение
+                # Эти данные должны быть реализованы в PostgreSQL клиенте
+                # ToDo: Реализовать сохранение даты погашения в PostgreSQL
                 schedule_delayed_message(user_id, 'engagement_after_redeem', 10)
-    except Exception as e:
-        logging.error(f"SQLite | Ошибка обновления статуса для {user_id}: {e}")
-        return False
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка обновления статуса для {user_id}: {e}")
+            return False
+    else:
+        # Обновление статуса через SQLite
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            if redeem_time:
+                # При погашении сразу ставим дату проверки, чтобы аудитор его проверил
+                cur.execute("UPDATE users SET status = ?, redeem_date = ?, last_check_date = ? WHERE user_id = ?", (new_status, redeem_time, datetime.datetime.now(pytz.utc), user_id))
+            else:
+                cur.execute("UPDATE users SET status = ? WHERE user_id = ?", (new_status, user_id))
+            updated = cur.rowcount > 0
+            conn.commit()
+            conn.close()
+            if updated:
+                logging.info(f"SQLite | Статус пользователя {user_id} обновлен на {new_status}.")
+                # Планируем отложенное сообщение при погашении купона
+                if new_status == 'redeemed':
+                    schedule_delayed_message(user_id, 'engagement_after_redeem', 10)
+        except Exception as e:
+            logging.error(f"SQLite | Ошибка обновления статуса для {user_id}: {e}")
+            return False
     if updated and GOOGLE_SHEETS_ENABLED:
         threading.Thread(target=_update_status_in_sheets_in_background, args=(user_id, new_status, redeem_time)).start()
     return updated
