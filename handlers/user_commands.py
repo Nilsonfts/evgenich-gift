@@ -131,7 +131,7 @@ def register_user_command_handlers(bot):
                             'inst': 'Ссылка из Instagram', 
                             'menu': 'Меню в баре',
                             'flyer': 'Листовка на улице', 
-                            'streat': 'Уличное Меню',
+                            'street': 'Уличное Меню',
                             '2gis': '2ГИС Кнопка',
                             'site': 'Кнопка Сайт',
                             'taplink': 'Таплинк на ТВ'
