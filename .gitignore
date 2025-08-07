@@ -1,32 +1,26 @@
-# Environments
-.env
-.venv
-venv/
-env/
-ENV/
-.python-version
+# Ignore Google credentials file
+google_creds.json
 
-# Python cache
+# Ignore database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Ignore temporary test files
+check_pg_test_user.py
+check_env.py
+test_postgres_connection.py
+list_sheets.py
+
+# Python cache files
 __pycache__/
 *.py[cod]
 *$py.class
-.pytest_cache/
+
+# Virtual environment
+venv/
+env/
+ENV/
 
 # Log files
 *.log
-logs/*.log
-
-# IDE files
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Database files
-*.db
-*.sqlite3
-*.db
