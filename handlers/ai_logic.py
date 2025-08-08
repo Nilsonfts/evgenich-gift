@@ -5,7 +5,7 @@ from telebot import types
 from telebot.apihelper import ApiTelegramException
 from tinydb import TinyDB, Query
 
-from ai_assistant import get_ai_recommendation
+from ai.assistant import get_ai_recommendation
 import database
 import texts
 import keyboards
