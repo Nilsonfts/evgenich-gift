@@ -674,11 +674,16 @@ def get_daily_churn_data(start_time: datetime, end_time: datetime) -> Tuple[int,
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM users WHERE redeem_date BETWEEN ? AND ? AND status IN ('redeemed', 'redeemed_and_left')", (start_time, end_time))
+        
+        # Конвертируем datetime в строку ISO формата для SQLite
+        start_str = start_time.isoformat()
+        end_str = end_time.isoformat()
+        
+        cur.execute("SELECT COUNT(*) FROM users WHERE redeem_date BETWEEN ? AND ? AND status IN ('redeemed', 'redeemed_and_left')", (start_str, end_str))
         redeemed_total = cur.fetchone()[0]
         cur.execute(
             "SELECT COUNT(*) FROM users WHERE redeem_date BETWEEN ? AND ? AND status = 'redeemed_and_left'",
-            (start_time, end_time)
+            (start_str, end_str)
         )
         left_count = cur.fetchone()[0]
         conn.close()
@@ -714,11 +719,16 @@ def get_report_data_for_period(start_time: datetime, end_time: datetime) -> tupl
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM users WHERE signup_date BETWEEN ? AND ? AND status IN ('issued', 'redeemed', 'redeemed_and_left')", (start_time, end_time))
+        
+        # Конвертируем datetime в строку ISO формата для SQLite
+        start_str = start_time.isoformat()
+        end_str = end_time.isoformat()
+        
+        cur.execute("SELECT COUNT(*) FROM users WHERE signup_date BETWEEN ? AND ? AND status IN ('issued', 'redeemed', 'redeemed_and_left')", (start_str, end_str))
         issued_count = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM users WHERE redeem_date BETWEEN ? AND ?", (start_time, end_time))
+        cur.execute("SELECT COUNT(*) FROM users WHERE redeem_date BETWEEN ? AND ?", (start_str, end_str))
         redeemed_count = cur.fetchone()[0]
-        cur.execute("SELECT source, COUNT(*) FROM users WHERE signup_date BETWEEN ? AND ? GROUP BY source", (start_time, end_time))
+        cur.execute("SELECT source, COUNT(*) FROM users WHERE signup_date BETWEEN ? AND ? GROUP BY source", (start_str, end_str))
         all_sources = {row['source']: row['COUNT(*)'] for row in cur.fetchall()}
         
         # Фильтруем источники: все обычные источники
@@ -730,7 +740,7 @@ def get_report_data_for_period(start_time: datetime, end_time: datetime) -> tupl
             sources["staff"] = staff_count
         total_redeem_time_seconds = 0
         if redeemed_count > 0:
-            cur.execute("SELECT SUM(strftime('%s', redeem_date) - strftime('%s', signup_date)) FROM users WHERE redeem_date BETWEEN ? AND ? AND status IN ('redeemed', 'redeemed_and_left')", (start_time, end_time))
+            cur.execute("SELECT SUM(strftime('%s', redeem_date) - strftime('%s', signup_date)) FROM users WHERE redeem_date BETWEEN ? AND ? AND status IN ('redeemed', 'redeemed_and_left')", (start_str, end_str))
             total_redeem_time_seconds_row = cur.fetchone()[0]
             total_redeem_time_seconds = total_redeem_time_seconds_row or 0
         conn.close()
@@ -1244,12 +1254,17 @@ def get_staff_performance_for_period(start_time: datetime, end_time: datetime) -
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+        
+        # Конвертируем datetime в строку ISO формата для SQLite
+        start_str = start_time.isoformat()
+        end_str = end_time.isoformat()
+        
         cur.execute("""
             SELECT s.short_name, s.position, u.status
             FROM users u
             JOIN staff s ON u.brought_by_staff_id = s.staff_id
             WHERE u.signup_date BETWEEN ? AND ?
-        """, (start_time, end_time))
+        """, (start_str, end_str))
         
         results = cur.fetchall()
         conn.close()
@@ -1285,6 +1300,10 @@ def get_staff_qr_diagnostics_for_period(start_time: datetime, end_time: datetime
         conn = get_db_connection()
         cur = conn.cursor()
         
+        # Конвертируем datetime в строку ISO формата для SQLite
+        start_str = start_time.isoformat()
+        end_str = end_time.isoformat()
+        
         # Получаем всех активных сотрудников
         cur.execute("SELECT staff_id, full_name, short_name, unique_code, position FROM staff WHERE status = 'active'")
         active_staff = cur.fetchall()
@@ -1299,7 +1318,7 @@ def get_staff_qr_diagnostics_for_period(start_time: datetime, end_time: datetime
                 AND u.brought_by_staff_id IS NOT NULL
             GROUP BY u.brought_by_staff_id, s.full_name, s.short_name, s.unique_code
             ORDER BY count DESC
-        """, (start_time, end_time))
+        """, (start_str, end_str))
         successful_qr = cur.fetchall()
         
         # Получаем переходы с некорректными кодами
@@ -1310,7 +1329,7 @@ def get_staff_qr_diagnostics_for_period(start_time: datetime, end_time: datetime
                 AND source LIKE 'Неизвестный_сотрудник_%'
             GROUP BY source
             ORDER BY count DESC
-        """, (start_time, end_time))
+        """, (start_str, end_str))
         invalid_codes = cur.fetchall()
         
         # Получаем переходы "direct", которые могли быть некорректными QR-кодами
@@ -1319,7 +1338,7 @@ def get_staff_qr_diagnostics_for_period(start_time: datetime, end_time: datetime
             FROM users 
             WHERE signup_date BETWEEN ? AND ? 
                 AND source = 'direct'
-        """, (start_time, end_time))
+        """, (start_str, end_str))
         direct_count = cur.fetchone()['count']
         
         conn.close()
@@ -1345,6 +1364,10 @@ def get_staff_leaderboard(start_time: datetime, end_time: datetime, limit: int =
         conn = get_db_connection()
         cur = conn.cursor()
         
+        # Конвертируем datetime в строку ISO формата для SQLite
+        start_str = start_time.isoformat()
+        end_str = end_time.isoformat()
+        
         # Получаем статистику по каждому сотруднику
         cur.execute("""
             SELECT 
@@ -1359,12 +1382,12 @@ def get_staff_leaderboard(start_time: datetime, end_time: datetime, limit: int =
             FROM staff s
             LEFT JOIN users u ON s.staff_id = u.brought_by_staff_id 
                 AND u.source = 'staff'
-                AND u.registration_time BETWEEN ? AND ?
+                AND u.signup_date BETWEEN ? AND ?
             WHERE s.status = 'active'
             GROUP BY s.staff_id, s.full_name, s.short_name, s.position, s.unique_code
             ORDER BY attracted_users DESC, issued_coupons DESC
             LIMIT ?
-        """, (start_time, end_time, limit))
+        """, (start_str, end_str, limit))
         
         staff_stats = cur.fetchall()
         conn.close()
@@ -1398,6 +1421,10 @@ def get_staff_period_stats(start_time: datetime, end_time: datetime) -> dict:
         conn = get_db_connection()
         cur = conn.cursor()
         
+        # Конвертируем datetime в строку ISO формата для SQLite
+        start_str = start_time.isoformat()
+        end_str = end_time.isoformat()
+        
         # Получаем общие данные за период
         cur.execute("""
             SELECT 
@@ -1408,9 +1435,9 @@ def get_staff_period_stats(start_time: datetime, end_time: datetime) -> dict:
             FROM users u
             INNER JOIN staff s ON u.brought_by_staff_id = s.staff_id
             WHERE u.source = 'staff'
-                AND u.registration_time BETWEEN ? AND ?
+                AND u.signup_date BETWEEN ? AND ?
                 AND s.status = 'active'
-        """, (start_time, end_time))
+        """, (start_str, end_str))
         
         result = cur.fetchone()
         conn.close()
