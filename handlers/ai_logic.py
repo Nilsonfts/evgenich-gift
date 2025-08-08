@@ -32,19 +32,27 @@ def register_ai_handlers(bot):
         Обрабатывает любой текстовый запрос, который не был перехвачен
         другими обработчиками (командами, шагами бронирования).
         """
-        # --- ИЗМЕНЕНИЕ: Проверяем, что сообщение пришло не из служебных чатов ---
+        # --- ОТКЛЮЧЕНИЕ AI для служебных чатов ---
         try:
             # Проверяем все служебные чаты (отчеты, настойки, бронирования)
-            service_chats = [int(REPORT_CHAT_ID)] if REPORT_CHAT_ID else []
-            service_chats.extend([NASTOYKA_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID])
+            service_chats = []
+            if REPORT_CHAT_ID:
+                service_chats.append(int(REPORT_CHAT_ID))
+            if NASTOYKA_NOTIFICATIONS_CHAT_ID:
+                service_chats.append(NASTOYKA_NOTIFICATIONS_CHAT_ID)
+            if BOOKING_NOTIFICATIONS_CHAT_ID:
+                service_chats.append(BOOKING_NOTIFICATIONS_CHAT_ID)
+            
+            # Явно отключаем AI для чата настоек
+            service_chats.append(-1002813620544)  # Чат настоек - AI отключен
             
             if message.chat.id in service_chats:
-                return  # Если это служебный чат, просто выходим из функции
+                logging.info(f"AI отключен для служебного чата {message.chat.id}")
+                return  # Если это служебный чат, AI не отвечает
         except (ValueError, TypeError):
-            # Эта проверка на случай, если переменные не заданы или имеют неверный формат
-            logging.warning("Не удалось сравнить chat_id со служебными чатами. Проверьте переменные окружения.")
+            logging.warning("Не удалось проверить chat_id. AI может работать во всех чатах.")
             pass
-        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+        # --- КОНЕЦ БЛОКИРОВКИ AI ---
 
         user_id = message.from_user.id
         user_text = message.text
