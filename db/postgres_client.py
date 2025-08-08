@@ -459,3 +459,101 @@ class PostgresClient:
         except SQLAlchemyError as e:
             logging.error(f"PostgreSQL | Ошибка обновления концепции пользователя {user_id}: {e}")
             return False
+
+    def get_report_data_for_period(self, start_time: datetime.datetime, end_time: datetime.datetime) -> tuple:
+        """Получает данные для отчета за период из PostgreSQL."""
+        try:
+            with self.engine.connect() as connection:
+                # Количество выданных подарков (issued)
+                issued_stmt = select(sa.func.count()).select_from(self.users_table).where(
+                    sa.and_(
+                        self.users_table.c.signup_date >= start_time,
+                        self.users_table.c.signup_date <= end_time,
+                        self.users_table.c.status.in_(['issued', 'redeemed', 'redeemed_and_left'])
+                    )
+                )
+                issued_count = connection.execute(issued_stmt).scalar() or 0
+                
+                # Количество активированных подарков (redeemed)
+                redeemed_stmt = select(sa.func.count()).select_from(self.users_table).where(
+                    sa.and_(
+                        self.users_table.c.redeem_date >= start_time,
+                        self.users_table.c.redeem_date <= end_time
+                    )
+                )
+                redeemed_count = connection.execute(redeemed_stmt).scalar() or 0
+                
+                # Источники трафика
+                sources_stmt = select(
+                    self.users_table.c.source,
+                    sa.func.count().label('count')
+                ).select_from(self.users_table).where(
+                    sa.and_(
+                        self.users_table.c.signup_date >= start_time,
+                        self.users_table.c.signup_date <= end_time
+                    )
+                ).group_by(self.users_table.c.source)
+                
+                sources_result = connection.execute(sources_stmt).fetchall()
+                all_sources = {row.source: row.count for row in sources_result}
+                
+                # Фильтруем источники
+                sources = {k: v for k, v in all_sources.items() if k != "staff"}
+                staff_count = all_sources.get("staff", 0)
+                if staff_count > 0:
+                    sources["staff"] = staff_count
+                
+                # Общее время до активации
+                total_redeem_time_seconds = 0
+                if redeemed_count > 0:
+                    time_stmt = select(
+                        sa.func.sum(
+                            sa.func.extract('epoch', self.users_table.c.redeem_date) - 
+                            sa.func.extract('epoch', self.users_table.c.signup_date)
+                        )
+                    ).select_from(self.users_table).where(
+                        sa.and_(
+                            self.users_table.c.redeem_date >= start_time,
+                            self.users_table.c.redeem_date <= end_time,
+                            self.users_table.c.status.in_(['redeemed', 'redeemed_and_left'])
+                        )
+                    )
+                    total_redeem_time_seconds = connection.execute(time_stmt).scalar() or 0
+                
+                logging.info(f"PostgreSQL | Отчет за период: выдано {issued_count}, активировано {redeemed_count}")
+                return issued_count, redeemed_count, [], sources, total_redeem_time_seconds
+                
+        except SQLAlchemyError as e:
+            logging.error(f"PostgreSQL | Ошибка получения данных отчета: {e}")
+            return 0, 0, [], {}, 0
+
+    def get_daily_churn_data(self, start_time: datetime.datetime, end_time: datetime.datetime) -> tuple:
+        """Получает данные об оттоке за период из PostgreSQL."""
+        try:
+            with self.engine.connect() as connection:
+                # Всего активировано
+                redeemed_stmt = select(sa.func.count()).select_from(self.users_table).where(
+                    sa.and_(
+                        self.users_table.c.redeem_date >= start_time,
+                        self.users_table.c.redeem_date <= end_time,
+                        self.users_table.c.status.in_(['redeemed', 'redeemed_and_left'])
+                    )
+                )
+                redeemed_total = connection.execute(redeemed_stmt).scalar() or 0
+                
+                # Покинуло заведение
+                left_stmt = select(sa.func.count()).select_from(self.users_table).where(
+                    sa.and_(
+                        self.users_table.c.redeem_date >= start_time,
+                        self.users_table.c.redeem_date <= end_time,
+                        self.users_table.c.status == 'redeemed_and_left'
+                    )
+                )
+                left_count = connection.execute(left_stmt).scalar() or 0
+                
+                logging.info(f"PostgreSQL | Отток за период: активировано {redeemed_total}, ушло {left_count}")
+                return redeemed_total, left_count
+                
+        except SQLAlchemyError as e:
+            logging.error(f"PostgreSQL | Ошибка получения данных об оттоке: {e}")
+            return 0, 0

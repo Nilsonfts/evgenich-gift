@@ -672,6 +672,11 @@ def mark_user_as_left(user_id: int):
 
 def get_daily_churn_data(start_time: datetime, end_time: datetime) -> Tuple[int, int]:
     try:
+        # Используем PostgreSQL если включен
+        if USE_POSTGRES and pg_client:
+            return pg_client.get_daily_churn_data(start_time, end_time)
+        
+        # Иначе используем SQLite
         conn = get_db_connection()
         cur = conn.cursor()
         
@@ -717,6 +722,11 @@ def get_full_churn_analysis() -> Tuple[int, Dict[str, int]]:
 
 def get_report_data_for_period(start_time: datetime, end_time: datetime) -> tuple:
     try:
+        # Используем PostgreSQL если включен
+        if USE_POSTGRES and pg_client:
+            return pg_client.get_report_data_for_period(start_time, end_time)
+        
+        # Иначе используем SQLite
         conn = get_db_connection()
         cur = conn.cursor()
         
@@ -746,7 +756,7 @@ def get_report_data_for_period(start_time: datetime, end_time: datetime) -> tupl
         conn.close()
         return issued_count, redeemed_count, [], sources, total_redeem_time_seconds
     except Exception as e:
-        logging.error(f"Ошибка сбора данных для отчета в SQLite: {e}")
+        logging.error(f"Ошибка сбора данных для отчета: {e}")
         return 0, 0, [], {}, 0
 
 def log_conversation_turn(user_id: int, role: str, text: str):
