@@ -21,15 +21,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r web_requirements.txt
 
-# Создаем пользователя для безопасности
-RUN useradd -m -u 1000 webuser && chown -R webuser:webuser /app
-USER webuser
+# Копируем все файлы приложения
+COPY . .
 
-# Копируем приложение
-COPY --chown=webuser:webuser . .
-
-# Копируем startup скрипт
-COPY --chown=webuser:webuser railway-start.sh /app/
+# Делаем startup скрипт исполняемым
+RUN chmod +x railway-start.sh
 
 # Указываем порт
 EXPOSE 8080
