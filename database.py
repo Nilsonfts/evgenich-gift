@@ -1422,6 +1422,47 @@ def get_staff_period_stats(start_time: datetime, end_time: datetime) -> dict:
         return {}
 
 
+def get_all_users() -> List[Dict[str, Any]]:
+    """
+    Получает всех пользователей из базы данных.
+    Возвращает список словарей с данными пользователей.
+    """
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT 
+                user_id,
+                first_name,
+                username, 
+                real_name,
+                phone_number,
+                birth_date,
+                status,
+                source,
+                signup_date,
+                contact_shared_date,
+                redeem_date,
+                profile_completed,
+                ai_concept
+            FROM users 
+            ORDER BY signup_date DESC
+        """)
+        
+        users = []
+        for row in cur.fetchall():
+            users.append(dict(row))
+        
+        conn.close()
+        return users
+        
+    except Exception as e:
+        logging.error(f"Ошибка получения всех пользователей: {e}")
+        return []
+
+
 def get_all_users_for_report() -> List[Dict[str, Any]]:
     """
     Получает всех пользователей для полного отчета статистики.

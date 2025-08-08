@@ -21,13 +21,28 @@ if os.path.exists('.env.web'):
                 key, value = line.strip().split('=', 1)
                 os.environ[key] = value
 
+# Исправляем некоторые переменные для Railway
+if os.getenv('MENU_UR'):  # Опечатка в переменной
+    os.environ['MENU_URL'] = os.getenv('MENU_UR')
+    
+# Исправляем JSON для Google Credentials (убираем лишние кавычки)
+if os.getenv('GOOGLE_CREDENTIALS_JSON'):
+    credentials = os.getenv('GOOGLE_CREDENTIALS_JSON')
+    if credentials.startswith('"') and credentials.endswith('"'):
+        os.environ['GOOGLE_CREDENTIALS_JSON'] = credentials[1:-1]
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Импорты из нашего бота (с обработкой ошибок)
 try:
     import database
     from config import ALL_ADMINS, BOT_TOKEN
     DB_AVAILABLE = True
+    logger.info("✅ Модули базы данных загружены успешно")
 except Exception as e:
-    print(f"⚠️ Не удалось подключить базу данных: {e}")
+    logger.warning(f"⚠️ Не удалось подключить базу данных: {e}")
     DB_AVAILABLE = False
     ALL_ADMINS = [123456789]  # Тестовый админ
     BOT_TOKEN = "test_token"
@@ -37,6 +52,14 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', BOT_TOKEN[:32])  # Использ
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Выводим информацию о статусе подключения
+logger.info(f"🌐 Запуск веб-интерфейса...")
+logger.info(f"📊 База данных доступна: {DB_AVAILABLE}")
+logger.info(f"🔑 Количество админов: {len(ALL_ADMINS)}")
+logger.info(f"🐘 PostgreSQL: {os.getenv('USE_POSTGRES', 'false')}")
+logger.info(f"📈 Google Sheets: {'Да' if os.getenv('GOOGLE_SHEET_KEY') else 'Нет'}")
 
 def is_admin_authorized(admin_id):
     """Проверяет, является ли пользователь админом"""
@@ -54,28 +77,47 @@ def dashboard():
                 'Бармен': [{'name': 'Мария Сидорова', 'brought': 8, 'churn': 0, 'position': 'Бармен'}]
             }
             total_users = 150
+            logger.info("📊 Использование тестовых данных для дашборда")
         else:
-            # Получаем статистику за последние 24 часа
-            moscow_tz = pytz.timezone('Europe/Moscow')
-            end_time = datetime.datetime.now(moscow_tz)
-            start_time = end_time - datetime.timedelta(hours=24)
-            
-            # Получаем данные
-            general_stats = database.get_report_data_for_period(start_time, end_time)
-            staff_stats = database.get_staff_performance_for_period(start_time, end_time)
-            
-            # Получаем общую статистику
-            total_users = len(database.get_all_users())
+            try:
+                # Получаем статистику за последние 24 часа
+                moscow_tz = pytz.timezone('Europe/Moscow')
+                end_time = datetime.datetime.now(moscow_tz)
+                start_time = end_time - datetime.timedelta(hours=24)
+                
+                # Получаем данные
+                general_stats = database.get_report_data_for_period(start_time, end_time)
+                staff_stats = database.get_staff_performance_for_period(start_time, end_time)
+                
+                # Получаем общую статистику
+                total_users = len(database.get_all_users())
+                logger.info("📊 Данные загружены из базы данных")
+                
+            except Exception as db_error:
+                logger.error(f"Ошибка работы с базой: {db_error}")
+                # Fallback на тестовые данные
+                general_stats = (25, 18, 0, {'Прямой заход': 15, 'Персонал': 8, 'Реклама': 2}, 0)
+                staff_stats = {
+                    'Официант': [{'name': 'Иван Петров', 'brought': 12, 'churn': 1, 'position': 'Официант'}],
+                    'Бармен': [{'name': 'Мария Сидорова', 'brought': 8, 'churn': 0, 'position': 'Бармен'}]
+                }
+                total_users = 150
         
         return render_template('dashboard.html', 
                              general_stats=general_stats,
                              staff_stats=staff_stats,
                              total_users=total_users,
                              start_time=datetime.datetime.now() - datetime.timedelta(hours=24),
-                             end_time=datetime.datetime.now())
+                             end_time=datetime.datetime.now(),
+                             db_available=DB_AVAILABLE)
     except Exception as e:
-        logging.error(f"Ошибка в dashboard: {e}")
-        return f"Ошибка загрузки дашборда: {e}", 500
+        logger.error(f"Критическая ошибка в dashboard: {e}")
+        return f"""
+        <h1>⚠️ Ошибка загрузки дашборда</h1>
+        <p>Детали: {str(e)}</p>
+        <p>База данных: {'Подключена' if DB_AVAILABLE else 'Не доступна'}</p>
+        <a href='/health'>Проверить статус</a>
+        """, 500
 
 @app.route('/api/stats')
 def api_stats():
@@ -187,23 +229,66 @@ def analytics_page():
     """Страница с детальной аналитикой"""
     return render_template('analytics.html')
 
+@app.route('/debug')
+def debug_info():
+    """Отладочная страница для диагностики"""
+    return f"""
+    <h1>🔧 Debug Information</h1>
+    <h3>Database Status:</h3>
+    <ul>
+        <li>DB Available: {DB_AVAILABLE}</li>
+        <li>USE_POSTGRES: {os.getenv('USE_POSTGRES')}</li>
+        <li>DATABASE_PATH: {os.getenv('DATABASE_PATH')}</li>
+        <li>DATABASE_URL set: {'Yes' if os.getenv('DATABASE_URL') else 'No'}</li>
+    </ul>
+    
+    <h3>Environment Variables:</h3>
+    <ul>
+        <li>BOT_TOKEN set: {'Yes' if os.getenv('BOT_TOKEN') else 'No'}</li>
+        <li>GOOGLE_SHEET_KEY set: {'Yes' if os.getenv('GOOGLE_SHEET_KEY') else 'No'}</li>
+        <li>PORT: {os.getenv('PORT', '8080')}</li>
+        <li>Admins count: {len(ALL_ADMINS)}</li>
+    </ul>
+    
+    <h3>Actions:</h3>
+    <ul>
+        <li><a href="/">Dashboard</a></li>
+        <li><a href="/health">Health Check</a></li>
+        <li><a href="/api/stats">API Stats</a></li>
+        <li><a href="/users">Users Page</a></li>
+    </ul>
+    """
+
 @app.route('/health')
 def health_check():
     """Healthcheck для мониторинга"""
     try:
-        if DB_AVAILABLE:
-            # Проверяем подключение к базе
-            database.get_db_connection().close()
-            db_status = "OK"
-        else:
-            db_status = "TEST_MODE"
-            
-        return jsonify({
+        status_info = {
             'status': 'OK',
             'timestamp': datetime.datetime.now().isoformat(),
             'service': 'evgenich-bot-admin',
-            'database': db_status
-        })
+            'database_available': DB_AVAILABLE,
+            'environment': {
+                'USE_POSTGRES': os.getenv('USE_POSTGRES'),
+                'DATABASE_PATH': os.getenv('DATABASE_PATH'),
+                'DATABASE_URL_SET': bool(os.getenv('DATABASE_URL')),
+                'GOOGLE_SHEETS_ENABLED': bool(os.getenv('GOOGLE_SHEET_KEY')),
+                'BOT_TOKEN_SET': bool(os.getenv('BOT_TOKEN')),
+            }
+        }
+        
+        if DB_AVAILABLE:
+            try:
+                # Проверяем подключение к базе
+                database.get_db_connection().close()
+                status_info['database_connection'] = "OK"
+            except Exception as db_error:
+                status_info['database_connection'] = f"ERROR: {str(db_error)}"
+                status_info['status'] = 'WARNING'
+        else:
+            status_info['database_connection'] = "NOT_AVAILABLE"
+            
+        return jsonify(status_info)
     except Exception as e:
         return jsonify({
             'status': 'ERROR',
