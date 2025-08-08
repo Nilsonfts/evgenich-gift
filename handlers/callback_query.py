@@ -231,24 +231,19 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         concept = call.data.replace("concept_", "")
         user_id = call.from_user.id
         
-        # Сохраняем выбранную концепцию в базе данных
-        database.update_user_concept(user_id, concept)
+        # Принудительно устанавливаем концепцию "evgenich"
+        database.update_user_concept(user_id, "evgenich")
         
         concept_names = {
-            "rvv": "РВВ (Руки Вверх Винтаж)",
-            "evgenich": "ЕВГЕНИЧ (Классический)",
-            "nebar": "НЕБАР (Необычный барный стиль)",
-            "spletni": "СПЛЕТНИ (Дружеская болтовня)",
-            "orbita": "ОРБИТА (Космический стиль)"
+            "evgenich": "ЕВГЕНИЧ (Классический)"
         }
         
-        selected_name = concept_names.get(concept, concept.upper())
+        selected_name = concept_names.get("evgenich", "ЕВГЕНИЧ (Классический)")
         
         try:
             bot.edit_message_text(
-                f"✅ Отлично! Выбрана концепция: **{selected_name}**\n\n"
-                f"Теперь я буду общаться с тобой в этом стиле. "
-                f"Можешь в любой момент изменить концепцию через команду /concept",
+                f"✅ Отлично! Активна концепция: **{selected_name}**\n\n"
+                f"Я буду общаться с тобой в классическом стиле ЕВГЕНИЧ.",
                 call.message.chat.id,
                 call.message.message_id,
                 parse_mode="Markdown"

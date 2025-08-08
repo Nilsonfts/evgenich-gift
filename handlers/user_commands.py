@@ -47,19 +47,15 @@ def register_user_command_handlers(bot):
         
         current_concept = database.get_user_concept(user_id)
         concept_names = {
-            "rvv": "РВВ (Руки Вверх Винтаж)",
-            "evgenich": "ЕВГЕНИЧ (Классический)", 
-            "nebar": "НЕБАР (Необычный барный стиль)",
-            "spletni": "СПЛЕТНИ (Дружеская болтовня)",
-            "orbita": "ОРБИТА (Космический стиль)"
+            "evgenich": "ЕВГЕНИЧ (Классический)"
         }
         
-        current_name = concept_names.get(current_concept, "не выбрана")
+        current_name = concept_names.get(current_concept, "ЕВГЕНИЧ (Классический)")
         
         bot.send_message(
             message.chat.id,
-            f"🎭 **Мастер настройки чата**\n\n"
-            f"Выберите концепцию для этого чата:\n\n"
+            f"🎭 **Настройка AI-ассистента**\n\n"
+            f"Доступная концепция для этого чата:\n\n"
             f"Текущая концепция: **{current_name}**",
             reply_markup=keyboards.get_concept_choice_keyboard(),
             parse_mode="Markdown"

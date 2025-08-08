@@ -11,6 +11,19 @@ check_pg_test_user.py
 check_env.py
 test_postgres_connection.py
 list_sheets.py
+add_test_user.py
+check_pg_schema.py
+check_postgres.py
+check_schema.py
+migrate_sheets_to_postgres.py
+
+# Ignore migration scripts and examples
+simple_migrate.py
+sqlite_migrate.py
+direct_migrate.py
+dual_database_example.py
+migrate_db.py
+ai_assistant.py
 
 # Python cache files
 __pycache__/

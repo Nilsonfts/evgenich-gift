@@ -112,11 +112,7 @@ def get_concept_choice_keyboard():
     keyboard = types.InlineKeyboardMarkup(row_width=1)
     
     concepts = [
-        ("РВВ", "concept_rvv"),
-        ("ЕВГЕНИЧ", "concept_evgenich"), 
-        ("НЕБАР", "concept_nebar"),
-        ("СПЛЕТНИ", "concept_spletni"),
-        ("ОРБИТА", "concept_orbita")
+        ("ЕВГЕНИЧ", "concept_evgenich")
     ]
     
     buttons = [
