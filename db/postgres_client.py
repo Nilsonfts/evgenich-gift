@@ -433,3 +433,29 @@ class PostgresClient:
         except SQLAlchemyError as e:
             logging.error(f"PostgreSQL | Ошибка получения статистики игр для {user_id}: {e}")
             return []
+
+    def update_user_concept(self, user_id, concept):
+        """
+        Обновляет AI концепцию пользователя.
+        
+        Args:
+            user_id (int): ID пользователя
+            concept (str): Новая концепция AI ассистента
+        
+        Returns:
+            bool: True если успешно, False в случае ошибки
+        """
+        try:
+            with self.engine.connect() as connection:
+                stmt = update(self.users_table).where(
+                    self.users_table.c.user_id == user_id
+                ).values(ai_concept=concept)
+                
+                connection.execute(stmt)
+                connection.commit()
+                
+                logging.info(f"PostgreSQL | AI концепция пользователя {user_id} обновлена на {concept}")
+                return True
+        except SQLAlchemyError as e:
+            logging.error(f"PostgreSQL | Ошибка обновления концепции пользователя {user_id}: {e}")
+            return False

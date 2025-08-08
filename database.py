@@ -536,6 +536,69 @@ def get_referrer_id_from_user(user_id: int) -> Optional[int]:
         return int(user['referrer_id'])
     return None
 
+def get_user_concept(user_id: int) -> str:
+    """
+    Получает AI концепцию пользователя из базы данных.
+    
+    Args:
+        user_id (int): ID пользователя Telegram
+        
+    Returns:
+        str: Концепция AI ассистента ('evgenich' по умолчанию)
+    """
+    try:
+        if USE_POSTGRES:
+            user = pg_client.get_user_by_id(user_id)
+            if user and 'ai_concept' in user:
+                return user['ai_concept'] or 'evgenich'
+        
+        # Fallback на SQLite
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT ai_concept FROM users WHERE user_id = ?", (user_id,))
+        result = cur.fetchone()
+        conn.close()
+        
+        if result and result[0]:
+            return result[0]
+        
+        return 'evgenich'  # Значение по умолчанию
+        
+    except Exception as e:
+        logging.error(f"Ошибка при получении концепции пользователя {user_id}: {e}")
+        return 'evgenich'
+
+def update_user_concept(user_id: int, concept: str) -> bool:
+    """
+    Обновляет AI концепцию пользователя в базе данных.
+    
+    Args:
+        user_id (int): ID пользователя Telegram
+        concept (str): Новая концепция AI ассистента
+        
+    Returns:
+        bool: True если обновление успешно, False в противном случае
+    """
+    try:
+        if USE_POSTGRES:
+            success = pg_client.update_user_concept(user_id, concept)
+            if not success:
+                logging.warning(f"PostgreSQL | Не удалось обновить концепцию для пользователя {user_id}")
+        
+        # Обновляем в SQLite
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET ai_concept = ? WHERE user_id = ?", (concept, user_id))
+        conn.commit()
+        conn.close()
+        
+        logging.info(f"Концепция пользователя {user_id} обновлена на {concept}")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Ошибка при обновлении концепции пользователя {user_id}: {e}")
+        return False
+
 def get_redeemed_users_for_audit() -> List[sqlite3.Row]:
     try:
         conn = get_db_connection()
