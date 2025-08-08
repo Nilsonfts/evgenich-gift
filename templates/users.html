@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+
+{% block title %}Пользователи - Evgenich Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-users me-2"></i>
+                    Список пользователей
+                </h5>
+                <div class="d-flex gap-2">
+                    <input type="text" class="form-control" id="searchUsers" placeholder="Поиск пользователей..." style="width: 250px;">
+                    <button class="btn btn-primary" onclick="loadUsers()">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="usersLoader" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Загрузка...</span>
+                    </div>
+                    <div class="mt-2">Загрузка пользователей...</div>
+                </div>
+                
+                <div id="usersTable" style="display: none;">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Имя</th>
+                                    <th>Username</th>
+                                    <th>Телефон</th>
+                                    <th>Статус</th>
+                                    <th>Источник</th>
+                                    <th>Дата регистрации</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <nav>
+                        <ul class="pagination justify-content-center" id="usersPagination">
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно пользователя -->
+<div class="modal fade" id="userModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-user me-2"></i>
+                    Информация о пользователе
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="userModalBody">
+                <!-- Содержимое будет загружено динамически -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let currentPage = 1;
+let usersData = [];
+
+// Загрузка пользователей
+function loadUsers(page = 1) {
+    document.getElementById('usersLoader').style.display = 'block';
+    document.getElementById('usersTable').style.display = 'none';
+    
+    fetch(`/api/users?page=${page}&per_page=50`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                usersData = data.users;
+                currentPage = page;
+                renderUsers(data.users);
+                renderPagination(data.page, Math.ceil(data.total / data.per_page), data.total);
+                
+                document.getElementById('usersLoader').style.display = 'none';
+                document.getElementById('usersTable').style.display = 'block';
+            } else {
+                console.error('Ошибка загрузки пользователей:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Ошибка:', error);
+            document.getElementById('usersLoader').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Ошибка загрузки данных: ${error.message}
+                </div>
+            `;
+        });
+}
+
+// Отображение пользователей в таблице
+function renderUsers(users) {
+    const tbody = document.getElementById('usersTableBody');
+    tbody.innerHTML = '';
+    
+    users.forEach(user => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><span class="badge bg-light text-dark">${user.user_id}</span></td>
+            <td>
+                <div class="fw-bold">${user.real_name || user.first_name || 'Не указано'}</div>
+                ${user.real_name && user.first_name ? `<small class="text-muted">${user.first_name}</small>` : ''}
+            </td>
+            <td>${user.username ? '@' + user.username : '<span class="text-muted">Не указан</span>'}</td>
+            <td>${user.phone_number || '<span class="text-muted">Не указан</span>'}</td>
+            <td><span class="badge bg-${getStatusColor(user.status)}">${getStatusText(user.status)}</span></td>
+            <td>${user.source || 'Не указан'}</td>
+            <td>${user.signup_date ? new Date(user.signup_date).toLocaleDateString('ru-RU') : 'Не указана'}</td>
+            <td>
+                <button class="btn btn-sm btn-outline-primary" onclick="showUserDetails(${user.user_id})">
+                    <i class="fas fa-eye"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// Цвета для статусов
+function getStatusColor(status) {
+    const colors = {
+        'registered': 'secondary',
+        'active': 'success', 
+        'redeemed': 'primary',
+        'left': 'danger'
+    };
+    return colors[status] || 'secondary';
+}
+
+// Текст для статусов
+function getStatusText(status) {
+    const texts = {
+        'registered': 'Зарегистрирован',
+        'active': 'Активен',
+        'redeemed': 'Погасил купон',
+        'left': 'Покинул'
+    };
+    return texts[status] || status;
+}
+
+// Отображение пагинации
+function renderPagination(currentPage, totalPages, totalUsers) {
+    const pagination = document.getElementById('usersPagination');
+    pagination.innerHTML = '';
+    
+    // Информация о количестве
+    const info = document.createElement('li');
+    info.className = 'page-item disabled';
+    info.innerHTML = `<span class="page-link">Показано: ${usersData.length} из ${totalUsers}</span>`;
+    
+    // Предыдущая страница
+    if (currentPage > 1) {
+        const prev = document.createElement('li');
+        prev.className = 'page-item';
+        prev.innerHTML = `<a class="page-link" href="#" onclick="loadUsers(${currentPage - 1})">‹</a>`;
+        pagination.appendChild(prev);
+    }
+    
+    // Номера страниц (показываем только несколько)
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const pageItem = document.createElement('li');
+        pageItem.className = `page-item ${i === currentPage ? 'active' : ''}`;
+        pageItem.innerHTML = `<a class="page-link" href="#" onclick="loadUsers(${i})">${i}</a>`;
+        pagination.appendChild(pageItem);
+    }
+    
+    // Следующая страница
+    if (currentPage < totalPages) {
+        const next = document.createElement('li');
+        next.className = 'page-item';
+        next.innerHTML = `<a class="page-link" href="#" onclick="loadUsers(${currentPage + 1})">›</a>`;
+        pagination.appendChild(next);
+    }
+    
+    pagination.appendChild(info);
+}
+
+// Показать детали пользователя
+function showUserDetails(userId) {
+    const user = usersData.find(u => u.user_id === userId);
+    if (!user) return;
+    
+    const modalBody = document.getElementById('userModalBody');
+    modalBody.innerHTML = `
+        <div class="row">
+            <div class="col-6">
+                <strong>ID пользователя:</strong><br>
+                <span class="badge bg-light text-dark fs-6">${user.user_id}</span>
+            </div>
+            <div class="col-6">
+                <strong>Статус:</strong><br>
+                <span class="badge bg-${getStatusColor(user.status)} fs-6">${getStatusText(user.status)}</span>
+            </div>
+        </div>
+        <hr>
+        <div class="row">
+            <div class="col-6">
+                <strong>Telegram имя:</strong><br>
+                ${user.first_name || '<span class="text-muted">Не указано</span>'}
+            </div>
+            <div class="col-6">
+                <strong>Настоящее имя:</strong><br>
+                ${user.real_name || '<span class="text-muted">Не указано</span>'}
+            </div>
+        </div>
+        <hr>
+        <div class="row">
+            <div class="col-6">
+                <strong>Username:</strong><br>
+                ${user.username ? '@' + user.username : '<span class="text-muted">Не указан</span>'}
+            </div>
+            <div class="col-6">
+                <strong>Телефон:</strong><br>
+                ${user.phone_number || '<span class="text-muted">Не указан</span>'}
+            </div>
+        </div>
+        <hr>
+        <div class="row">
+            <div class="col-6">
+                <strong>Источник:</strong><br>
+                ${user.source || '<span class="text-muted">Не указан</span>'}
+            </div>
+            <div class="col-6">
+                <strong>Дата рождения:</strong><br>
+                ${user.birth_date || '<span class="text-muted">Не указана</span>'}
+            </div>
+        </div>
+        <hr>
+        <div class="row">
+            <div class="col-6">
+                <strong>Дата регистрации:</strong><br>
+                ${user.signup_date ? new Date(user.signup_date).toLocaleString('ru-RU') : '<span class="text-muted">Не указана</span>'}
+            </div>
+            <div class="col-6">
+                <strong>Контакт получен:</strong><br>
+                ${user.contact_shared_date ? new Date(user.contact_shared_date).toLocaleString('ru-RU') : '<span class="text-muted">Не указана</span>'}
+            </div>
+        </div>
+        ${user.redeem_date ? `
+        <hr>
+        <div class="row">
+            <div class="col-12">
+                <strong>Дата погашения:</strong><br>
+                ${new Date(user.redeem_date).toLocaleString('ru-RU')}
+            </div>
+        </div>
+        ` : ''}
+    `;
+    
+    const modal = new bootstrap.Modal(document.getElementById('userModal'));
+    modal.show();
+}
+
+// Поиск пользователей
+document.getElementById('searchUsers').addEventListener('input', function(e) {
+    const query = e.target.value.toLowerCase();
+    const filteredUsers = usersData.filter(user => 
+        (user.first_name && user.first_name.toLowerCase().includes(query)) ||
+        (user.real_name && user.real_name.toLowerCase().includes(query)) ||
+        (user.username && user.username.toLowerCase().includes(query)) ||
+        (user.phone_number && user.phone_number.includes(query)) ||
+        user.user_id.toString().includes(query)
+    );
+    renderUsers(filteredUsers);
+});
+
+// Загружаем пользователей при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    loadUsers();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,382 @@
+{% extends "base.html" %}
+
+{% block title %}Аналитика - Evgenich Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-chart-line me-2"></i>
+                    Подробная аналитика
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <label for="periodSelect" class="form-label">Период:</label>
+                        <select class="form-select" id="periodSelect" onchange="updateCharts()">
+                            <option value="7">Последние 7 дней</option>
+                            <option value="14">Последние 14 дней</option>
+                            <option value="30">Последние 30 дней</option>
+                        </select>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="row">
+                            <div class="col-4 text-center">
+                                <div class="h4 text-primary" id="totalIssued">-</div>
+                                <small class="text-muted">Всего выдано</small>
+                            </div>
+                            <div class="col-4 text-center">
+                                <div class="h4 text-success" id="totalRedeemed">-</div>
+                                <small class="text-muted">Всего погашено</small>
+                            </div>
+                            <div class="col-4 text-center">
+                                <div class="h4 text-info" id="avgConversion">-</div>
+                                <small class="text-muted">Средняя конверсия</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Динамика выдачи и погашения -->
+    <div class="col-lg-8 mb-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-chart-area me-2"></i>
+                    Динамика выдачи и погашения купонов
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="dynamicsChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Конверсия по дням -->
+    <div class="col-lg-4 mb-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-percentage me-2"></i>
+                    Конверсия по дням
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="conversionChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Источники трафика -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-chart-pie me-2"></i>
+                    Источники трафика (за период)
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="sourcesChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Активность по часам -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-clock me-2"></i>
+                    Активность по часам дня
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="hourlyChart"></canvas>
+                </div>
+                <div class="text-center mt-2">
+                    <small class="text-muted">Среднее количество регистраций по часам</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Статистика персонала -->
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-users-cog me-2"></i>
+                    Эффективность персонала (за выбранный период)
+                </h6>
+            </div>
+            <div class="card-body">
+                <div id="staffStats">
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let dynamicsChart, conversionChart, sourcesChart, hourlyChart;
+
+// Инициализация графиков
+function initCharts() {
+    // График динамики
+    const dynamicsCtx = document.getElementById('dynamicsChart').getContext('2d');
+    dynamicsChart = new Chart(dynamicsCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Выдано',
+                data: [],
+                borderColor: 'rgb(54, 162, 235)',
+                backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                tension: 0.4,
+                fill: true
+            }, {
+                label: 'Погашено',
+                data: [],
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true }
+            }
+        }
+    });
+    
+    // График конверсии
+    const conversionCtx = document.getElementById('conversionChart').getContext('2d');
+    conversionChart = new Chart(conversionCtx, {
+        type: 'bar',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Конверсия %',
+                data: [],
+                backgroundColor: 'rgba(255, 99, 132, 0.6)',
+                borderColor: 'rgba(255, 99, 132, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { 
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            }
+        }
+    });
+    
+    // График источников
+    const sourcesCtx = document.getElementById('sourcesChart').getContext('2d');
+    sourcesChart = new Chart(sourcesCtx, {
+        type: 'doughnut',
+        data: {
+            labels: [],
+            datasets: [{
+                data: [],
+                backgroundColor: [
+                    '#FF6384',
+                    '#36A2EB', 
+                    '#FFCE56',
+                    '#4BC0C0',
+                    '#9966FF',
+                    '#FF9F40'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+    
+    // График активности по часам
+    const hourlyCtx = document.getElementById('hourlyChart').getContext('2d');
+    hourlyChart = new Chart(hourlyCtx, {
+        type: 'bar',
+        data: {
+            labels: Array.from({length: 24}, (_, i) => `${i}:00`),
+            datasets: [{
+                label: 'Регистрации',
+                data: new Array(24).fill(0),
+                backgroundColor: 'rgba(153, 102, 255, 0.6)',
+                borderColor: 'rgba(153, 102, 255, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true }
+            }
+        }
+    });
+}
+
+// Обновление графиков
+function updateCharts() {
+    const days = document.getElementById('periodSelect').value;
+    
+    fetch(`/api/stats?days=${days}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Обновляем динамику
+                dynamicsChart.data.labels = data.data.map(item => {
+                    const date = new Date(item.date);
+                    return date.toLocaleDateString('ru-RU', { month: 'short', day: 'numeric' });
+                });
+                dynamicsChart.data.datasets[0].data = data.data.map(item => item.issued);
+                dynamicsChart.data.datasets[1].data = data.data.map(item => item.redeemed);
+                dynamicsChart.update();
+                
+                // Обновляем конверсию
+                conversionChart.data.labels = data.data.map(item => {
+                    const date = new Date(item.date);
+                    return date.toLocaleDateString('ru-RU', { month: 'short', day: 'numeric' });
+                });
+                conversionChart.data.datasets[0].data = data.data.map(item => item.conversion);
+                conversionChart.update();
+                
+                // Обновляем суммарную статистику
+                const totalIssued = data.data.reduce((sum, item) => sum + item.issued, 0);
+                const totalRedeemed = data.data.reduce((sum, item) => sum + item.redeemed, 0);
+                const avgConversion = totalIssued > 0 ? ((totalRedeemed / totalIssued) * 100).toFixed(1) : '0';
+                
+                document.getElementById('totalIssued').textContent = totalIssued;
+                document.getElementById('totalRedeemed').textContent = totalRedeemed;
+                document.getElementById('avgConversion').textContent = avgConversion + '%';
+                
+                // Симуляция данных для источников и часов (в реальности нужно добавить в API)
+                updateSourcesChart();
+                updateHourlyChart();
+                updateStaffStats(days);
+            }
+        })
+        .catch(error => console.error('Ошибка загрузки данных:', error));
+}
+
+// Обновление графика источников (заглушка)
+function updateSourcesChart() {
+    sourcesChart.data.labels = ['Прямой заход', 'Персонал', 'Реклама', 'Соц.сети', 'Другое'];
+    sourcesChart.data.datasets[0].data = [45, 25, 15, 10, 5]; // Примерные данные
+    sourcesChart.update();
+}
+
+// Обновление графика по часам (заглушка)
+function updateHourlyChart() {
+    // Симуляция данных активности по часам
+    const hourlyData = new Array(24).fill(0).map((_, i) => {
+        if (i >= 10 && i <= 23) return Math.floor(Math.random() * 15) + 1;
+        return Math.floor(Math.random() * 3);
+    });
+    
+    hourlyChart.data.datasets[0].data = hourlyData;
+    hourlyChart.update();
+}
+
+// Обновление статистики персонала
+function updateStaffStats(days) {
+    document.getElementById('staffStats').innerHTML = `
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <div class="card border-success">
+                    <div class="card-body text-center">
+                        <div class="h3 text-success">🥇</div>
+                        <div class="fw-bold">Иван П.</div>
+                        <div class="text-muted">Официант</div>
+                        <div class="h4 text-success">+24</div>
+                        <small class="text-muted">новых гостей</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card border-warning">
+                    <div class="card-body text-center">
+                        <div class="h3 text-warning">🥈</div>
+                        <div class="fw-bold">Мария С.</div>
+                        <div class="text-muted">Бармен</div>
+                        <div class="h4 text-warning">+18</div>
+                        <small class="text-muted">новых гостей</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card border-secondary">
+                    <div class="card-body text-center">
+                        <div class="h3 text-secondary">🥉</div>
+                        <div class="fw-bold">Алексей К.</div>
+                        <div class="text-muted">Менеджер</div>
+                        <div class="h4 text-secondary">+12</div>
+                        <small class="text-muted">новых гостей</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="text-center">
+            <small class="text-muted">
+                <i class="fas fa-info-circle me-1"></i>
+                Данные за выбранный период (${days} дней)
+            </small>
+        </div>
+    `;
+}
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    initCharts();
+    updateCharts();
+});
+</script>
+{% endblock %}
