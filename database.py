@@ -415,19 +415,34 @@ def update_user_contact(user_id: int, phone_number: str) -> bool:
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute(
-            "UPDATE users SET phone_number = ?, contact_shared_date = ? WHERE user_id = ?",
-            (phone_number, contact_time, user_id)
-        )
-        updated = cur.rowcount > 0
+        
+        # Сначала проверяем, существует ли пользователь
+        cur.execute("SELECT COUNT(*) FROM users WHERE user_id = ?", (user_id,))
+        user_exists = cur.fetchone()[0] > 0
+        
+        if not user_exists:
+            # Если пользователь не существует, создаем его с базовой информацией
+            cur.execute(
+                "INSERT INTO users (user_id, username, first_name, source, signup_date, phone_number, contact_shared_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, "N/A", "N/A", "contact_direct", contact_time, phone_number, contact_time)
+            )
+            logging.info(f"SQLite | Создан новый пользователь {user_id} с контактом: {phone_number}")
+        else:
+            # Если пользователь существует, обновляем его контакт
+            cur.execute(
+                "UPDATE users SET phone_number = ?, contact_shared_date = ? WHERE user_id = ?",
+                (phone_number, contact_time, user_id)
+            )
+            logging.info(f"SQLite | Контакт пользователя {user_id} обновлен: {phone_number}")
+        
         conn.commit()
         conn.close()
-        if updated:
-            logging.info(f"SQLite | Контакт пользователя {user_id} обновлен: {phone_number}")
-            # Обновляем в Google Sheets в фоновом режиме
-            if GOOGLE_SHEETS_ENABLED:
-                threading.Thread(target=_update_contact_in_sheets_in_background, args=(user_id, phone_number, contact_time)).start()
-        return updated
+        
+        # Обновляем в Google Sheets в фоновом режиме
+        if GOOGLE_SHEETS_ENABLED:
+            threading.Thread(target=_update_contact_in_sheets_in_background, args=(user_id, phone_number, contact_time)).start()
+        
+        return True
     except Exception as e:
         logging.error(f"SQLite | Ошибка обновления контакта для {user_id}: {e}")
         return False
@@ -437,19 +452,35 @@ def update_user_name(user_id: int, real_name: str) -> bool:
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute(
-            "UPDATE users SET real_name = ? WHERE user_id = ?",
-            (real_name, user_id)
-        )
-        updated = cur.rowcount > 0
+        
+        # Сначала проверяем, существует ли пользователь
+        cur.execute("SELECT COUNT(*) FROM users WHERE user_id = ?", (user_id,))
+        user_exists = cur.fetchone()[0] > 0
+        
+        if not user_exists:
+            # Если пользователь не существует, создаем его с базовой информацией
+            current_time = datetime.datetime.now(pytz.utc)
+            cur.execute(
+                "INSERT INTO users (user_id, username, first_name, source, signup_date, real_name) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, "N/A", real_name, "name_direct", current_time, real_name)
+            )
+            logging.info(f"SQLite | Создан новый пользователь {user_id} с именем: {real_name}")
+        else:
+            # Если пользователь существует, обновляем его имя
+            cur.execute(
+                "UPDATE users SET real_name = ? WHERE user_id = ?",
+                (real_name, user_id)
+            )
+            logging.info(f"SQLite | Имя пользователя {user_id} обновлено: {real_name}")
+        
         conn.commit()
         conn.close()
-        if updated:
-            logging.info(f"SQLite | Имя пользователя {user_id} обновлено: {real_name}")
-            # Обновляем в Google Sheets в фоновом режиме
-            if GOOGLE_SHEETS_ENABLED:
-                threading.Thread(target=_update_name_in_sheets_in_background, args=(user_id, real_name)).start()
-        return updated
+        
+        # Обновляем в Google Sheets в фоновом режиме
+        if GOOGLE_SHEETS_ENABLED:
+            threading.Thread(target=_update_name_in_sheets_in_background, args=(user_id, real_name)).start()
+        
+        return True
     except Exception as e:
         logging.error(f"SQLite | Ошибка обновления имени для {user_id}: {e}")
         return False
@@ -459,19 +490,35 @@ def update_user_birth_date(user_id: int, birth_date: str) -> bool:
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute(
-            "UPDATE users SET birth_date = ?, profile_completed = 1 WHERE user_id = ?",
-            (birth_date, user_id)
-        )
-        updated = cur.rowcount > 0
+        
+        # Сначала проверяем, существует ли пользователь
+        cur.execute("SELECT COUNT(*) FROM users WHERE user_id = ?", (user_id,))
+        user_exists = cur.fetchone()[0] > 0
+        
+        if not user_exists:
+            # Если пользователь не существует, создаем его с базовой информацией
+            current_time = datetime.datetime.now(pytz.utc)
+            cur.execute(
+                "INSERT INTO users (user_id, username, first_name, source, signup_date, birth_date, profile_completed) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, "N/A", "N/A", "birth_direct", current_time, birth_date, 1)
+            )
+            logging.info(f"SQLite | Создан новый пользователь {user_id} с датой рождения: {birth_date}")
+        else:
+            # Если пользователь существует, обновляем его дату рождения
+            cur.execute(
+                "UPDATE users SET birth_date = ?, profile_completed = 1 WHERE user_id = ?",
+                (birth_date, user_id)
+            )
+            logging.info(f"SQLite | Дата рождения пользователя {user_id} обновлена: {birth_date}")
+        
         conn.commit()
         conn.close()
-        if updated:
-            logging.info(f"SQLite | Дата рождения пользователя {user_id} обновлена: {birth_date}")
-            # Обновляем в Google Sheets в фоновом режиме
-            if GOOGLE_SHEETS_ENABLED:
-                threading.Thread(target=_update_birth_date_in_sheets_in_background, args=(user_id, birth_date)).start()
-        return updated
+        
+        # Обновляем в Google Sheets в фоновом режиме
+        if GOOGLE_SHEETS_ENABLED:
+            threading.Thread(target=_update_birth_date_in_sheets_in_background, args=(user_id, birth_date)).start()
+        
+        return True
     except Exception as e:
         logging.error(f"SQLite | Ошибка обновления даты рождения для {user_id}: {e}")
         return False
