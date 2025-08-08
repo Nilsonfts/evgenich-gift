@@ -1,24 +1,38 @@
-# Используем официальный Python образ
+# Python web app для Railway
 FROM python:3.12-slim
 
-# Устанавливаем рабочую директорию
+# Обновляем систему и устанавливаем зависимости
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        build-essential \
+        curl \
+        && rm -rf /var/lib/apt/lists/*
+
+# Создаем рабочую директорию
 WORKDIR /app
 
-# Копируем файлы зависимостей
-COPY requirements.txt web_requirements.txt ./
+# Копируем requirements файлы
+COPY web_requirements.txt .
+COPY requirements.txt .
 
-# Устанавливаем зависимости
-RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir -r web_requirements.txt
+# Устанавливаем Python зависимости
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r web_requirements.txt
 
-# Копируем все файлы проекта
-COPY . .
+# Создаем пользователя для безопасности
+RUN useradd -m -u 1000 webuser && chown -R webuser:webuser /app
+USER webuser
 
-# Создаем директории для данных
-RUN mkdir -p data logs
+# Копируем приложение
+COPY --chown=webuser:webuser . .
 
-# Экспонируем порт
+# Копируем startup скрипт
+COPY --chown=webuser:webuser railway-start.sh /app/
+
+# Указываем порт
 EXPOSE 8080
 
-# Команда запуска веб-приложения
-CMD ["python", "web_app.py"]
+# Startup command через наш скрипт
+CMD ["bash", "railway-start.sh"]

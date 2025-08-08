@@ -5,7 +5,7 @@
     "dockerfilePath": "web.Dockerfile"
   },
   "deploy": {
-    "startCommand": "python web_app.py",
+    "startCommand": "bash railway-start.sh",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 100,
     "restartPolicyType": "ON_FAILURE",

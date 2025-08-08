@@ -298,4 +298,6 @@ def health_check():
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
+    logger.info(f"🚀 Запуск веб-сервера на порту {port}")
+    logger.info(f"🌐 Railway URL: https://evgenich-gift-production.up.railway.app")
     app.run(host='0.0.0.0', port=port, debug=False)
