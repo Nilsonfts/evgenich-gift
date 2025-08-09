@@ -177,7 +177,8 @@ def get_admin_main_menu():
         types.InlineKeyboardButton("⚙️ Управление акциями", callback_data="admin_menu_promotions"),
         types.InlineKeyboardButton("📊 Отчеты и аналитика", callback_data="admin_menu_reports"),
         types.InlineKeyboardButton("📝 Управление контентом", callback_data="admin_menu_content"),
-        types.InlineKeyboardButton("👥 Управление персоналом", callback_data="admin_menu_staff"),
+        types.InlineKeyboardButton("� Система рассылок", callback_data="admin_menu_broadcasts"),
+        types.InlineKeyboardButton("�👥 Управление персоналом", callback_data="admin_menu_staff"),
         types.InlineKeyboardButton("👤 Управление пользователями", callback_data="admin_menu_users"),
         types.InlineKeyboardButton("💾 Управление данными", callback_data="admin_menu_data")
     )
@@ -466,6 +467,16 @@ def get_newsletter_creation_menu():
     )
     keyboard.add(
         types.InlineKeyboardButton("🔙 Назад", callback_data="admin_content_create")
+    )
+    return keyboard
+
+def get_admin_broadcasts_menu():
+    """Меню системы рассылок."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("📝 Создать рассылку", callback_data="broadcast_create"),
+        types.InlineKeyboardButton("📊 Статистика рассылок", callback_data="broadcast_stats"),
+        types.InlineKeyboardButton("🔙 Назад в админку", callback_data="admin_menu_main")
     )
     return keyboard
 

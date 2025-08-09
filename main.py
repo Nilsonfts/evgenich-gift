@@ -19,6 +19,7 @@ from handlers.booking_flow import register_booking_handlers
 from handlers.admin_panel import register_admin_handlers, send_report, init_admin_handlers
 from handlers.ai_logic import register_ai_handlers
 from handlers.iiko_data_handler import register_iiko_data_handlers
+from handlers.broadcast import register_broadcast_handlers
 from delayed_tasks_processor import DelayedTasksProcessor
 
 # Импортируем службу реферальных уведомлений
@@ -188,6 +189,7 @@ if __name__ == "__main__":
     register_admin_handlers(bot)
     register_ai_handlers(bot)
     register_iiko_data_handlers(bot)
+    register_broadcast_handlers(bot)
     
     # Инициализируем систему рассылок с планировщиком
     init_admin_handlers(bot, scheduler)

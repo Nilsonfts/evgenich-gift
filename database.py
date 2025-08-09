@@ -189,8 +189,7 @@ def init_db():
             cur.execute("SELECT referrer_rewarded_date FROM users LIMIT 1")
         except sqlite3.OperationalError:
             cur.execute("ALTER TABLE users ADD COLUMN referrer_rewarded_date TEXT")
-            cur.execute("ALTER TABLE users ADD COLUMN referrer_rewarded_date TEXT")
-            logging.info("База данных обновлена: добавлена колонка phone_number")
+            logging.info("База данных обновлена: добавлена колонка referrer_rewarded_date")
 
         # Проверка и добавление колонки contact_shared_date для даты предоставления контакта
         try:
@@ -226,6 +225,19 @@ def init_db():
         except sqlite3.OperationalError:
             cur.execute("ALTER TABLE users ADD COLUMN ai_concept TEXT DEFAULT 'evgenich'")
             logging.info("База данных обновлена: добавлена колонка ai_concept")
+
+        # Проверка и добавление колонок для системы рассылок
+        try:
+            cur.execute("SELECT blocked FROM users LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute("ALTER TABLE users ADD COLUMN blocked INTEGER DEFAULT 0")
+            logging.info("База данных обновлена: добавлена колонка blocked")
+
+        try:
+            cur.execute("SELECT block_date FROM users LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute("ALTER TABLE users ADD COLUMN block_date TEXT")
+            logging.info("База данных обновлена: добавлена колонка block_date")
 
         # --- НОВАЯ ТАБЛИЦА: Персонал (staff) ---
         cur.execute("""
@@ -1790,3 +1802,120 @@ def get_all_users_for_report() -> List[Dict[str, Any]]:
     except Exception as e:
         logging.error(f"Ошибка получения всех пользователей для отчета: {e}")
         return []
+
+
+def get_all_users_for_broadcast():
+    """
+    Получает список всех пользователей для рассылки (исключая заблокировавших бота)
+    """
+    try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.get_all_users_for_broadcast()
+        
+        # SQLite версия
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Получаем всех активных пользователей (не заблокировавших бота)
+        cur.execute("""
+            SELECT user_id, username, first_name, signup_date
+            FROM users 
+            WHERE (blocked IS NULL OR blocked = 0)
+            AND user_id IS NOT NULL
+            ORDER BY signup_date DESC
+        """)
+        
+        users = []
+        for row in cur.fetchall():
+            users.append({
+                'user_id': row[0],
+                'username': row[1],
+                'first_name': row[2], 
+                'signup_date': row[3]
+            })
+        
+        conn.close()
+        logging.info(f"Найдено {len(users)} пользователей для рассылки")
+        return users
+        
+    except Exception as e:
+        logging.error(f"Ошибка получения пользователей для рассылки: {e}")
+        return []
+
+
+def mark_user_blocked(user_id):
+    """
+    Отмечает пользователя как заблокировавшего бота
+    """
+    try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.mark_user_blocked(user_id)
+        
+        # SQLite версия
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            UPDATE users 
+            SET blocked = 1, block_date = ?
+            WHERE user_id = ?
+        """, (datetime.datetime.now(pytz.utc).isoformat(), user_id))
+        
+        conn.commit()
+        success = cur.rowcount > 0
+        conn.close()
+        
+        if success:
+            logging.info(f"Пользователь {user_id} отмечен как заблокировавший бота")
+        
+        return success
+        
+    except Exception as e:
+        logging.error(f"Ошибка отметки блокировки пользователя {user_id}: {e}")
+        return False
+
+
+def get_broadcast_statistics():
+    """
+    Получает статистику для рассылок
+    """
+    try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.get_broadcast_statistics()
+        
+        # SQLite версия
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Общее количество пользователей
+        cur.execute("SELECT COUNT(*) FROM users WHERE user_id IS NOT NULL")
+        total_users = cur.fetchone()[0]
+        
+        # Активные пользователи (не заблокировавшие бота)
+        cur.execute("SELECT COUNT(*) FROM users WHERE (blocked IS NULL OR blocked = 0) AND user_id IS NOT NULL")
+        active_users = cur.fetchone()[0]
+        
+        # Заблокировавшие бота
+        cur.execute("SELECT COUNT(*) FROM users WHERE blocked = 1")
+        blocked_users = cur.fetchone()[0]
+        
+        # Пользователи за последние 30 дней
+        cur.execute("""
+            SELECT COUNT(*) FROM users 
+            WHERE user_id IS NOT NULL 
+            AND julianday('now') - julianday(signup_date) <= 30
+        """)
+        recent_users = cur.fetchone()[0]
+        
+        conn.close()
+        
+        return {
+            'total': total_users,
+            'active': active_users,
+            'blocked': blocked_users,
+            'recent_30d': recent_users
+        }
+        
+    except Exception as e:
+        logging.error(f"Ошибка получения статистики рассылки: {e}")
+        return None

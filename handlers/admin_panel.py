@@ -429,6 +429,30 @@ def register_admin_handlers(bot):
                 bot.edit_message_text("📊 **Отчеты и аналитика**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_reports_menu())
             elif action == 'admin_menu_content':
                 bot.edit_message_text("📝 **Управление контентом**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_content_menu())
+            elif action == 'admin_menu_broadcasts':
+                # Показываем меню рассылок с базовой статистикой
+                stats = database.get_broadcast_statistics()
+                
+                text = "📢 *Система рассылок*\n\n"
+                
+                if stats:
+                    text += f"📊 **Статистика пользователей:**\n"
+                    text += f"• Всего зарегистрировано: {stats['total']}\n"
+                    text += f"• Активных (получат рассылку): {stats['active']}\n"
+                    text += f"• Заблокировали бота: {stats['blocked']}\n"
+                    text += f"• Новых за 30 дней: {stats['recent_30d']}\n\n"
+                else:
+                    text += "❌ Не удалось получить статистику\n\n"
+                
+                text += "Выберите действие:"
+                
+                bot.edit_message_text(
+                    text, 
+                    call.message.chat.id, 
+                    call.message.message_id, 
+                    reply_markup=keyboards.get_admin_broadcasts_menu(),
+                    parse_mode="Markdown"
+                )
             elif action == 'admin_newsletter_main':
                 bot.edit_message_text("📧 **Система рассылок**\n\nВыберите действие:", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_content_management_menu(), parse_mode="Markdown")
             
@@ -652,6 +676,71 @@ def register_admin_handlers(bot):
                 bot.edit_message_text("💾 **Управление данными**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_data_menu())
             elif action == 'admin_menu_staff':
                 bot.edit_message_text("👥 **Управление персоналом**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_staff_menu())
+            
+            # СИСТЕМА РАССЫЛОК
+            elif action == 'broadcast_create':
+                # Перенаправляем к созданию рассылки
+                keyboard = types.InlineKeyboardMarkup()
+                keyboard.row(
+                    types.InlineKeyboardButton("📝 Текстовая рассылка", callback_data="broadcast_text"),
+                    types.InlineKeyboardButton("📷 Рассылка с медиа", callback_data="broadcast_media")
+                )
+                keyboard.row(
+                    types.InlineKeyboardButton("🔙 Назад", callback_data="admin_menu_broadcasts"),
+                    types.InlineKeyboardButton("❌ Отмена", callback_data="broadcast_cancel")
+                )
+                
+                text = "📢 *Создание рассылки*\n\n"
+                text += "Выберите тип рассылки:"
+                
+                bot.edit_message_text(
+                    text,
+                    call.message.chat.id,
+                    call.message.message_id,
+                    parse_mode="Markdown",
+                    reply_markup=keyboard
+                )
+            
+            elif action == 'broadcast_stats':
+                # Показываем детальную статистику рассылок
+                stats = database.get_broadcast_statistics()
+                
+                if not stats:
+                    bot.answer_callback_query(call.id, "❌ Не удалось получить статистику")
+                    return
+                
+                text = "📊 *Детальная статистика рассылок*\n\n"
+                
+                text += f"👥 **Пользователи:**\n"
+                text += f"• Всего зарегистрировано: {stats['total']}\n"
+                text += f"• ✅ Активных: {stats['active']} ({round(stats['active']/stats['total']*100, 1) if stats['total'] > 0 else 0}%)\n"
+                text += f"• 🚫 Заблокировали бота: {stats['blocked']} ({round(stats['blocked']/stats['total']*100, 1) if stats['total'] > 0 else 0}%)\n"
+                text += f"• 🆕 За последние 30 дней: {stats['recent_30d']}\n\n"
+                
+                text += f"📈 **Охват рассылки:**\n"
+                text += f"• Получат сообщения: **{stats['active']}** пользователей\n"
+                text += f"• Не получат (заблокировали): {stats['blocked']} пользователей\n\n"
+                
+                text += f"💡 **Рекомендации:**\n"
+                if stats['total'] > 0 and stats['blocked'] > stats['total'] * 0.1:  # Если более 10% заблокировали
+                    text += f"⚠️ Высокий процент заблокировавших ({round(stats['blocked']/stats['total']*100, 1)}%). "
+                    text += f"Рекомендуем создавать более интересный контент.\n"
+                else:
+                    text += f"✅ Хороший уровень активности пользователей!\n"
+                
+                keyboard = types.InlineKeyboardMarkup()
+                keyboard.row(
+                    types.InlineKeyboardButton("📝 Создать рассылку", callback_data="broadcast_create"),
+                    types.InlineKeyboardButton("🔙 Назад", callback_data="admin_menu_broadcasts")
+                )
+                
+                bot.edit_message_text(
+                    text,
+                    call.message.chat.id,
+                    call.message.message_id,
+                    parse_mode="Markdown",
+                    reply_markup=keyboard
+                )
             
             # УПРАВЛЕНИЕ ПЕРСОНАЛОМ
             elif action == 'admin_list_staff':

@@ -61,6 +61,8 @@ class PostgresClient:
             Column('redeem_date', DateTime),
             Column('referrer_rewarded', Boolean, default=False),
             Column('referrer_rewarded_date', DateTime),
+            Column('blocked', Boolean, default=False),
+            Column('block_date', DateTime),
         )
         
         # Таблица сотрудников
@@ -766,3 +768,120 @@ class PostgresClient:
         except Exception as e:
             logging.error(f"PostgreSQL | Ошибка получения недавних активаций рефералов: {e}")
             return []
+
+    def get_all_users_for_broadcast(self):
+        """
+        Получает список всех пользователей для рассылки
+        """
+        try:
+            with self.engine.connect() as connection:
+                stmt = select(
+                    self.users_table.c.user_id,
+                    self.users_table.c.username,
+                    self.users_table.c.first_name,
+                    self.users_table.c.register_date
+                ).where(
+                    sa.and_(
+                        self.users_table.c.user_id.isnot(None),
+                        sa.or_(
+                            self.users_table.c.blocked.is_(None),
+                            self.users_table.c.blocked == False
+                        )
+                    )
+                ).order_by(self.users_table.c.register_date.desc())
+                
+                result = connection.execute(stmt).fetchall()
+                
+                users = []
+                for row in result:
+                    user_id, username, first_name, signup_date = row
+                    users.append({
+                        'user_id': user_id,
+                        'username': username,
+                        'first_name': first_name,
+                        'signup_date': signup_date.isoformat() if signup_date else None
+                    })
+                
+                logging.info(f"PostgreSQL | Найдено {len(users)} пользователей для рассылки")
+                return users
+                
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка получения пользователей для рассылки: {e}")
+            return []
+
+    def mark_user_blocked(self, user_id):
+        """
+        Отмечает пользователя как заблокировавшего бота
+        """
+        try:
+            with self.engine.connect() as connection:
+                stmt = update(self.users_table).where(
+                    self.users_table.c.user_id == user_id
+                ).values(
+                    blocked=True,
+                    block_date=datetime.datetime.now(pytz.utc)
+                )
+                
+                result = connection.execute(stmt)
+                connection.commit()
+                
+                if result.rowcount > 0:
+                    logging.info(f"PostgreSQL | Пользователь {user_id} отмечен как заблокировавший бота")
+                
+                return result.rowcount > 0
+                
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка отметки блокировки пользователя {user_id}: {e}")
+            return False
+
+    def get_broadcast_statistics(self):
+        """
+        Получает статистику для рассылок
+        """
+        try:
+            with self.engine.connect() as connection:
+                # Общее количество пользователей
+                stmt = select(sa.func.count()).select_from(self.users_table).where(
+                    self.users_table.c.user_id.isnot(None)
+                )
+                total_users = connection.execute(stmt).scalar()
+                
+                # Активные пользователи
+                stmt = select(sa.func.count()).select_from(self.users_table).where(
+                    sa.and_(
+                        self.users_table.c.user_id.isnot(None),
+                        sa.or_(
+                            self.users_table.c.blocked.is_(None),
+                            self.users_table.c.blocked == False
+                        )
+                    )
+                )
+                active_users = connection.execute(stmt).scalar()
+                
+                # Заблокировавшие бота
+                stmt = select(sa.func.count()).select_from(self.users_table).where(
+                    self.users_table.c.blocked == True
+                )
+                blocked_users = connection.execute(stmt).scalar()
+                
+                # Пользователи за последние 30 дней
+                from datetime import timedelta
+                thirty_days_ago = datetime.datetime.now(pytz.utc) - timedelta(days=30)
+                stmt = select(sa.func.count()).select_from(self.users_table).where(
+                    sa.and_(
+                        self.users_table.c.user_id.isnot(None),
+                        self.users_table.c.register_date >= thirty_days_ago
+                    )
+                )
+                recent_users = connection.execute(stmt).scalar()
+                
+                return {
+                    'total': total_users or 0,
+                    'active': active_users or 0,
+                    'blocked': blocked_users or 0,
+                    'recent_30d': recent_users or 0
+                }
+                
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка получения статистики рассылки: {e}")
+            return None
