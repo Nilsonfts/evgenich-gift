@@ -46,6 +46,8 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             callback_concept_choice(call)
         elif call.data.startswith("quiz_answer_"):
             callback_quiz_answer(call)
+        elif call.data == "check_referral_rewards":
+            handle_check_referral_rewards(call)
         else:
             logging.warning(f"Неизвестный callback: {call.data}")
             bot.answer_callback_query(call.id, "Неизвестная команда")
@@ -297,4 +299,72 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         except Exception as e:
             logging.error(f"Ошибка при обработке ответа викторины для пользователя {user_id}: {e}")
             bot.answer_callback_query(call.id, "Произошла ошибка")
+
+    def handle_check_referral_rewards(call: types.CallbackQuery):
+        """
+        Проверяет и выдает награды за рефералов
+        """
+        user_id = call.from_user.id
+        
+        try:
+            stats = database.get_referral_stats(user_id)
+            
+            if not stats or not stats['pending']:
+                bot.answer_callback_query(call.id, "У вас нет ожидающих наград", show_alert=True)
+                return
+            
+            rewards_given = 0
+            messages = []
+            
+            for ref in stats['pending']:
+                if ref['can_claim']:
+                    # Проверяем право на награду
+                    eligible, reason = database.check_referral_reward_eligibility(user_id, ref['user_id'])
+                    
+                    if eligible:
+                        # Выдаем награду
+                        success = database.mark_referral_rewarded(user_id, ref['user_id'])
+                        
+                        if success:
+                            rewards_given += 1
+                            name = ref['first_name'] or ref['username'] or f"ID{ref['user_id']}"
+                            messages.append(f"✅ Награда за {name} получена!")
+                    else:
+                        name = ref['first_name'] or ref['username'] or f"ID{ref['user_id']}"
+                        messages.append(f"❌ {name}: {reason}")
+            
+            # Формируем ответ
+            if rewards_given > 0:
+                response = f"🎉 Поздравляем! Вы получили {rewards_given} наград(ы)!\n\n"
+                response += "\n".join(messages)
+                
+                # Генерируем уникальный код награды
+                reward_code = f"REF{user_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                
+                # Отправляем уведомление с наградой
+                reward_message = f"🎁 *Ваша награда за приглашение друзей!*\n\n"
+                reward_message += f"Вы получили {rewards_given} бесплатную(ые) настойку(и)!\n\n"
+                reward_message += f"📱 Покажите этот код бармену:\n`{reward_code}`\n\n"
+                reward_message += "✨ Спасибо за то, что приводите друзей к нам!"
+                
+                # Отправляем код награды отдельным сообщением
+                bot.send_message(call.message.chat.id, reward_message, parse_mode="Markdown")
+                
+                # Логируем выдачу награды
+                logging.info(f"Выдана реферальная награда пользователю {user_id}: {rewards_given} наград, код {reward_code}")
+                
+            else:
+                response = "⏳ Пока нет доступных наград. Проверьте позже!\n\n"
+                if messages:
+                    response += "\n".join(messages)
+            
+            bot.answer_callback_query(call.id, f"Проверено! {rewards_given} наград получено." if rewards_given > 0 else "Наград пока нет.")
+            
+            # Обновляем сообщение с текущей статистикой
+            from .user_commands import handle_friend_command
+            handle_friend_command(call.message)
+            
+        except Exception as e:
+            logging.error(f"Ошибка при проверке реферальных наград для {user_id}: {e}")
+            bot.answer_callback_query(call.id, "Произошла ошибка при проверке наград", show_alert=True)
             bot.send_message(user_id, "Произошла ошибка при обработке ответа. Попробуйте еще раз.")

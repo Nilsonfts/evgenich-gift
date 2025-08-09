@@ -58,6 +58,9 @@ class PostgresClient:
             Column('source', String(50)),
             Column('referrer_id', Integer),
             Column('brought_by_staff_id', Integer),
+            Column('redeem_date', DateTime),
+            Column('referrer_rewarded', Boolean, default=False),
+            Column('referrer_rewarded_date', DateTime),
         )
         
         # Таблица сотрудников
@@ -546,3 +549,178 @@ class PostgresClient:
         except SQLAlchemyError as e:
             logging.error(f"PostgreSQL | Ошибка получения данных об оттоке: {e}")
             return 0, 0
+
+    # --- Методы для реферальной системы наград ---
+
+    def check_referral_reward_eligibility(self, referrer_id, referred_id):
+        """
+        Проверяет, можно ли выдать награду за реферала
+        """
+        try:
+            with self.engine.connect() as connection:
+                # Находим реферала
+                stmt = select(
+                    self.users_table.c.register_date,
+                    self.users_table.c.redeem_date,
+                    self.users_table.c.referrer_rewarded
+                ).where(
+                    sa.and_(
+                        self.users_table.c.user_id == referred_id,
+                        self.users_table.c.referrer_id == referrer_id
+                    )
+                )
+                result = connection.execute(stmt).fetchone()
+                
+                if not result:
+                    return False, "Реферал не найден"
+                
+                register_date, redeem_date, referrer_rewarded = result
+                
+                # Проверяем, была ли уже выдана награда
+                if referrer_rewarded:
+                    return False, "Награда уже была выдана"
+                
+                # Проверяем, получил ли реферал настойку
+                if not redeem_date:
+                    return False, "Реферал еще не получил настойку"
+                
+                # Проверяем, прошло ли 48 часов
+                current_time = datetime.datetime.now(pytz.utc)
+                hours_passed = (current_time - register_date).total_seconds() / 3600
+                
+                if hours_passed < 48:
+                    hours_left = 48 - hours_passed
+                    return False, f"До получения награды осталось {int(hours_left)} часов"
+                
+                return True, "Можно выдать награду"
+                
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка проверки права на награду: {e}")
+            return False, "Ошибка проверки"
+
+    def mark_referral_rewarded(self, referrer_id, referred_id):
+        """
+        Отмечает, что награда за реферала была выдана
+        """
+        try:
+            with self.engine.connect() as connection:
+                stmt = update(self.users_table).where(
+                    sa.and_(
+                        self.users_table.c.user_id == referred_id,
+                        self.users_table.c.referrer_id == referrer_id
+                    )
+                ).values(
+                    referrer_rewarded=True,
+                    referrer_rewarded_date=datetime.datetime.now(pytz.utc)
+                )
+                
+                result = connection.execute(stmt)
+                connection.commit()
+                return result.rowcount > 0
+                
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка отметки награды: {e}")
+            return False
+
+    def get_referral_stats(self, user_id):
+        """
+        Получает статистику по рефералам пользователя
+        """
+        try:
+            with self.engine.connect() as connection:
+                # Общее количество рефералов
+                total_stmt = select(sa.func.count()).select_from(self.users_table).where(
+                    self.users_table.c.referrer_id == user_id
+                )
+                total_referrals = connection.execute(total_stmt).scalar() or 0
+                
+                # Количество рефералов, получивших настойку
+                redeemed_stmt = select(sa.func.count()).select_from(self.users_table).where(
+                    sa.and_(
+                        self.users_table.c.referrer_id == user_id,
+                        self.users_table.c.redeem_date.isnot(None)
+                    )
+                )
+                redeemed_referrals = connection.execute(redeemed_stmt).scalar() or 0
+                
+                # Количество полученных наград
+                rewards_stmt = select(sa.func.count()).select_from(self.users_table).where(
+                    sa.and_(
+                        self.users_table.c.referrer_id == user_id,
+                        self.users_table.c.referrer_rewarded == True
+                    )
+                )
+                rewards_received = connection.execute(rewards_stmt).scalar() or 0
+                
+                # Рефералы, ожидающие 48 часов
+                pending_stmt = select(
+                    self.users_table.c.user_id,
+                    self.users_table.c.username,
+                    self.users_table.c.first_name,
+                    self.users_table.c.register_date,
+                    self.users_table.c.redeem_date
+                ).where(
+                    sa.and_(
+                        self.users_table.c.referrer_id == user_id,
+                        self.users_table.c.redeem_date.isnot(None),
+                        self.users_table.c.referrer_rewarded == False
+                    )
+                ).order_by(self.users_table.c.register_date.desc())
+                
+                pending_referrals = connection.execute(pending_stmt).fetchall()
+                
+                pending_rewards = []
+                current_time = datetime.datetime.now(pytz.utc)
+                
+                for ref in pending_referrals:
+                    ref_id, username, first_name, register_date, redeem_date = ref
+                    hours_passed = (current_time - register_date).total_seconds() / 3600
+                    
+                    pending_rewards.append({
+                        'user_id': ref_id,
+                        'username': username,
+                        'first_name': first_name,
+                        'hours_passed': int(hours_passed),
+                        'hours_left': max(0, 48 - int(hours_passed)),
+                        'can_claim': hours_passed >= 48
+                    })
+                
+                return {
+                    'total': total_referrals,
+                    'redeemed': redeemed_referrals,
+                    'rewarded': rewards_received,
+                    'pending': pending_rewards
+                }
+                
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка получения статистики рефералов: {e}")
+            return None
+
+    def get_users_with_pending_rewards(self):
+        """
+        Возвращает список user_id пользователей, у которых есть рефералы,
+        готовые к получению награды
+        """
+        try:
+            with self.engine.connect() as connection:
+                # Находим всех пользователей с рефералами, которые:
+                # 1. Получили настойку
+                # 2. Зарегистрированы более 48 часов назад
+                # 3. Еще не получили награду
+                hours_48_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(hours=48)
+                
+                stmt = select(self.users_table.c.referrer_id.distinct()).where(
+                    sa.and_(
+                        self.users_table.c.referrer_id.isnot(None),
+                        self.users_table.c.redeem_date.isnot(None),
+                        self.users_table.c.referrer_rewarded == False,
+                        self.users_table.c.register_date <= hours_48_ago
+                    )
+                )
+                
+                result = connection.execute(stmt).fetchall()
+                return [row[0] for row in result]
+                
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка получения пользователей с наградами: {e}")
+            return []

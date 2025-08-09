@@ -270,12 +270,67 @@ def register_user_command_handlers(bot):
     @bot.message_handler(commands=['friend'])
     @bot.message_handler(func=lambda message: message.text == "🤝 Привести товарища")
     def handle_friend_command(message: types.Message):
+        """
+        Обработчик для кнопки 'Привести товарища'.
+        Показывает реферальную ссылку и статистику.
+        """
         user_id = message.from_user.id
         bot_username = bot.get_me().username
-        ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
-        bot.send_message(user_id, texts.FRIEND_PROMPT_TEXT)
-        bot.send_message(user_id, f"`{ref_link}`", parse_mode="Markdown")
-        bot.send_message(user_id, texts.FRIEND_RULES_TEXT, parse_mode="Markdown")
+        referral_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
+        
+        # Получаем статистику рефералов
+        stats = database.get_referral_stats(user_id)
+        
+        if stats:
+            # Формируем сообщение со статистикой
+            text = f"🤝 *Ваша реферальная ссылка:*\n`{referral_link}`\n\n"
+            text += f"📊 *Статистика приглашений:*\n"
+            text += f"👥 Всего приглашено: {stats['total']}\n"
+            text += f"🥃 Получили настойку: {stats['redeemed']}\n"
+            text += f"🎁 Наград получено: {stats['rewarded']}\n\n"
+            
+            if stats['pending']:
+                text += "⏳ *Ожидают награды:*\n"
+                for ref in stats['pending'][:3]:  # Показываем только первые 3
+                    name = ref['first_name'] or ref['username'] or f"ID{ref['user_id']}"
+                    if ref['can_claim']:
+                        text += f"✅ {name} - можно получить награду!\n"
+                    else:
+                        text += f"⏰ {name} - осталось {ref['hours_left']}ч\n"
+                
+                if len(stats['pending']) > 3:
+                    text += f"... и еще {len(stats['pending']) - 3}\n"
+                
+                # Проверяем, есть ли готовые награды
+                ready_rewards = [ref for ref in stats['pending'] if ref['can_claim']]
+                if ready_rewards:
+                    keyboard = types.InlineKeyboardMarkup()
+                    keyboard.add(types.InlineKeyboardButton(
+                        f"🎁 Получить награды ({len(ready_rewards)})", 
+                        callback_data="check_referral_rewards"
+                    ))
+                    bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=keyboard)
+                else:
+                    bot.send_message(message.chat.id, text, parse_mode="Markdown")
+            else:
+                text += "\n💡 *Как это работает:*\n"
+                text += "1. Поделитесь ссылкой с друзьями\n"
+                text += "2. Друг регистрируется по вашей ссылке\n"
+                text += "3. Друг получает настойку в баре\n"
+                text += "4. Через 48 часов вы получаете награду!\n\n"
+                text += "🎁 *Награда: БЕСПЛАТНАЯ настойка!*"
+                bot.send_message(message.chat.id, text, parse_mode="Markdown")
+        else:
+            # Упрощенное сообщение без статистики
+            text = f"🤝 *Приведи товарища и получи награду!*\n\n"
+            text += f"Твоя реферальная ссылка:\n`{referral_link}`\n\n"
+            text += "💡 *Как это работает:*\n"
+            text += "1. Поделись ссылкой с друзьями\n"
+            text += "2. Друг регистрируется по твоей ссылке\n"
+            text += "3. Друг получает настойку в баре\n"
+            text += "4. Через 48 часов ты получаешь БЕСПЛАТНУЮ настойку!\n\n"
+            text += "Поделись сейчас! 🎉"
+            bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
     @bot.message_handler(commands=['menu'])
     @bot.message_handler(func=lambda message: message.text == "📖 Меню")

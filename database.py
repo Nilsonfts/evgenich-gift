@@ -178,6 +178,18 @@ def init_db():
             cur.execute("SELECT phone_number FROM users LIMIT 1")
         except sqlite3.OperationalError:
             cur.execute("ALTER TABLE users ADD COLUMN phone_number TEXT")
+
+        # Проверка и добавление колонок для реферальной системы наград
+        try:
+            cur.execute("SELECT referrer_rewarded FROM users LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute("ALTER TABLE users ADD COLUMN referrer_rewarded INTEGER DEFAULT 0")
+
+        try:
+            cur.execute("SELECT referrer_rewarded_date FROM users LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute("ALTER TABLE users ADD COLUMN referrer_rewarded_date TEXT")
+            cur.execute("ALTER TABLE users ADD COLUMN referrer_rewarded_date TEXT")
             logging.info("База данных обновлена: добавлена колонка phone_number")
 
         # Проверка и добавление колонки contact_shared_date для даты предоставления контакта
@@ -835,6 +847,199 @@ def get_top_referrers_for_month(limit: int = 5) -> List[Tuple[str, int]]:
 
 def get_daily_updates() -> dict:
     return {'special': 'нет', 'stop-list': 'ничего'}
+
+# --- Функции для реферальной системы наград ---
+
+def check_referral_reward_eligibility(referrer_id: int, referred_id: int):
+    """
+    Проверяет, можно ли выдать награду за реферала.
+    Условия:
+    1. Реферал должен быть зарегистрирован более 48 часов назад
+    2. Реферал должен получить настойку (redeem_date не NULL)
+    3. Награда еще не была выдана за этого реферала
+    """
+    try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.check_referral_reward_eligibility(referrer_id, referred_id)
+        
+        # SQLite версия
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Получаем данные реферала
+        cur.execute("""
+            SELECT signup_date, redeem_date, referrer_rewarded
+            FROM users 
+            WHERE user_id = ? AND referrer_id = ?
+        """, (referred_id, referrer_id))
+        
+        result = cur.fetchone()
+        if not result:
+            conn.close()
+            return False, "Реферал не найден"
+        
+        signup_date_str, redeem_date, referrer_rewarded = result
+        
+        # Проверяем, была ли уже выдана награда
+        if referrer_rewarded:
+            conn.close()
+            return False, "Награда уже была выдана"
+        
+        # Проверяем, получил ли реферал настойку
+        if not redeem_date:
+            conn.close()
+            return False, "Реферал еще не получил настойку"
+        
+        # Проверяем, прошло ли 48 часов с момента регистрации
+        if signup_date_str:
+            signup_date = datetime.datetime.fromisoformat(signup_date_str.replace('Z', '+00:00'))
+            current_time = datetime.datetime.now(pytz.utc)
+            hours_passed = (current_time - signup_date).total_seconds() / 3600
+            
+            if hours_passed < 48:
+                hours_left = 48 - hours_passed
+                conn.close()
+                return False, f"До получения награды осталось {int(hours_left)} часов"
+        
+        conn.close()
+        return True, "Можно выдать награду"
+        
+    except Exception as e:
+        logging.error(f"Ошибка проверки права на награду: {e}")
+        return False, "Ошибка проверки"
+
+def mark_referral_rewarded(referrer_id: int, referred_id: int):
+    """
+    Отмечает, что награда за реферала была выдана
+    """
+    try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.mark_referral_rewarded(referrer_id, referred_id)
+        
+        # SQLite версия
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            UPDATE users 
+            SET referrer_rewarded = 1,
+                referrer_rewarded_date = ?
+            WHERE user_id = ? AND referrer_id = ?
+        """, (datetime.datetime.now(pytz.utc).isoformat(), referred_id, referrer_id))
+        
+        conn.commit()
+        success = cur.rowcount > 0
+        conn.close()
+        
+        return success
+        
+    except Exception as e:
+        logging.error(f"Ошибка отметки награды: {e}")
+        return False
+
+def get_referral_stats(user_id: int):
+    """
+    Получает статистику по рефералам пользователя
+    """
+    try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.get_referral_stats(user_id)
+        
+        # SQLite версия
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Общее количество рефералов
+        cur.execute("SELECT COUNT(*) FROM users WHERE referrer_id = ?", (user_id,))
+        total_referrals = cur.fetchone()[0]
+        
+        # Количество рефералов, получивших настойку
+        cur.execute("""
+            SELECT COUNT(*) FROM users 
+            WHERE referrer_id = ? AND redeem_date IS NOT NULL
+        """, (user_id,))
+        redeemed_referrals = cur.fetchone()[0]
+        
+        # Количество полученных наград
+        cur.execute("""
+            SELECT COUNT(*) FROM users 
+            WHERE referrer_id = ? AND referrer_rewarded = 1
+        """, (user_id,))
+        rewards_received = cur.fetchone()[0]
+        
+        # Рефералы, ожидающие 48 часов
+        cur.execute("""
+            SELECT user_id, username, first_name, signup_date, redeem_date
+            FROM users 
+            WHERE referrer_id = ? 
+            AND redeem_date IS NOT NULL 
+            AND referrer_rewarded = 0
+            ORDER BY signup_date DESC
+        """, (user_id,))
+        
+        pending_rewards = []
+        for row in cur.fetchall():
+            ref_id, username, first_name, signup_date_str, redeem_date = row
+            
+            if signup_date_str:
+                signup_date = datetime.datetime.fromisoformat(signup_date_str.replace('Z', '+00:00'))
+                hours_passed = (datetime.datetime.now(pytz.utc) - signup_date).total_seconds() / 3600
+                
+                pending_rewards.append({
+                    'user_id': ref_id,
+                    'username': username,
+                    'first_name': first_name,
+                    'hours_passed': int(hours_passed),
+                    'hours_left': max(0, 48 - int(hours_passed)),
+                    'can_claim': hours_passed >= 48
+                })
+        
+        conn.close()
+        
+        return {
+            'total': total_referrals,
+            'redeemed': redeemed_referrals,
+            'rewarded': rewards_received,
+            'pending': pending_rewards
+        }
+        
+    except Exception as e:
+        logging.error(f"Ошибка получения статистики рефералов: {e}")
+        return None
+
+def get_users_with_pending_rewards():
+    """
+    Возвращает список user_id пользователей, у которых есть рефералы,
+    готовые к получению награды
+    """
+    try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.get_users_with_pending_rewards()
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Находим всех пользователей с рефералами, которые:
+        # 1. Получили настойку
+        # 2. Зарегистрированы более 48 часов назад
+        # 3. Еще не получили награду
+        cur.execute("""
+            SELECT DISTINCT referrer_id
+            FROM users
+            WHERE referrer_id IS NOT NULL
+            AND redeem_date IS NOT NULL
+            AND referrer_rewarded = 0
+            AND julianday('now') - julianday(signup_date) > 2
+        """)
+        
+        users = [row[0] for row in cur.fetchall()]
+        conn.close()
+        
+        return users
+        
+    except Exception as e:
+        logging.error(f"Ошибка получения пользователей с наградами: {e}")
+        return []
 
 # --- Функции для работы с отложенными задачами (delayed_tasks) ---
 
