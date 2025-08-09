@@ -724,3 +724,45 @@ class PostgresClient:
         except Exception as e:
             logging.error(f"PostgreSQL | Ошибка получения пользователей с наградами: {e}")
             return []
+
+    def get_recently_redeemed_referrals(self, hours=2):
+        """
+        Возвращает список рефералов, которые получили настойку в последние N часов
+        """
+        try:
+            with self.engine.connect() as connection:
+                hours_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(hours=hours)
+                
+                stmt = select(
+                    self.users_table.c.user_id,
+                    self.users_table.c.username,
+                    self.users_table.c.first_name,
+                    self.users_table.c.referrer_id,
+                    self.users_table.c.redeem_date
+                ).where(
+                    sa.and_(
+                        self.users_table.c.referrer_id.isnot(None),
+                        self.users_table.c.redeem_date.isnot(None),
+                        self.users_table.c.redeem_date >= hours_ago,
+                        self.users_table.c.referrer_rewarded == False
+                    )
+                ).order_by(self.users_table.c.redeem_date.desc())
+                
+                result = connection.execute(stmt).fetchall()
+                
+                recent_referrals = []
+                for row in result:
+                    user_id, username, first_name, referrer_id, redeem_date = row
+                    recent_referrals.append({
+                        'user_id': user_id,
+                        'username': username, 
+                        'first_name': first_name,
+                        'referrer_id': referrer_id,
+                        'redeem_date': redeem_date
+                    })
+                
+                return recent_referrals
+                
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка получения недавних активаций рефералов: {e}")
+            return []

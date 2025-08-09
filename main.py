@@ -21,6 +21,14 @@ from handlers.ai_logic import register_ai_handlers
 from handlers.iiko_data_handler import register_iiko_data_handlers
 from delayed_tasks_processor import DelayedTasksProcessor
 
+# Импортируем службу реферальных уведомлений
+try:
+    from utils.referral_notifications import start_referral_notification_service
+    REFERRAL_NOTIFICATIONS_AVAILABLE = True
+except ImportError:
+    logging.warning("Модуль реферальных уведомлений недоступен")
+    REFERRAL_NOTIFICATIONS_AVAILABLE = False
+
 if not os.path.exists('logs'):
     os.makedirs('logs')
 
@@ -202,7 +210,18 @@ if __name__ == "__main__":
 
     scheduler.start()
     delayed_tasks_processor.start()
-    logging.info("✅ Все обработчики, планировщик и обработчик отложенных задач успешно запущены.")
+    
+    # Запускаем службу реферальных уведомлений
+    if REFERRAL_NOTIFICATIONS_AVAILABLE:
+        try:
+            start_referral_notification_service()
+            logging.info("✅ Служба реферальных уведомлений запущена")
+        except Exception as e:
+            logging.error(f"❌ Ошибка запуска службы реферальных уведомлений: {e}")
+    else:
+        logging.warning("⚠️ Служба реферальных уведомлений недоступна")
+    
+    logging.info("✅ Все обработчики, планировщик и сервисы успешно запущены.")
 
     # Запуск бота с обработкой ошибок
     while True:

@@ -1041,6 +1041,48 @@ def get_users_with_pending_rewards():
         logging.error(f"Ошибка получения пользователей с наградами: {e}")
         return []
 
+def get_recently_redeemed_referrals(hours: int = 2):
+    """
+    Возвращает список рефералов, которые получили настойку в последние N часов
+    """
+    try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.get_recently_redeemed_referrals(hours)
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Находим рефералов, получивших настойку в последние N часов
+        hours_ago = datetime.datetime.now(pytz.utc) - datetime.timedelta(hours=hours)
+        
+        cur.execute("""
+            SELECT user_id, username, first_name, referrer_id, redeem_date
+            FROM users
+            WHERE referrer_id IS NOT NULL
+            AND redeem_date IS NOT NULL
+            AND datetime(redeem_date) >= datetime(?)
+            AND referrer_rewarded = 0
+            ORDER BY redeem_date DESC
+        """, (hours_ago.isoformat(),))
+        
+        recent_referrals = []
+        for row in cur.fetchall():
+            user_id, username, first_name, referrer_id, redeem_date = row
+            recent_referrals.append({
+                'user_id': user_id,
+                'username': username,
+                'first_name': first_name,
+                'referrer_id': referrer_id,
+                'redeem_date': redeem_date
+            })
+        
+        conn.close()
+        return recent_referrals
+        
+    except Exception as e:
+        logging.error(f"Ошибка получения недавних активаций рефералов: {e}")
+        return []
+
 # --- Функции для работы с отложенными задачами (delayed_tasks) ---
 
 def schedule_delayed_message(user_id: int, task_type: str, delay_minutes: int = 10):

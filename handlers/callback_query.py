@@ -17,6 +17,13 @@ import keyboards
 # Импортируем вспомогательную функцию из другого файла нашего хендлера
 from .user_commands import issue_coupon
 
+# Импортируем систему уведомлений о рефералах
+try:
+    from utils.referral_notifications import send_immediate_referral_notification
+except ImportError:
+    logging.warning("Модуль уведомлений о рефералах не найден")
+    send_immediate_referral_notification = None
+
 def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_feedback_func):
     """Регистрирует обработчики для всех inline-кнопок."""
 
@@ -48,6 +55,14 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             callback_quiz_answer(call)
         elif call.data == "check_referral_rewards":
             handle_check_referral_rewards(call)
+        elif call.data == "claim_reward":
+            handle_claim_reward_callback(call)
+        elif call.data == "show_referral_link":
+            handle_show_referral_link(call)
+        elif call.data == "show_referral_stats":
+            handle_show_referral_stats(call)
+        elif call.data == "start_booking":
+            handle_start_booking_callback(call)
         else:
             logging.warning(f"Неизвестный callback: {call.data}")
             bot.answer_callback_query(call.id, "Неизвестная команда")
@@ -115,13 +130,23 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
                 parse_mode="Markdown"
             )
 
-            # --- Отложенные задачи ---
+            # --- Уведомления о рефералах ---
             referrer_id = database.get_referrer_id_from_user(user_id)
             if referrer_id:
-                friend_name = call.from_user.first_name or f"ID: {user_id}"
+                friend_name = call.from_user.first_name or call.from_user.username or f"ID{user_id}"
+                
+                # Отправляем немедленное уведомление рефереру
+                if send_immediate_referral_notification:
+                    try:
+                        send_immediate_referral_notification(referrer_id, friend_name)
+                        logging.info(f"Отправлено немедленное уведомление рефереру {referrer_id} о активации реферала {friend_name}")
+                    except Exception as e:
+                        logging.error(f"Ошибка отправки немедленного уведомления рефереру {referrer_id}: {e}")
+                
+                # Старая система (оставим как запасной вариант)
                 run_date_bonus = datetime.now() + timedelta(hours=48)
                 scheduler.add_job(send_friend_bonus_func, 'date', run_date=run_date_bonus, args=[referrer_id, friend_name])
-                logging.info(f"Запланирована отправка бонуса рефереру {referrer_id} на {run_date_bonus}.")
+                logging.info(f"Запланирована отправка бонуса рефереру {referrer_id} на {run_date_bonus} (резерв).")
 
             run_date_feedback = datetime.now() + timedelta(hours=24)
             scheduler.add_job(request_feedback_func, 'date', run_date=run_date_feedback, args=[user_id])
@@ -367,4 +392,129 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         except Exception as e:
             logging.error(f"Ошибка при проверке реферальных наград для {user_id}: {e}")
             bot.answer_callback_query(call.id, "Произошла ошибка при проверке наград", show_alert=True)
+
+    def handle_claim_reward_callback(call: types.CallbackQuery):
+        """
+        Обработчик кнопки 'Получить награду' из уведомления
+        """
+        try:
+            user_id = call.from_user.id
+            
+            response_text = (
+                "🥃 **Как получить награду:**\n\n"
+                "1. Покажите код бармену\n"
+                "2. Назовите: \"Реферальная награда\"\n"
+                "3. Наслаждайтесь бесплатной настойкой!\n\n"
+                "✨ Спасибо за приглашение друзей!"
+            )
+            
+            keyboard = types.InlineKeyboardMarkup()
+            keyboard.row(
+                types.InlineKeyboardButton("📍 Забронировать стол", callback_data="start_booking")
+            )
+            keyboard.row(
+                types.InlineKeyboardButton("📖 Посмотреть меню", callback_data="main_menu_choice")
+            )
+            
+            bot.edit_message_text(
+                response_text,
+                call.message.chat.id,
+                call.message.message_id,
+                parse_mode="Markdown",
+                reply_markup=keyboard
+            )
+            
+            bot.answer_callback_query(call.id, "Покажите код бармену!")
+            
+        except Exception as e:
+            logging.error(f"Ошибка при обработке получения награды: {e}")
+            bot.answer_callback_query(call.id, "Произошла ошибка")
+
+    def handle_show_referral_link(call: types.CallbackQuery):
+        """
+        Показывает реферальную ссылку
+        """
+        try:
+            user_id = call.from_user.id
+            from .user_commands import handle_friend_command
+            
+            # Создаем псевдо-сообщение для вызова существующего обработчика
+            class PseudoMessage:
+                def __init__(self, chat_id, user_id):
+                    self.chat = type('obj', (object,), {'id': chat_id})
+                    self.from_user = type('obj', (object,), {'id': user_id})
+            
+            pseudo_msg = PseudoMessage(call.message.chat.id, user_id)
+            handle_friend_command(pseudo_msg)
+            
+            bot.answer_callback_query(call.id, "Ваша реферальная ссылка обновлена")
+            
+        except Exception as e:
+            logging.error(f"Ошибка показа реферальной ссылки: {e}")
+            bot.answer_callback_query(call.id, "Произошла ошибка")
+
+    def handle_show_referral_stats(call: types.CallbackQuery):
+        """
+        Показывает статистику рефералов
+        """
+        try:
+            user_id = call.from_user.id
+            from .user_commands import handle_friend_command
+            
+            # Создаем псевдо-сообщение для вызова существующего обработчика
+            class PseudoMessage:
+                def __init__(self, chat_id, user_id):
+                    self.chat = type('obj', (object,), {'id': chat_id})
+                    self.from_user = type('obj', (object,), {'id': user_id})
+            
+            pseudo_msg = PseudoMessage(call.message.chat.id, user_id)
+            handle_friend_command(pseudo_msg)
+            
+            bot.answer_callback_query(call.id, "Статистика обновлена")
+            
+        except Exception as e:
+            logging.error(f"Ошибка показа статистики рефералов: {e}")
+            bot.answer_callback_query(call.id, "Произошла ошибка")
+
+    def handle_start_booking_callback(call: types.CallbackQuery):
+        """
+        Запускает процесс бронирования из уведомления
+        """
+        try:
+            # Импортируем обработчик бронирования
+            from .booking_flow import start_booking_flow
+            
+            # Запускаем поток бронирования
+            start_booking_flow(bot, call.message, call.from_user.id)
+            
+            bot.answer_callback_query(call.id, "Начинаем бронирование!")
+            
+        except ImportError:
+            # Если модуль бронирования не найден, показываем альтернативу
+            response_text = (
+                "📍 **Бронирование столика**\n\n"
+                "Для бронирования свяжитесь с нами:\n"
+                "📞 Телефон: +7 (XXX) XXX-XX-XX\n"
+                "📱 Telegram: @evgenich_bar\n\n"
+                "Или просто приходите - мы всегда рады гостям!"
+            )
+            
+            keyboard = types.InlineKeyboardMarkup()
+            keyboard.row(
+                types.InlineKeyboardButton("📖 Меню", callback_data="main_menu_choice")
+            )
+            
+            bot.edit_message_text(
+                response_text,
+                call.message.chat.id, 
+                call.message.message_id,
+                parse_mode="Markdown",
+                reply_markup=keyboard
+            )
+            
+            bot.answer_callback_query(call.id, "Информация о бронировании")
+            
+        except Exception as e:
+            logging.error(f"Ошибка запуска бронирования: {e}")
+            bot.answer_callback_query(call.id, "Произошла ошибка при бронировании")
             bot.send_message(user_id, "Произошла ошибка при обработке ответа. Попробуйте еще раз.")
