@@ -75,6 +75,13 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "railway")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+
+# Если DATABASE_URL не задан, формируем его из отдельных переменных
+if not DATABASE_URL and all([POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_DB]):
+    DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    print(f"✅ Сформирован DATABASE_URL из отдельных переменных PostgreSQL")
 
 # --- Проверки ---
 if not all([

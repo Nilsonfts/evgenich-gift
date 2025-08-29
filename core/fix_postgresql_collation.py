@@ -14,47 +14,52 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.config import POSTGRES_URL
 
-def fix_collation_version():
-    """Исправляет предупреждения о версии collation в PostgreSQL."""
-    try:
-        # Подключаемся к PostgreSQL
-        conn = psycopg2.connect(POSTGRES_URL)
-        conn.autocommit = True
-        cur = conn.cursor()
-        
-        print("🔧 Исправляем версию collation в PostgreSQL...")
-        
-        # Выполняем команду обновления collation
-        cur.execute("ALTER DATABASE railway REFRESH COLLATION VERSION;")
-        
-        print("✅ Версия collation успешно обновлена!")
-        
-        # Проверяем статус
-        cur.execute("SELECT datname, datcollate, datctype FROM pg_database WHERE datname = 'railway';")
-        result = cur.fetchone()
-        if result:
-            print(f"📊 База данных: {result[0]}")
-            print(f"📊 Collation: {result[1]}")
-            print(f"📊 CType: {result[2]}")
-        
-        cur.close()
-        conn.close()
-        
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"❌ Ошибка PostgreSQL: {e}")
+#!/usr/bin/env python3
+"""
+Скрипт для исправления проблем с PostgreSQL collation.
+Выполняется автоматически при старте приложения.
+"""
+
+import logging
+import os
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
+
+def fix_postgresql_collation():
+    """Исправляет проблемы с collation в PostgreSQL."""
+    
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    if not DATABASE_URL:
+        logging.warning("DATABASE_URL не установлен, пропускаем исправление collation")
         return False
+    
+    try:
+        engine = create_engine(DATABASE_URL)
+        
+        with engine.connect() as connection:
+            # Проверяем текущую версию collation
+            result = connection.execute(text("SELECT version()"))
+            version = result.scalar()
+            logging.info(f"PostgreSQL версия: {version[:100]}...")
+            
+            # Выполняем обновление collation
+            try:
+                connection.execute(text("ALTER DATABASE railway REFRESH COLLATION VERSION"))
+                connection.commit()
+                logging.info("✅ PostgreSQL collation version успешно обновлена")
+                return True
+            except SQLAlchemyError as e:
+                if "already up to date" in str(e).lower():
+                    logging.info("✅ PostgreSQL collation уже актуальна")
+                    return True
+                else:
+                    logging.warning(f"⚠️  Не удалось обновить collation (не критично): {e}")
+                    return False
+                    
     except Exception as e:
-        print(f"❌ Неожиданная ошибка: {e}")
+        logging.error(f"❌ Ошибка при исправлении PostgreSQL collation: {e}")
         return False
 
 if __name__ == "__main__":
-    print("🚀 Запуск исправления PostgreSQL collation...")
-    success = fix_collation_version()
-    if success:
-        print("🎉 Исправление завершено успешно!")
-        sys.exit(0)
-    else:
-        print("💥 Исправление не удалось!")
-        sys.exit(1)
+    logging.basicConfig(level=logging.INFO)
+    fix_postgresql_collation()

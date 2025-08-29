@@ -37,10 +37,20 @@ class PostgresClient:
     def _init_engine(self):
         """Инициализирует SQLAlchemy engine."""
         try:
-            self.engine = create_engine(self.db_url)
-            logging.info(f"PostgreSQL engine initialized with URL: {self.db_url}")
+            if not self.db_url:
+                raise ValueError("DATABASE_URL не установлен!")
+            
+            self.engine = create_engine(self.db_url, echo=False)
+            
+            # Проверяем подключение
+            with self.engine.connect() as connection:
+                result = connection.execute(sa.text("SELECT version()"))
+                version = result.scalar()
+                logging.info(f"✅ PostgreSQL подключение успешно! Версия: {version[:50]}...")
+                
         except Exception as e:
-            logging.error(f"Failed to initialize PostgreSQL engine: {e}")
+            logging.error(f"❌ Ошибка подключения к PostgreSQL: {e}")
+            logging.error(f"DATABASE_URL: {self.db_url[:30]}..." if self.db_url else "DATABASE_URL не установлен")
             raise
     
     def _define_tables(self):

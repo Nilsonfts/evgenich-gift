@@ -51,7 +51,33 @@ def send_friend_bonus(referrer_id, friend_name):
     # Тут должна быть ваша логика отправки бонуса
     pass
 
-def request_feedback(user_id):
+def check_database_connections():
+    """Проверяет подключения к базам данных."""
+    logging.info("🔍 Проверка подключений к базам данных...")
+    
+    # Проверка SQLite
+    try:
+        conn = database.get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM users")
+        sqlite_users = cur.fetchone()[0]
+        conn.close()
+        logging.info(f"✅ SQLite подключение OK. Пользователей: {sqlite_users}")
+    except Exception as e:
+        logging.error(f"❌ Ошибка SQLite: {e}")
+    
+    # Проверка PostgreSQL
+    if USE_POSTGRES and DATABASE_URL:
+        try:
+            from db.postgres_client import PostgresClient
+            pg_client = PostgresClient()
+            logging.info("✅ PostgreSQL подключение проверено в конструкторе")
+        except Exception as e:
+            logging.error(f"❌ Ошибка PostgreSQL: {e}")
+    else:
+        logging.warning("⚠️  PostgreSQL не настроен (USE_POSTGRES=false или DATABASE_URL пуст)")
+
+def manual_feedback_request():
     # Тут должна быть ваша логика запроса обратной связи
     pass
 
@@ -173,6 +199,17 @@ def run_nightly_auditor_job():
     logging.info(f"Аудитор: Проверка завершена. Найдено {left_count} отписавшихся.")
 
 if __name__ == "__main__":
+    # Проверка подключений к базам данных
+    check_database_connections()
+    
+    # Исправление проблем PostgreSQL collation
+    if USE_POSTGRES and DATABASE_URL:
+        try:
+            from core.fix_postgresql_collation import fix_postgresql_collation
+            fix_postgresql_collation()
+        except Exception as e:
+            logging.warning(f"⚠️  Не удалось исправить PostgreSQL collation: {e}")
+    
     # Информация о подключении к базе данных
     if USE_POSTGRES:
         logging.info("🔧 Инициализация PostgreSQL базы данных...")
