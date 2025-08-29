@@ -8,19 +8,20 @@ from apscheduler.triggers.cron import CronTrigger
 import datetime
 import pytz
 
-from config import BOT_TOKEN, FRIEND_BONUS_STICKER_ID, REPORT_CHAT_ID, CHANNEL_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, USE_POSTGRES, DATABASE_URL, DATABASE_PATH
-import database
+from core.config import BOT_TOKEN, FRIEND_BONUS_STICKER_ID, REPORT_CHAT_ID, CHANNEL_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, USE_POSTGRES, DATABASE_URL, DATABASE_PATH
+import core.database as database
 import keyboards
 import texts
 
 from handlers.user_commands import register_user_command_handlers
 from handlers.callback_query import register_callback_handlers
 from handlers.booking_flow import register_booking_handlers
-from handlers.admin_panel import register_admin_handlers, send_report, init_admin_handlers
+from handlers.admin_panel import register_admin_handlers, init_admin_handlers
+from handlers.reports import send_report
 from handlers.ai_logic import register_ai_handlers
 from handlers.iiko_data_handler import register_iiko_data_handlers
 from handlers.broadcast import register_broadcast_handlers
-from delayed_tasks_processor import DelayedTasksProcessor
+from core.delayed_tasks_processor import DelayedTasksProcessor
 
 # Импортируем службу реферальных уведомлений
 try:
@@ -90,7 +91,7 @@ def send_daily_report_job():
 def request_iiko_data_before_report(report_date: datetime.date, start_time: datetime.datetime, end_time: datetime.datetime):
     """Запрашивает данные iiko перед формированием отчета."""
     from texts import IIKO_DATA_REQUEST_TEXT
-    from database import is_waiting_for_iiko_data
+    from core.database import is_waiting_for_iiko_data
     
     # Проверяем, нужны ли данные за эту дату
     if is_waiting_for_iiko_data(report_date):

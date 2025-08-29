@@ -7,7 +7,7 @@ import time
 import threading
 import logging
 from typing import TYPE_CHECKING
-from database import get_pending_delayed_tasks, mark_delayed_task_completed, cleanup_old_delayed_tasks
+from .database import get_pending_delayed_tasks, mark_delayed_task_completed, cleanup_old_delayed_tasks
 from texts import DELAYED_ENGAGEMENT_TEXT
 
 if TYPE_CHECKING:
@@ -89,7 +89,7 @@ class DelayedTasksProcessor:
     def _send_newsletter_message(self, user_id: int, task):
         """Отправляет рассылку пользователю."""
         try:
-            import database
+            from . import database
             import keyboards
             
             # Получаем данные рассылки

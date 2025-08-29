@@ -2,7 +2,7 @@
 """
 Обработчики управления персоналом.
 """
-import database
+import core.database as database
 
 def handle_staff_callbacks(bot, keyboards):
     @bot.callback_query_handler(func=lambda call: call.data == 'admin_list_staff' or call.data.startswith('admin_toggle_staff_'))

@@ -6,10 +6,10 @@ from telebot.apihelper import ApiTelegramException
 from tinydb import TinyDB, Query
 
 from ai.assistant import get_ai_recommendation
-import database
+import core.database as database
 import texts
 import keyboards
-from config import REPORT_CHAT_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID  # <--- ИЗМЕНЕНИЕ: Импортируем ID чатов для отчетов
+from core.config import REPORT_CHAT_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID  # <--- ИЗМЕНЕНИЕ: Импортируем ID чатов для отчетов
 
 db = TinyDB('booking_data.json')
 User = Query()

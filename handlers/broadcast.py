@@ -5,7 +5,7 @@ import time
 from typing import List, Dict, Optional
 from telebot import types
 from telebot.apihelper import ApiTelegramException
-import database
+import core.database as database
 from datetime import datetime
 import pytz
 

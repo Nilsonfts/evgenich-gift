@@ -5,7 +5,7 @@ AI-логика и интеграция с OpenAI.
 import logging
 from ai.knowledge import find_relevant_info
 from openai import OpenAI
-from config import OPENAI_API_KEY
+from core.config import OPENAI_API_KEY
 
 # Инициализация OpenAI клиента
 openai_client = None

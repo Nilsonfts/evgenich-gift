@@ -13,7 +13,7 @@ import gspread
 import threading
 from collections import defaultdict
 from google.oauth2.service_account import Credentials
-from config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON, DATABASE_PATH, USE_POSTGRES, DATABASE_URL
+from .config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON, DATABASE_PATH, USE_POSTGRES, DATABASE_URL
 
 # Импортируем PostgreSQL клиент, если включен режим PostgreSQL
 if USE_POSTGRES:

@@ -6,7 +6,7 @@ import pytz
 import datetime
 import logging
 from telebot import types
-import database
+import core.database as database
 import texts
 from .utils import shorten_name
 

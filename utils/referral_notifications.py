@@ -8,8 +8,8 @@ import time
 from datetime import datetime, timedelta
 import pytz
 
-import database
-from config import BOT_TOKEN
+import core.database as database
+from core.config import BOT_TOKEN
 import telebot
 from telebot import types
 

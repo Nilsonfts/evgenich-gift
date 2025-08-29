@@ -7,10 +7,10 @@ from datetime import datetime, timedelta
 import pytz # <--- ИЗМЕНЕНИЕ: Добавили библиотеку для часовых поясов
 
 # Импортируем конфиги, утилиты, тексты и клавиатуры
-from config import CHANNEL_ID, THANK_YOU_STICKER_ID
-import database
-from menu_nastoiki import MENU_DATA
-from food_menu import FOOD_MENU_DATA
+from core.config import CHANNEL_ID, THANK_YOU_STICKER_ID
+import core.database as database
+from modules.menu_nastoiki import MENU_DATA
+from modules.food_menu import FOOD_MENU_DATA
 import texts
 import keyboards
 
@@ -292,7 +292,7 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             question_index = int(parts[2])
             user_answer = int(parts[3])
             
-            from games import check_quiz_answer, save_game_result, QUIZ_QUESTIONS
+            from modules.games import check_quiz_answer, save_game_result, QUIZ_QUESTIONS
             
             # Проверяем ответ
             result = check_quiz_answer(question_index, user_answer)

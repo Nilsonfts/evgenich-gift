@@ -19,4 +19,6 @@ echo "🌐 Веб-интерфейс будет доступен по адрес
 echo "📊 Нажмите Ctrl+C для остановки"
 echo ""
 
-python web_app.py
+export PYTHONPATH="/workspaces/evgenich-gift:$PYTHONPATH"
+cd /workspaces/evgenich-gift
+python web/web_app.py

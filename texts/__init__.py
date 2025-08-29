@@ -302,7 +302,7 @@ def get_booking_report_text(data: dict[str, str], creator_id: int = None) -> str
         creator_id: ID пользователя, создавшего бронь (None для бронирований от посетителей)
     """
     import time
-    from social_bookings_export import ALL_SOURCE_UTM_DATA, ALL_SOURCE_DISPLAY_NAMES, get_admin_name_by_id
+    from utils.social_bookings_export import ALL_SOURCE_UTM_DATA, ALL_SOURCE_DISPLAY_NAMES, get_admin_name_by_id
     
     source = data.get('source', '')
     is_guest_booking = data.get('is_guest_booking', False)

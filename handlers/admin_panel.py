@@ -6,13 +6,13 @@ from telebot import types
 from telebot.apihelper import ApiTelegramException
 import pytz
 
-from config import ALL_ADMINS
-import database
+from core.config import ALL_ADMINS
+import core.database as database
 import texts
 import keyboards
-import settings_manager
+import core.settings_manager as settings_manager
 import marketing_templates
-from export_to_sheets import do_export
+from utils.export_to_sheets import do_export
 from handlers.user_commands import issue_coupon
 from handlers.newsletter_manager import register_newsletter_handlers
 from handlers.newsletter_buttons import register_newsletter_buttons_handlers

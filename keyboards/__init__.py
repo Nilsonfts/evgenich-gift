@@ -1,8 +1,8 @@
 # keyboards.py
 from telebot import types
-from config import ALL_ADMINS, ALL_BOOKING_STAFF, MENU_URL
-from menu_nastoiki import MENU_DATA
-from food_menu import FOOD_MENU_DATA
+from core.config import ALL_ADMINS, ALL_BOOKING_STAFF, MENU_URL
+from modules.menu_nastoiki import MENU_DATA
+from modules.food_menu import FOOD_MENU_DATA
 
 # === ОСНОВНЫЕ REPLY-КЛАВИАТУРЫ ===
 

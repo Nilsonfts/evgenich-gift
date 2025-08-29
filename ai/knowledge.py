@@ -4,9 +4,9 @@
 """
 # Здесь будет логика поиска и агрегации знаний для AI
 
-from knowledge_base import KNOWLEDGE_BASE_TEXT
-from menu_nastoiki import MENU_DATA
-from food_menu import FOOD_MENU_DATA
+from ai.knowledge_base import KNOWLEDGE_BASE_TEXT
+from modules.menu_nastoiki import MENU_DATA
+from modules.food_menu import FOOD_MENU_DATA
 
 def find_relevant_info(query: str) -> str:
     """

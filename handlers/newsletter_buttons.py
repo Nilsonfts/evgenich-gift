@@ -5,10 +5,10 @@
 """
 import logging
 from typing import Dict, Any
-import database
+import core.database as database
 import keyboards
 import texts
-from config import ALL_ADMINS
+from core.config import ALL_ADMINS
 
 class NewsletterButtonsManager:
     def __init__(self, bot):

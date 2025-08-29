@@ -4,7 +4,7 @@ Callback-обработчики отчетов для админ-панели.
 """
 import datetime
 import pytz
-import database
+import core.database as database
 from handlers.reports import send_report
 
 def handle_report_callbacks(bot, admin_states, settings_manager, keyboards, texts):

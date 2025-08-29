@@ -4,12 +4,12 @@ import logging
 import datetime
 from telebot import types
 
-from config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ALL_ADMINS, REPORT_CHAT_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID
-import database
-import settings_manager
+from core.config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ALL_ADMINS, REPORT_CHAT_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID
+import core.database as database
+import core.settings_manager as settings_manager
 import texts
 import keyboards
-from qr_generator import create_qr_code
+from utils.qr_generator import create_qr_code
 
 # --- Вспомогательные функции ---
 
@@ -346,7 +346,7 @@ def register_user_command_handlers(bot):
         """Обрабатывает кнопку игр и развлечений."""
         user_id = message.from_user.id
         try:
-            from games import get_user_game_stats, can_play_game
+            from modules.games import get_user_game_stats, can_play_game
 
             # Получаем статистику игр пользователя
             stats = get_user_game_stats(user_id)
@@ -690,7 +690,7 @@ def register_user_command_handlers(bot):
         """
         user_id = message.from_user.id
         try:
-            from games import can_play_game, get_random_quiz_question, QUIZ_QUESTIONS
+            from modules.games import can_play_game, get_random_quiz_question, QUIZ_QUESTIONS
 
             # Проверяем, может ли пользователь играть
             can_play = can_play_game(user_id, "quiz")
@@ -726,7 +726,7 @@ def register_user_command_handlers(bot):
         """
         user_id = message.from_user.id
         try:
-            from games import can_play_game, spin_wheel_of_fortune, save_game_result
+            from modules.games import can_play_game, spin_wheel_of_fortune, save_game_result
 
             # Проверяем, может ли пользователь играть
             can_play = can_play_game(user_id, "wheel")
@@ -764,7 +764,7 @@ def register_user_command_handlers(bot):
         """
         user_id = message.from_user.id
         try:
-            from games import get_user_game_stats
+            from modules.games import get_user_game_stats
 
             # Получаем статистику игр пользователя
             stats = get_user_game_stats(user_id)
@@ -805,7 +805,7 @@ def register_user_command_handlers(bot):
         """
         user_id = message.from_user.id
         try:
-            from daily_activities import get_password_of_the_day, get_user_password_stats
+            from modules.daily_activities import get_password_of_the_day, get_user_password_stats
 
             # Получаем статистику пользователя
             stats = get_user_password_stats(user_id)
@@ -862,7 +862,7 @@ def register_user_command_handlers(bot):
         """
         user_id = message.from_user.id
         try:
-            from daily_activities import get_upcoming_events
+            from modules.daily_activities import get_upcoming_events
 
             # Получаем список предстоящих мероприятий
             events = get_upcoming_events()
@@ -915,7 +915,7 @@ def register_user_command_handlers(bot):
         user_input = message.text.strip()
         
         try:
-            from daily_activities import check_daily_password, save_password_attempt, get_user_password_stats
+            from modules.daily_activities import check_daily_password, save_password_attempt, get_user_password_stats
 
             # Проверяем пароль
             result = check_daily_password(user_input)

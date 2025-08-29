@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import pytz
 import re
 from typing import Optional, Dict, Any
-from config import GOOGLE_SHEET_KEY, GOOGLE_SHEET_KEY_SECONDARY, GOOGLE_CREDENTIALS_JSON
+from core.config import GOOGLE_SHEET_KEY, GOOGLE_SHEET_KEY_SECONDARY, GOOGLE_CREDENTIALS_JSON
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

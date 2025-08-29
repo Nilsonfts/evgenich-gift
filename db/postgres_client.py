@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 import datetime
 import pytz
 
-from config import DATABASE_URL, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+from core.config import DATABASE_URL, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
 
 class PostgresClient:
     def __init__(self, db_url=None):

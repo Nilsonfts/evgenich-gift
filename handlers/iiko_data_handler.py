@@ -6,8 +6,8 @@ import datetime
 import logging
 import re
 from telebot import types
-from config import REPORT_CHAT_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, ALL_ADMINS
-from database import save_iiko_nastoika_count, is_waiting_for_iiko_data
+from core.config import REPORT_CHAT_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, ALL_ADMINS
+from core.database import save_iiko_nastoika_count, is_waiting_for_iiko_data
 from texts import IIKO_DATA_RECEIVED_TEXT, IIKO_DATA_ERROR_TEXT
 
 def register_iiko_data_handlers(bot):

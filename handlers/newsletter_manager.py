@@ -8,10 +8,10 @@ import datetime
 import pytz
 from typing import Optional, Dict, Any
 from telebot import types
-import database
+import core.database as database
 import keyboards
 import texts
-from config import ALL_ADMINS
+from core.config import ALL_ADMINS
 
 class NewsletterManager:
     def __init__(self, bot, scheduler):

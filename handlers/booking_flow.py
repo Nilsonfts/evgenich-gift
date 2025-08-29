@@ -6,13 +6,13 @@ from telebot.apihelper import ApiTelegramException
 from tinydb import TinyDB, Query
 
 # Импортируем конфиги, тексты и клавиатуры
-from config import BOOKING_NOTIFICATIONS_CHAT_ID, REPORT_CHAT_ID
+from core.config import BOOKING_NOTIFICATIONS_CHAT_ID, REPORT_CHAT_ID
 import texts
 import keyboards
 import settings_manager # Наш новый менеджер настроек
 
 # Импортируем функцию экспорта в соцсети
-from social_bookings_export import (
+from utils.social_bookings_export import (
     export_social_booking_to_sheets, 
     export_guest_booking_to_sheets,
     parse_booking_date, 
@@ -70,7 +70,7 @@ def register_booking_handlers(bot):
 
     @bot.message_handler(func=lambda message: message.text == "📨 Отправить БРОНЬ")
     def handle_admin_booking_entry(message: types.Message):
-        from config import ALL_BOOKING_STAFF
+        from core.config import ALL_BOOKING_STAFF
         if message.from_user.id not in ALL_BOOKING_STAFF:
             bot.reply_to(message, "❌ У вас нет доступа к созданию броней.")
             return

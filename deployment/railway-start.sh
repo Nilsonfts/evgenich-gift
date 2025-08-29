@@ -14,8 +14,8 @@ echo "Files in /app:"
 ls -la
 
 # Проверяем, что web_app.py существует
-if [ ! -f "web_app.py" ]; then
-    echo "❌ web_app.py not found!"
+if [ ! -f "web/web_app.py" ]; then
+    echo "❌ web/web_app.py not found!"
     exit 1
 fi
 
@@ -28,8 +28,8 @@ fi
 # Запускаем приложение
 if [ -n "$PORT" ]; then
     echo "🌐 Starting with gunicorn on port $PORT"
-    exec gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --preload --access-logfile - --error-logfile - web_app:app
+    exec gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --preload --access-logfile - --error-logfile - web.web_app:app
 else
     echo "🌐 PORT not set, starting Flask dev server on 8080"
-    exec python web_app.py
+    exec python web/web_app.py
 fi

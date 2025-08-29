@@ -2,7 +2,7 @@
 """
 Обработчики управления пользователями.
 """
-import database
+import core.database as database
 
 def handle_user_callbacks(bot, admin_states, texts):
     def process_find_user_step(message):

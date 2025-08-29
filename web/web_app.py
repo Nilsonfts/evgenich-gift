@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 # Импорты из нашего бота (с обработкой ошибок)
 try:
     import database
-    from config import ALL_ADMINS, BOT_TOKEN
+    from core.config import ALL_ADMINS, BOT_TOKEN
     DB_AVAILABLE = True
     logger.info("✅ Модули базы данных загружены успешно")
 except Exception as e:
