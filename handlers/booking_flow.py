@@ -9,7 +9,7 @@ from tinydb import TinyDB, Query
 from core.config import BOOKING_NOTIFICATIONS_CHAT_ID, REPORT_CHAT_ID
 import texts
 import keyboards
-import settings_manager # Наш новый менеджер настроек
+import core.settings_manager as settings_manager # Наш новый менеджер настроек
 
 # Импортируем функцию экспорта в соцсети
 from utils.social_bookings_export import (
