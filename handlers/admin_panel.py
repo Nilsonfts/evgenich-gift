@@ -11,7 +11,7 @@ import core.database as database
 import texts
 import keyboards
 import core.settings_manager as settings_manager
-import marketing_templates
+import modules.marketing_templates as marketing_templates
 from utils.export_to_sheets import do_export
 from handlers.user_commands import issue_coupon
 from handlers.newsletter_manager import register_newsletter_handlers
