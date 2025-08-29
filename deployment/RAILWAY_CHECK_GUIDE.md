@@ -1,3 +1,27 @@
+# ✅ ИСПРАВЛЕНИЕ ПРИМЕНЕНО! settings_manager
+
+## 🔧 Что было исправлено:
+
+**❌ Ошибка:**
+```
+ModuleNotFoundError: No module named 'settings_manager'
+File "/app/handlers/booking_flow.py", line 12, in <module>
+    import settings_manager
+```
+
+**✅ Исправление:**
+```python
+# Было:
+import settings_manager
+
+# Стало:  
+import core.settings_manager as settings_manager
+```
+
+## 🚀 Railway должен автоматически перезапуститься!
+
+---
+
 # 🔍 Чек-лист для проверки Railway
 
 ## ✅ Что искать в логах деплоя:
