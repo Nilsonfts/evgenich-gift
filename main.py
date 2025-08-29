@@ -77,6 +77,14 @@ def check_database_connections():
     else:
         logging.warning("⚠️  PostgreSQL не настроен (USE_POSTGRES=false или DATABASE_URL пуст)")
 
+def request_feedback(user_id):
+    """Запрашивает обратную связь у пользователя."""
+    try:
+        bot.send_message(user_id, texts.FEEDBACK_REQUEST_TEXT)
+        logging.info(f"Отправлен запрос обратной связи пользователю {user_id}")
+    except Exception as e:
+        logging.error(f"Ошибка отправки запроса обратной связи пользователю {user_id}: {e}")
+
 def manual_feedback_request():
     # Тут должна быть ваша логика запроса обратной связи
     pass

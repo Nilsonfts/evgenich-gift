@@ -1,18 +1,13 @@
 #!/usr/bin/env python3
 """
-Скрипт для исправления предупреждений PostgreSQL о несоответствии версий collation.
-Выполняет команду ALTER DATABASE railway REFRESH COLLATION VERSION.
+Скрипт для исправления проблем с PostgreSQL collation.
+Выполняется автоматически при старте приложения.
 """
-import os
-import sys
+
 import logging
-import psycopg2
-from psycopg2 import sql
-
-# Добавляем путь к корневой директории проекта
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from core.config import POSTGRES_URL
+import os
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
 
 #!/usr/bin/env python3
 """
