@@ -69,9 +69,9 @@ class PostgresClient:
             Column('referrer_id', Integer),
             Column('brought_by_staff_id', Integer),
             Column('redeem_date', DateTime),
-            Column('referrer_rewarded', Boolean, default=False),
+            Column('referrer_rewarded', Integer, default=0),  # 0 = False, 1 = True
             Column('referrer_rewarded_date', DateTime),
-            Column('blocked', Boolean, default=False),
+            Column('blocked', Integer, default=0),  # 0 = False, 1 = True
             Column('block_date', DateTime),
         )
         
@@ -174,7 +174,9 @@ class PostgresClient:
                     referrer_id=referrer_id,
                     brought_by_staff_id=brought_by_staff_id,
                     register_date=datetime.datetime.now(pytz.timezone('Europe/Moscow')),
-                    last_activity=datetime.datetime.now(pytz.timezone('Europe/Moscow'))
+                    last_activity=datetime.datetime.now(pytz.timezone('Europe/Moscow')),
+                    referrer_rewarded=0,  # 0 = False
+                    blocked=0  # 0 = False
                 )
                 connection.execute(stmt)
                 connection.commit()
@@ -598,6 +600,11 @@ class PostgresClient:
                 
                 # Проверяем, прошло ли 48 часов
                 current_time = datetime.datetime.now(pytz.utc)
+                
+                # Приводим register_date к aware datetime, если оно naive
+                if register_date.tzinfo is None:
+                    register_date = pytz.utc.localize(register_date)
+                    
                 hours_passed = (current_time - register_date).total_seconds() / 3600
                 
                 if hours_passed < 48:
@@ -800,7 +807,7 @@ class PostgresClient:
                         self.users_table.c.user_id.isnot(None),
                         sa.or_(
                             self.users_table.c.blocked.is_(None),
-                            self.users_table.c.blocked == False
+                            self.users_table.c.blocked == 0
                         )
                     )
                 ).order_by(self.users_table.c.register_date.desc())
@@ -867,7 +874,7 @@ class PostgresClient:
                         self.users_table.c.user_id.isnot(None),
                         sa.or_(
                             self.users_table.c.blocked.is_(None),
-                            self.users_table.c.blocked == False
+                            self.users_table.c.blocked == 0
                         )
                     )
                 )
