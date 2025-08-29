@@ -676,6 +676,11 @@ class PostgresClient:
                 
                 for ref in pending_referrals:
                     ref_id, username, first_name, register_date, redeem_date = ref
+                    
+                    # Приводим register_date к aware datetime, если оно naive
+                    if register_date.tzinfo is None:
+                        register_date = pytz.utc.localize(register_date)
+                        
                     hours_passed = (current_time - register_date).total_seconds() / 3600
                     
                     pending_rewards.append({
