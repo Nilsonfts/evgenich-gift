@@ -141,33 +141,86 @@ def do_export() -> Tuple[bool, str]:
         return False, msg
 
     try:
-        worksheet.clear()
-        logging.info(f"Лист '{EXPORT_SHEET_NAME}' очищен.")
-        
+        # Не очищаем существующие строки — будем дописывать только новые записи
         header_row = list(COLUMN_CONFIG.values())
         column_order_keys = list(COLUMN_CONFIG.keys())
-        
-        data_to_upload = [header_row]
+
+        # Получим текущие значения листа, чтобы не затирать старые
+        existing_values = worksheet.get_all_values()
+
+        # Если лист пустой или нет заголовка — запишем заголовок и все строки
+        if not existing_values or len(existing_values) == 0:
+            logging.info("Лист пустой — записываю заголовок и все строки.")
+            data_to_upload = [header_row]
+            for user_row in users:
+                ordered_row = []
+                for key in column_order_keys:
+                    value = user_row[key]
+                    if key == 'profile_completed':
+                        value = "Да" if value == 1 else "Нет"
+                    if isinstance(value, str) and ('-' in value and ':' in value):
+                        try:
+                            value = datetime.fromisoformat(value).strftime('%Y-%m-%d %H:%M:%S')
+                        except ValueError:
+                            pass
+                    ordered_row.append(value)
+                data_to_upload.append(ordered_row)
+            worksheet.update(data_to_upload, 'A1')
+            msg = f"УСПЕХ! Данные ({len(data_to_upload)} строк) успешно выгружены."
+            logging.info(msg)
+            return True, msg
+
+        # Есть данные — определим индекс столбца с ID Пользователя и соберём существующие id
+        header_vals = existing_values[0]
+        header_lower = [h.strip().lower() for h in header_vals]
+        id_col_label = COLUMN_CONFIG.get('user_id', 'ID Пользователя')
+        id_col_label_lower = id_col_label.strip().lower()
+        try:
+            id_col_index = header_lower.index(id_col_label_lower)
+        except ValueError:
+            id_col_index = None
+
+        existing_ids = set()
+        if id_col_index is not None:
+            for row in existing_values[1:]:
+                if len(row) > id_col_index and row[id_col_index].strip():
+                    try:
+                        existing_ids.add(int(row[id_col_index]))
+                    except Exception:
+                        pass
+
+        # Подготовим только новые строки (которые ещё не в листе)
+        new_rows = []
         for user_row in users:
+            uid = user_row['user_id']
+            if uid in existing_ids:
+                continue
             ordered_row = []
             for key in column_order_keys:
                 value = user_row[key]
-                
-                # Специальная обработка для булевых значений
                 if key == 'profile_completed':
                     value = "Да" if value == 1 else "Нет"
-                
-                # Обработка дат
                 if isinstance(value, str) and ('-' in value and ':' in value):
-                     try:
-                         value = datetime.fromisoformat(value).strftime('%Y-%m-%d %H:%M:%S')
-                     except ValueError:
-                         pass
+                    try:
+                        value = datetime.fromisoformat(value).strftime('%Y-%m-%d %H:%M:%S')
+                    except ValueError:
+                        pass
                 ordered_row.append(value)
-            data_to_upload.append(ordered_row)
+            new_rows.append(ordered_row)
 
-        worksheet.update(data_to_upload, 'A1')
-        msg = f"УСПЕХ! Данные ({len(data_to_upload)} строк) успешно выгружены."
+        if not new_rows:
+            msg = "Нет новых пользователей для добавления — экспорт пропущен."
+            logging.info(msg)
+            return True, msg
+
+        # Дописываем новые строки в конец листа
+        try:
+            worksheet.append_rows(new_rows, value_input_option='USER_ENTERED')
+        except TypeError:
+            # Старые версии gspread могут не поддерживать value_input_option
+            worksheet.append_rows(new_rows)
+
+        msg = f"УСПЕХ! Добавлено {len(new_rows)} новых строк."
         logging.info(msg)
         return True, msg
     except Exception as e:
