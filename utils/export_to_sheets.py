@@ -11,6 +11,32 @@ from core.config import GOOGLE_SHEET_KEY, GOOGLE_CREDENTIALS_JSON, DATABASE_PATH
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+# --- Вспомогательная функция для валидации JSON ---
+def _parse_credentials_json(creds) -> Tuple[bool, dict, str]:
+    """
+    Парсит JSON из строки или принимает уже распарсенный dict.
+    Возвращает (успех, словарь_данных, сообщение_ошибки).
+    """
+    if not creds:
+        return False, {}, "Переменная GOOGLE_CREDENTIALS_JSON пуста"
+
+    # Если уже dict — возвращаем напрямую
+    if isinstance(creds, dict):
+        return True, creds, ""
+
+    # Если строка — пытаемся распарсить
+    if isinstance(creds, str):
+        try:
+            return True, json.loads(creds), ""
+        except (json.JSONDecodeError, ValueError):
+            try:
+                cleaned = " ".join(line.strip() for line in creds.splitlines() if line.strip())
+                return True, json.loads(cleaned), ""
+            except Exception as e2:
+                return False, {}, f"Невозможно парсить GOOGLE_CREDENTIALS_JSON: {str(e2)}"
+
+    return False, {}, "Неподдерживаемый формат GOOGLE_CREDENTIALS_JSON"
+
 # --- Настройки ---
 DB_FILE = DATABASE_PATH  # Используем путь из переменной окружения
 EXPORT_SHEET_NAME = "Выгрузка Пользователей" 
@@ -69,19 +95,46 @@ def do_export() -> Tuple[bool, str]:
         return False, msg
 
     try:
-        creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+        success, creds_dict, error_msg = _parse_credentials_json(GOOGLE_CREDENTIALS_JSON)
+        if not success:
+            msg = f"Ошибка парсинга GOOGLE_CREDENTIALS_JSON: {error_msg}"
+            logging.error(msg)
+            return False, msg
+        
         creds = Credentials.from_service_account_info(
             creds_dict,
             scopes=['https://www.googleapis.com/auth/spreadsheets']
         )
         gc = gspread.authorize(creds)
         spreadsheet = gc.open_by_key(GOOGLE_SHEET_KEY)
-        worksheet = spreadsheet.worksheet(EXPORT_SHEET_NAME)
+        
+        # Попытка получить лист по названию
+        try:
+            worksheet = spreadsheet.worksheet(EXPORT_SHEET_NAME)
+        except gspread.exceptions.WorksheetNotFound:
+            # Лист не найден — логируем доступные и пробуем найти по нечувствительному к регистру
+            logging.warning(f"Лист '{EXPORT_SHEET_NAME}' не найден. Ищу среди доступных вкладок:")
+            worksheet = None
+            for ws in spreadsheet.worksheets():
+                logging.warning(f"  - {ws.title} (id={ws.id})")
+                # Попробуем найти по нечувствительному к регистру совпадению
+                if ws.title.strip().lower() == EXPORT_SHEET_NAME.strip().lower():
+                    logging.info(f"Найдена вкладка по нечувствительному к регистру: {ws.title}")
+                    worksheet = ws
+                    break
+            
+            if not worksheet:
+                # Не найдена — попробуем создать
+                try:
+                    logging.info(f"Пытаюсь создать вкладку '{EXPORT_SHEET_NAME}' автоматически.")
+                    worksheet = spreadsheet.add_worksheet(title=EXPORT_SHEET_NAME, rows=200, cols=20)
+                    logging.info(f"Вкладка '{EXPORT_SHEET_NAME}' успешно создана")
+                except Exception as ce:
+                    msg = f"Не удалось создать вкладку '{EXPORT_SHEET_NAME}': {ce}"
+                    logging.error(msg)
+                    return False, msg
+        
         logging.info("Успешное подключение к Google Sheets.")
-    except gspread.exceptions.WorksheetNotFound:
-        msg = f"Ошибка: Лист с именем '{EXPORT_SHEET_NAME}' не найден! Пожалуйста, создайте его."
-        logging.error(msg)
-        return False, msg
     except Exception as e:
         msg = f"Не удалось подключиться к Google Sheets: {e}"
         logging.error(msg)

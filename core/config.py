@@ -1,8 +1,26 @@
 import os
+import json
 from dotenv import load_dotenv
 
 # Загружаем переменные из .env файла
 load_dotenv()
+
+# Вспомогательная функция для парсинга JSON из многострочных строк (Railway raw editor)
+def _parse_json_safe(json_string):
+    """Парсит JSON из строки, обрабатывая многострочные и однострочные форматы."""
+    if not json_string:
+        return None
+    try:
+        # Пытаемся парсить как есть и вернуть словарь
+        return json.loads(json_string)
+    except (json.JSONDecodeError, ValueError):
+        # Если не сработало, пытаемся разбить по переносам и переконструировать
+        try:
+            # Убираем лишние переносы и пробелы в начале/конце строк
+            cleaned = " ".join(line.strip() for line in json_string.splitlines() if line.strip())
+            return json.loads(cleaned)
+        except Exception:
+            return None
 
 # --- Telegram ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -52,7 +70,10 @@ NASTOYKA_NOTIFICATIONS_CHAT_ID = -1002813620544  # Чат для уведомл�
 # --- Google Sheets ---
 GOOGLE_SHEET_KEY = os.getenv("GOOGLE_SHEET_KEY")  # Основная таблица
 GOOGLE_SHEET_KEY_SECONDARY = os.getenv("GOOGLE_SHEET_KEY_SECONDARY")  # Дополнительная таблица
-GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
+
+# Обработка GOOGLE_CREDENTIALS_JSON: поддержка многострочного JSON из Railway raw editor
+_raw_creds = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
+GOOGLE_CREDENTIALS_JSON = _parse_json_safe(_raw_creds) if _raw_creds else None
 
 # --- Нейросеть (Новое) ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -70,7 +91,7 @@ MENU_URL = os.getenv("MENU_URL")
 DATABASE_PATH = os.getenv("DATABASE_PATH", "data/evgenich_data.db")
 
 # PostgreSQL
-USE_POSTGRES = os.getenv("USE_POSTGRES", "false").lower() == "true"
+USE_POSTGRES = os.getenv("USE_POSTGRES", "false").lower() in ("true", "1", "yes")
 DATABASE_URL = os.getenv("DATABASE_URL")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "railway")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
@@ -94,10 +115,14 @@ if not all([
 if not GOOGLE_SHEET_KEY:
     print("⚠️  GOOGLE_SHEET_KEY не установлен - экспорт в Google Sheets отключен")
 if not GOOGLE_CREDENTIALS_JSON:
-    print("⚠️  GOOGLE_CREDENTIALS_JSON не установлен - экспорт в Google Sheets отключен")
+    print("⚠️  GOOGLE_CREDENTIALS_JSON не установлен или невалиден - экспорт в Google Sheets отключен")
 if not OPENAI_API_KEY:
     print("⚠️  OPENAI_API_KEY не установлен - AI функции отключены")
 if not REPORT_CHAT_ID:
     print("⚠️  REPORT_CHAT_ID не установлен - отчеты не будут отправляться")
 if not MENU_URL:
     print("⚠️  MENU_URL не установлен - ссылка на меню не будет работать")
+
+# Логирование статуса подключений
+print(f"✅ PostgreSQL: {'Включен (DATABASE_URL установлен)' if USE_POSTGRES and DATABASE_URL else 'Отключен или неполная конфигурация'}")
+print(f"✅ Google Sheets: {'Включен' if GOOGLE_SHEET_KEY and GOOGLE_CREDENTIALS_JSON else 'Отключен'}")
