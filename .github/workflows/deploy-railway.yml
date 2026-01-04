@@ -22,7 +22,7 @@ jobs:
 
       - name: Deploy (railway up)
         env:
-          RAILWAY_API_KEY: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT: ${{ secrets.RAILWAY_PROJECT }} # optional
           RAILWAY_SERVICE: ${{ secrets.RAILWAY_SERVICE }} # optional
         run: |
