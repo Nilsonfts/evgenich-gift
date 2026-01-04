@@ -25,11 +25,14 @@ def _parse_credentials_json(creds_str):
     """Парсит JSON из строки (поддерживает многострочный и однострочный форматы)."""
     if not creds_str:
         return None
+    # If it's already a dict (config may provide parsed dict), return as is
+    if isinstance(creds_str, dict):
+        return creds_str
     try:
         return json.loads(creds_str)
     except (json.JSONDecodeError, ValueError):
         try:
-            cleaned = " ".join(line.strip() for line in creds_str.split("\n") if line.strip())
+            cleaned = " ".join(line.strip() for line in str(creds_str).splitlines() if line.strip())
             return json.loads(cleaned)
         except Exception as e:
             logging.error("Невозможно парсить GOOGLE_CREDENTIALS_JSON: %s", str(e))

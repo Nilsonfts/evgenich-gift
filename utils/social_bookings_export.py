@@ -13,6 +13,21 @@ from core.config import GOOGLE_SHEET_KEY, GOOGLE_SHEET_KEY_SECONDARY, GOOGLE_CRE
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+# Вспомогательная функция для парсинга credentials JSON
+def _parse_credentials_json(creds_str):
+    """Парсит JSON из строки (поддерживает многострочный и однострочный форматы)."""
+    if not creds_str:
+        return None
+    try:
+        return json.loads(creds_str)
+    except (json.JSONDecodeError, ValueError):
+        try:
+            cleaned = " ".join(line.strip() for line in creds_str.split("\n") if line.strip())
+            return json.loads(cleaned)
+        except Exception as e:
+            logging.error("Невозможно парсить GOOGLE_CREDENTIALS_JSON: %s", str(e))
+            return None
+
 # ID вкладки "Заявки из Соц сетей"
 SOCIAL_BOOKINGS_SHEET_GID = "1842872487"
 
@@ -585,7 +600,11 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
         
     try:
         # Подключение к Google Sheets
-        credentials_info = json.loads(GOOGLE_CREDENTIALS_JSON)
+        credentials_info = _parse_credentials_json(GOOGLE_CREDENTIALS_JSON)
+        if not credentials_info:
+            logging.error("Не удалось парсить GOOGLE_CREDENTIALS_JSON")
+            return False
+        
         credentials = Credentials.from_service_account_info(
             credentials_info,
             scopes=['https://www.googleapis.com/auth/spreadsheets']
