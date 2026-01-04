@@ -155,16 +155,23 @@ class PostgresClient:
             brought_by_staff_id (int, optional): ID сотрудника, приведшего клиента
         
         Returns:
-            bool: True если успешно, False в случае ошибки
+            bool: True если успешно, False в случае ошибка
         """
         try:
-            with self.engine.connect() as connection:
+            logging.info(f"PostgreSQL | 🚀 Начинаю добавление пользователя {user_id}...")
+            
+            with self.engine.begin() as connection:  # begin() автоматически коммитит
+                # Проверяем, существует ли пользователь
                 query = select(self.users_table).where(self.users_table.c.user_id == user_id)
                 result = connection.execute(query).fetchone()
                 
                 if result:
-                    logging.info(f"PostgreSQL | Пользователь {user_id} уже существует")
+                    logging.warning(f"PostgreSQL | Пользователь {user_id} уже существует в БД")
                     return False
+                
+                # Добавляем пользователя
+                moscow_tz = pytz.timezone('Europe/Moscow')
+                now = datetime.datetime.now(moscow_tz)
                 
                 stmt = insert(self.users_table).values(
                     user_id=user_id,
@@ -173,18 +180,22 @@ class PostgresClient:
                     source=source,
                     referrer_id=referrer_id,
                     brought_by_staff_id=brought_by_staff_id,
-                    register_date=datetime.datetime.now(pytz.timezone('Europe/Moscow')),
-                    last_activity=datetime.datetime.now(pytz.timezone('Europe/Moscow')),
+                    register_date=now,
+                    last_activity=now,
+                    status='registered',
                     referrer_rewarded=0,  # 0 = False
                     blocked=0  # 0 = False
                 )
-                connection.execute(stmt)
-                connection.commit()
                 
-                logging.info(f"PostgreSQL | Пользователь {user_id} добавлен. Источник: {source}, Сотрудник: {brought_by_staff_id}")
+                connection.execute(stmt)
+                logging.info(f"✅ PostgreSQL | Пользователь {user_id} успешно добавлен в БД. Источник: {source}, Время: {now}")
                 return True
+                
         except SQLAlchemyError as e:
-            logging.error(f"PostgreSQL | Ошибка добавления пользователя {user_id}: {e}")
+            logging.error(f"❌ PostgreSQL | Ошибка добавления пользователя {user_id}: {e}", exc_info=True)
+            return False
+        except Exception as e:
+            logging.error(f"❌ PostgreSQL | Неожиданная ошибка добавления пользователя {user_id}: {e}", exc_info=True)
             return False
 
     def update_status(self, user_id, new_status):
