@@ -91,69 +91,22 @@ def manual_feedback_request():
 
 def send_daily_report_job():
     """Формирует и отправляет отчет за смену с 12:00 до 06:00."""
-    logging.info("Scheduler: Запускаю отправку ежедневного отчета...")
+    logging.info("Scheduler: Запускаю отправку ежедневного отчета в 07:00...")
     try:
         tz_moscow = pytz.timezone('Europe/Moscow')
         current_time = datetime.datetime.now(tz_moscow)
         
-        # Если сейчас до 12:00, то отчет за смену: 12:00 позавчера - 06:00 вчера
-        # Если сейчас после 12:00, то отчет за смену: 12:00 вчера - 06:00 сегодня
-        if current_time.hour < 12:
-            # Отчет за позавчерашнюю смену
-            end_time = current_time.replace(hour=6, minute=0, second=0, microsecond=0)
-            start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
-        else:
-            # Отчет за вчерашнюю смену  
-            end_time = current_time.replace(hour=6, minute=0, second=0, microsecond=0)
-            if current_time.hour >= 6:
-                # Если сейчас после 06:00, то берем сегодняшние 06:00
-                pass
-            else:
-                # Если сейчас до 06:00, то берем вчерашние 06:00
-                end_time = end_time - datetime.timedelta(days=1)
-            start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+        # Отчет за смену: 12:00 вчера - 06:00 сегодня
+        end_time = current_time.replace(hour=6, minute=0, second=0, microsecond=0)
+        start_time = (end_time - datetime.timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
         
         logging.info(f"Формирую отчет за смену: {start_time.strftime('%d.%m.%Y %H:%M')} - {end_time.strftime('%d.%m.%Y %H:%M')}")
         
-        # Запрашиваем данные iiko перед отправкой отчета
-        report_date = end_time.date()
-        request_iiko_data_before_report(report_date, start_time, end_time)
+        # Отправляем отчет сразу (данные iiko опциональны)
+        send_final_report_with_iiko(start_time, end_time)
         
     except Exception as e:
         logging.error(f"Scheduler: Ошибка при отправке ежедневного отчета: {e}")
-
-def request_iiko_data_before_report(report_date: datetime.date, start_time: datetime.datetime, end_time: datetime.datetime):
-    """Запрашивает данные iiko перед формированием отчета."""
-    from texts import IIKO_DATA_REQUEST_TEXT
-    from core.database import is_waiting_for_iiko_data
-    
-    # Проверяем, нужны ли данные за эту дату
-    if is_waiting_for_iiko_data(report_date):
-        try:
-            # Отправляем запрос в чат для настоек в 05:30
-            bot.send_message(
-                NASTOYKA_NOTIFICATIONS_CHAT_ID,
-                IIKO_DATA_REQUEST_TEXT,
-                parse_mode='Markdown'
-            )
-            logging.info(f"Отправлен запрос данных iiko за {report_date} в чат настоек {NASTOYKA_NOTIFICATIONS_CHAT_ID}")
-            
-            # Планируем отправку отчета через 35 минут (в 06:05)
-            scheduler.add_job(
-                lambda: send_final_report_with_iiko(start_time, end_time),
-                'date',
-                run_date=datetime.datetime.now(pytz.timezone('Europe/Moscow')) + datetime.timedelta(minutes=35),
-                id=f'final_report_{report_date}',
-                replace_existing=True
-            )
-            
-        except Exception as e:
-            logging.error(f"Ошибка запроса данных iiko: {e}")
-            # Если не удалось запросить, отправляем отчет без данных iiko
-            send_final_report_with_iiko(start_time, end_time)
-    else:
-        # Данные уже есть, отправляем отчет сразу
-        send_final_report_with_iiko(start_time, end_time)
 
 def send_final_report_with_iiko(start_time: datetime.datetime, end_time: datetime.datetime):
     """Отправляет финальный отчет с данными iiko (если есть)."""
@@ -240,13 +193,13 @@ if __name__ == "__main__":
     # Инициализируем систему рассылок с планировщиком
     init_admin_handlers(bot, scheduler)
 
-    # Ежедневный отчет в 05:30 (запрос данных iiko)
+    # Ежедневный отчет в 07:00
     scheduler.add_job(
         send_daily_report_job,
-        trigger=CronTrigger(hour=5, minute=30, timezone='Europe/Moscow'),
+        trigger=CronTrigger(hour=7, minute=0, timezone='Europe/Moscow'),
         id='daily_report_job', name='Daily report', replace_existing=True
     )
-    logging.info("Scheduler: Задача для ежедневного отчета запланирована на 05:30.")
+    logging.info("Scheduler: Задача для ежедневного отчета запланирована на 07:00.")
 
     # Ночной аудитор в 04:00
     scheduler.add_job(
