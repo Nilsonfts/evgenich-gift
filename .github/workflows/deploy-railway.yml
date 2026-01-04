@@ -17,21 +17,10 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
-      - name: Login to Railway
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          railway login --token "$RAILWAY_TOKEN"
-
-      - name: Deploy (railway up)
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT: ${{ secrets.RAILWAY_PROJECT }} # optional
-          RAILWAY_SERVICE: ${{ secrets.RAILWAY_SERVICE }} # optional
-        run: |
-          # Deploy the project. If you use services/projects provide RAILWAY_PROJECT/RAILWAY_SERVICE in secrets.
-          # This will attempt to deploy the current repo to Railway.
-          railway up --detach || railway deploy || true
+      - name: Deploy to Railway (action)
+        uses: railwayapp/railway-action@v1
+        with:
+          apiKey: ${{ secrets.RAILWAY_TOKEN }}
+          # Optional: set projectId/service if you want to target specific project/service
+          projectId: ${{ secrets.RAILWAY_PROJECT }}
+          serviceId: ${{ secrets.RAILWAY_SERVICE }}
