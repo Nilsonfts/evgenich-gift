@@ -183,8 +183,8 @@ class PostgresClient:
                     register_date=now,
                     last_activity=now,
                     status='registered',
-                    referrer_rewarded=0,  # 0 = False
-                    blocked=0  # 0 = False
+                    referrer_rewarded=False,  # Boolean
+                    blocked=0  # Integer (0 = not blocked)
                 )
                 
                 connection.execute(stmt)
