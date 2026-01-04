@@ -20,9 +20,47 @@ if USE_POSTGRES:
     from db.postgres_client import PostgresClient
     pg_client = PostgresClient()
 
+# --- Вспомогательная функция для парсинга credentials JSON ---
+def _parse_credentials_json(creds_str):
+    """Парсит JSON из строки (поддерживает многострочный и однострочный форматы)."""
+    if not creds_str:
+        return None
+    try:
+        return json.loads(creds_str)
+    except (json.JSONDecodeError, ValueError):
+        try:
+            cleaned = " ".join(line.strip() for line in creds_str.split("\n") if line.strip())
+            return json.loads(cleaned)
+        except Exception as e:
+            logging.error("Невозможно парсить GOOGLE_CREDENTIALS_JSON: %s", str(e))
+            return None
+
 # --- Настройки ---
 DB_FILE = DATABASE_PATH  # Используем путь из переменной окружения
 SHEET_NAME = "Выгрузка Пользователей"
+
+# Вспомогательная функция форматирования datetime для запросов к БД
+def _format_dt_for_db(dt: datetime.datetime) -> str:
+    """Возвращает строку для использования в SQLite или PostgreSQL запросах.
+    Для PostgreSQL возвращает ISO с timezone; для SQLite возвращает наивную локальную строку 'YYYY-MM-DD HH:MM:SS'.
+    """
+    if dt is None:
+        return None
+    try:
+        if USE_POSTGRES and pg_client:
+            # Для Postgres используем ISO (с tz если есть)
+            if dt.tzinfo is None:
+                # локализуем в UTC если нет tz
+                dt = pytz.utc.localize(dt)
+            return dt.isoformat()
+        else:
+            # Для SQLite приводим к Europe/Moscow и убираем tzinfo
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(pytz.timezone('Europe/Moscow'))
+            return dt.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+    except Exception:
+        # Фоллбэк — isoformat
+        return dt.isoformat()
 
 # Проверяем доступность Google Sheets
 GOOGLE_SHEETS_ENABLED = bool(GOOGLE_SHEET_KEY and GOOGLE_CREDENTIALS_JSON)
@@ -45,16 +83,45 @@ def _get_sheets_worksheet():
         logging.warning("Google Sheets отключен - отсутствуют необходимые переменные окружения")
         return None
     try:
-        creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+        creds_dict = _parse_credentials_json(GOOGLE_CREDENTIALS_JSON)
+        if not creds_dict:
+            logging.error("G-Sheets | Не удалось парсить GOOGLE_CREDENTIALS_JSON")
+            return None
+        
         creds = Credentials.from_service_account_info(
             creds_dict,
             scopes=['https://www.googleapis.com/auth/spreadsheets']
         )
         gc = gspread.authorize(creds)
         spreadsheet = gc.open_by_key(GOOGLE_SHEET_KEY)
-        return spreadsheet.worksheet(SHEET_NAME)
+        
+        # Попытка получить лист по названию
+        try:
+            return spreadsheet.worksheet(SHEET_NAME)
+        except gspread.exceptions.WorksheetNotFound:
+            # Лист не найден — логируем доступные и пробуем найти по нечувствительному к регистру
+            logging.warning("G-Sheets | Лист '%s' не найден. Ищу среди доступных вкладок:", SHEET_NAME)
+            worksheet = None
+            for ws in spreadsheet.worksheets():
+                logging.warning("G-Sheets |   - %s (id=%s)", ws.title, ws.id)
+                if ws.title.strip().lower() == SHEET_NAME.strip().lower():
+                    logging.info("G-Sheets | Найдена вкладка по нечувствительному к регистру: %s", ws.title)
+                    worksheet = ws
+                    break
+            
+            if not worksheet:
+                # Пытаемся создать вкладку
+                try:
+                    logging.info("G-Sheets | Пытаюсь создать вкладку '%s' автоматически.", SHEET_NAME)
+                    new_ws = spreadsheet.add_worksheet(title=SHEET_NAME, rows=200, cols=20)
+                    logging.info("G-Sheets | Вкладка '%s' успешно создана (id=%s)", SHEET_NAME, new_ws.id)
+                    return new_ws
+                except Exception as ce:
+                    logging.error("G-Sheets | Не удалось создать вкладку '%s': %s", SHEET_NAME, ce)
+                    return None
+            return worksheet
     except Exception as e:
-        logging.error(f"G-Sheets | Не удалось подключиться к таблице '{SHEET_NAME}': {e}")
+        logging.error("G-Sheets | Ошибка подключения: %s", str(e))
         return None
 
 def _add_user_to_sheets_in_background(row_data: List[Any]):
@@ -704,9 +771,9 @@ def get_daily_churn_data(start_time: datetime, end_time: datetime) -> Tuple[int,
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Конвертируем datetime в строку ISO формата для SQLite
-        start_str = start_time.isoformat()
-        end_str = end_time.isoformat()
+        # Конвертируем datetime в строку формата, подходящего для текущей БД
+        start_str = _format_dt_for_db(start_time)
+        end_str = _format_dt_for_db(end_time)
         
         cur.execute("SELECT COUNT(*) FROM users WHERE redeem_date BETWEEN ? AND ? AND status IN ('redeemed', 'redeemed_and_left')", (start_str, end_str))
         redeemed_total = cur.fetchone()[0]
@@ -754,9 +821,9 @@ def get_report_data_for_period(start_time: datetime, end_time: datetime) -> tupl
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Конвертируем datetime в строку ISO формата для SQLite
-        start_str = start_time.isoformat()
-        end_str = end_time.isoformat()
+        # Конвертируем datetime в строку формата, подходящего для текущей БД
+        start_str = _format_dt_for_db(start_time)
+        end_str = _format_dt_for_db(end_time)
         
         cur.execute("SELECT COUNT(*) FROM users WHERE signup_date BETWEEN ? AND ? AND status IN ('issued', 'redeemed', 'redeemed_and_left')", (start_str, end_str))
         issued_count = cur.fetchone()[0]
@@ -1524,9 +1591,9 @@ def get_staff_performance_for_period(start_time: datetime, end_time: datetime) -
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Конвертируем datetime в строку ISO формата для SQLite
-        start_str = start_time.isoformat()
-        end_str = end_time.isoformat()
+        # Конвертируем datetime в строку формата, подходящего для текущей БД
+        start_str = _format_dt_for_db(start_time)
+        end_str = _format_dt_for_db(end_time)
         
         cur.execute("""
             SELECT s.short_name, s.position, u.status
@@ -1569,9 +1636,9 @@ def get_staff_qr_diagnostics_for_period(start_time: datetime, end_time: datetime
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Конвертируем datetime в строку ISO формата для SQLite
-        start_str = start_time.isoformat()
-        end_str = end_time.isoformat()
+        # Конвертируем datetime в строку формата, подходящего для текущей БД
+        start_str = _format_dt_for_db(start_time)
+        end_str = _format_dt_for_db(end_time)
         
         # Получаем всех активных сотрудников
         cur.execute("SELECT staff_id, full_name, short_name, unique_code, position FROM staff WHERE status = 'active'")
@@ -1633,9 +1700,9 @@ def get_staff_leaderboard(start_time: datetime, end_time: datetime, limit: int =
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Конвертируем datetime в строку ISO формата для SQLite
-        start_str = start_time.isoformat()
-        end_str = end_time.isoformat()
+        # Конвертируем datetime в строку формата, подходящего для текущей БД
+        start_str = _format_dt_for_db(start_time)
+        end_str = _format_dt_for_db(end_time)
         
         # Получаем статистику по каждому сотруднику
         cur.execute("""
@@ -1690,9 +1757,9 @@ def get_staff_period_stats(start_time: datetime, end_time: datetime) -> dict:
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Конвертируем datetime в строку ISO формата для SQLite
-        start_str = start_time.isoformat()
-        end_str = end_time.isoformat()
+        # Конвертируем datetime в строку формата, подходящего для текущей БД
+        start_str = _format_dt_for_db(start_time)
+        end_str = _format_dt_for_db(end_time)
         
         # Получаем общие данные за период
         cur.execute("""
