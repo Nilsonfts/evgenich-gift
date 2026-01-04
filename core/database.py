@@ -436,7 +436,8 @@ def init_db():
 
 def add_new_user(user_id: int, username: str, first_name: str, source: str, referrer_id: Optional[int] = None, brought_by_staff_id: Optional[int] = None):
     """Добавляет нового пользователя, возможно с привязкой к сотруднику."""
-    signup_time = datetime.datetime.now(pytz.utc)
+    moscow_tz = pytz.timezone('Europe/Moscow')
+    signup_time = datetime.datetime.now(moscow_tz)
     
     if USE_POSTGRES:
         # Добавление пользователя через PostgreSQL
