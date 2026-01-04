@@ -20,11 +20,15 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
-      - name: Deploy (railway up)
+      - name: Link and Deploy
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT: ${{ secrets.RAILWAY_PROJECT }} # optional
-          RAILWAY_SERVICE: ${{ secrets.RAILWAY_SERVICE }} # optional
+          RAILWAY_PROJECT: ${{ secrets.RAILWAY_PROJECT }}
+          RAILWAY_SERVICE: ${{ secrets.RAILWAY_SERVICE }}
         run: |
-          # Deploy the project using Railway CLI and the API key provided via env var
+          # Link the project if PROJECT and SERVICE are provided
+          if [ -n "$RAILWAY_PROJECT" ] && [ -n "$RAILWAY_SERVICE" ]; then
+            railway link --project "$RAILWAY_PROJECT" --service "$RAILWAY_SERVICE" 2>/dev/null || true
+          fi
+          # Deploy the project
           railway up --detach || railway deploy || true
