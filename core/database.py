@@ -129,15 +129,21 @@ def _get_sheets_worksheet():
 
 def _add_user_to_sheets_in_background(row_data: List[Any]):
     """(Фоновая задача) Добавляет строку с данными пользователя в таблицу."""
+    logging.info(f"G-Sheets (фон) | Попытка добавления пользователя. GOOGLE_SHEETS_ENABLED={GOOGLE_SHEETS_ENABLED}")
     if not GOOGLE_SHEETS_ENABLED:
+        logging.warning(f"G-Sheets (фон) | Google Sheets отключен! GOOGLE_SHEET_KEY={bool(GOOGLE_SHEET_KEY)}, GOOGLE_CREDENTIALS_JSON={bool(GOOGLE_CREDENTIALS_JSON)}")
         return
     try:
+        logging.info(f"G-Sheets (фон) | Подключаюсь к worksheet для добавления пользователя {row_data[1]}...")
         worksheet = _get_sheets_worksheet()
         if worksheet:
+            logging.info(f"G-Sheets (фон) | Worksheet получен. Добавляю строку: {row_data}")
             worksheet.append_row(row_data)
-            logging.info(f"G-Sheets (фон) | Пользователь с ID {row_data[1]} успешно дублирован.")
+            logging.info(f"G-Sheets (фон) | ✅ Пользователь с ID {row_data[1]} успешно добавлен в таблицу.")
+        else:
+            logging.error(f"G-Sheets (фон) | ❌ Не удалось получить worksheet!")
     except Exception as e:
-        logging.error(f"G-Sheets (фон) | Ошибка дублирования пользователя {row_data[1]}: {e}")
+        logging.error(f"G-Sheets (фон) | ❌ Ошибка добавления пользователя {row_data[1]}: {e}", exc_info=True)
 
 def _update_contact_in_sheets_in_background(user_id: int, phone_number: str, contact_shared_date: datetime.datetime):
     """(Фоновая задача) Обновляет контактную информацию пользователя в таблице."""
@@ -452,14 +458,19 @@ def add_new_user(user_id: int, username: str, first_name: str, source: str, refe
             logging.error(f"SQLite | Ошибка добавления пользователя {user_id}: {e}")
             return
     # Логика для Google Sheets
+    logging.info(f"📝 Подготовка данных пользователя {user_id} для Google Sheets...")
     row_data = [
         signup_time.strftime('%Y-%m-%d %H:%M:%S'), user_id, first_name,
         username or "N/A", "", "", "",  # phone_number, real_name, birth_date пока пустые
         _translate_status_to_russian('registered'), source, 
         referrer_id if referrer_id else "", ""  # реферер ID и дата погашения
     ]
+    logging.info(f"📝 GOOGLE_SHEETS_ENABLED={GOOGLE_SHEETS_ENABLED}, GOOGLE_SHEET_KEY={bool(GOOGLE_SHEET_KEY)}, GOOGLE_CREDENTIALS_JSON={bool(GOOGLE_CREDENTIALS_JSON)}")
     if GOOGLE_SHEETS_ENABLED:
+        logging.info(f"✅ Запускаю фоновую задачу добавления пользователя {user_id} в Google Sheets...")
         threading.Thread(target=_add_user_to_sheets_in_background, args=(row_data,)).start()
+    else:
+        logging.warning(f"⚠️  Google Sheets отключен для пользователя {user_id}!")
 
 def update_status(user_id: int, new_status: str) -> bool:
     redeem_time = datetime.datetime.now(pytz.utc) if new_status == 'redeemed' else None
