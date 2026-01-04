@@ -10,6 +10,7 @@ import pytz
 import os
 import json
 import gspread
+import gspread.exceptions
 import threading
 from collections import defaultdict
 from google.oauth2.service_account import Credentials
@@ -128,22 +129,34 @@ def _get_sheets_worksheet():
         return None
 
 def _add_user_to_sheets_in_background(row_data: List[Any]):
-    """(Фоновая задача) Добавляет строку с данными пользователя в таблицу."""
-    logging.info(f"G-Sheets (фон) | Попытка добавления пользователя. GOOGLE_SHEETS_ENABLED={GOOGLE_SHEETS_ENABLED}")
+    """(Фоновая задача) Добавляет строку с данными пользователя в таблицу (только если пользователя еще нет)."""
+    user_id = row_data[1]
+    logging.info(f"G-Sheets (фон) | Попытка добавления пользователя {user_id}")
     if not GOOGLE_SHEETS_ENABLED:
-        logging.warning(f"G-Sheets (фон) | Google Sheets отключен! GOOGLE_SHEET_KEY={bool(GOOGLE_SHEET_KEY)}, GOOGLE_CREDENTIALS_JSON={bool(GOOGLE_CREDENTIALS_JSON)}")
+        logging.warning(f"G-Sheets (фон) | Google Sheets отключен!")
         return
     try:
-        logging.info(f"G-Sheets (фон) | Подключаюсь к worksheet для добавления пользователя {row_data[1]}...")
         worksheet = _get_sheets_worksheet()
-        if worksheet:
-            logging.info(f"G-Sheets (фон) | Worksheet получен. Добавляю строку: {row_data}")
-            worksheet.append_row(row_data)
-            logging.info(f"G-Sheets (фон) | ✅ Пользователь с ID {row_data[1]} успешно добавлен в таблицу.")
-        else:
+        if not worksheet:
             logging.error(f"G-Sheets (фон) | ❌ Не удалось получить worksheet!")
+            return
+        
+        # Проверяем, существует ли уже пользователь с таким ID
+        logging.debug(f"G-Sheets (фон) | Ищу пользователя {user_id} в колонке B...")
+        try:
+            existing_cell = worksheet.find(str(user_id), in_column=2)
+            if existing_cell:
+                logging.warning(f"G-Sheets (фон) | ⚠️  Пользователь {user_id} уже в таблице (строка {existing_cell.row}). Пропускаю.")
+                return
+        except gspread.exceptions.CellNotFound:
+            logging.debug(f"G-Sheets (фон) | Пользователь {user_id} не найден - добавляю")
+        
+        # Добавляем новую строку в конец
+        logging.info(f"G-Sheets (фон) | Добавляю новую строку: {row_data}")
+        worksheet.append_row(row_data)
+        logging.info(f"G-Sheets (фон) | ✅ Пользователь {user_id} добавлен в конец таблицы (новая строка).")
     except Exception as e:
-        logging.error(f"G-Sheets (фон) | ❌ Ошибка добавления пользователя {row_data[1]}: {e}", exc_info=True)
+        logging.error(f"G-Sheets (фон) | ❌ Ошибка добавления пользователя {user_id}: {e}", exc_info=True)
 
 def _update_contact_in_sheets_in_background(user_id: int, phone_number: str, contact_shared_date: datetime.datetime):
     """(Фоновая задача) Обновляет контактную информацию пользователя в таблице."""
