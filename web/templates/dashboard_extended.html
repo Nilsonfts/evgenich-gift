@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+
+{% block title %}Админ-панель - Евгенич{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Заголовок -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-0">📊 Админ-панель</h2>
+            <p class="text-muted">Управление баром "Евгенич"</p>
+        </div>
+        <div>
+            <span class="badge bg-success">🟢 Онлайн</span>
+        </div>
+    </div>
+
+    <!-- Быстрая статистика -->
+    <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Всего пользователей</p>
+                            <h3 class="mb-0">{{ stats.total_users }}</h3>
+                        </div>
+                        <div class="rounded-circle bg-primary bg-opacity-10 p-3">
+                            <i class="fas fa-users text-primary fs-4"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Купоны выданы (24ч)</p>
+                            <h3 class="mb-0">{{ stats.coupons_issued_24h }}</h3>
+                        </div>
+                        <div class="rounded-circle bg-success bg-opacity-10 p-3">
+                            <i class="fas fa-ticket-alt text-success fs-4"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Погашено (24ч)</p>
+                            <h3 class="mb-0">{{ stats.coupons_redeemed_24h }}</h3>
+                        </div>
+                        <div class="rounded-circle bg-info bg-opacity-10 p-3">
+                            <i class="fas fa-glass-cheers text-info fs-4"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Активный персонал</p>
+                            <h3 class="mb-0">{{ stats.active_staff }}</h3>
+                        </div>
+                        <div class="rounded-circle bg-warning bg-opacity-10 p-3">
+                            <i class="fas fa-user-tie text-warning fs-4"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Быстрые действия -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0">
+                    <h5 class="mb-0">⚡ Быстрые действия</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <a href="/promotions" class="btn btn-outline-primary w-100 py-3">
+                                <i class="fas fa-bullhorn d-block mb-2 fs-3"></i>
+                                <span class="d-block">Промоакции</span>
+                                <small class="text-muted">{{ stats.active_promos }} активных</small>
+                            </a>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="/events" class="btn btn-outline-success w-100 py-3">
+                                <i class="fas fa-calendar-alt d-block mb-2 fs-3"></i>
+                                <span class="d-block">События</span>
+                                <small class="text-muted">{{ stats.active_events }} активных</small>
+                            </a>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="/broadcast" class="btn btn-outline-info w-100 py-3">
+                                <i class="fas fa-paper-plane d-block mb-2 fs-3"></i>
+                                <span class="d-block">Рассылка</span>
+                                <small class="text-muted">отправить всем</small>
+                            </a>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="/bookings" class="btn btn-outline-warning w-100 py-3">
+                                <i class="fas fa-calendar-check d-block mb-2 fs-3"></i>
+                                <span class="d-block">Бронирования</span>
+                                <small class="text-muted">текущие</small>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Основные разделы -->
+    <div class="row g-3">
+        <!-- Пользователи -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="fas fa-users text-primary me-2"></i>
+                        Пользователи
+                    </h6>
+                    <p class="text-muted small">Управление базой пользователей, просмотр профилей, статистика</p>
+                    <a href="/users" class="btn btn-sm btn-primary w-100">Перейти</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Персонал -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="fas fa-user-tie text-success me-2"></i>
+                        Персонал
+                    </h6>
+                    <p class="text-muted small">Сотрудники, QR-коды, статистика привлечения гостей</p>
+                    <a href="/staff" class="btn btn-sm btn-success w-100">Перейти</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Аналитика -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="fas fa-chart-line text-info me-2"></i>
+                        Аналитика
+                    </h6>
+                    <p class="text-muted small">Графики, отчеты, метрики эффективности</p>
+                    <a href="/analytics" class="btn btn-sm btn-info w-100">Перейти</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Настройки AI -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="fas fa-brain text-purple me-2"></i>
+                        Настройки AI
+                    </h6>
+                    <p class="text-muted small">Концепции ассистента, промпты, поведение</p>
+                    <a href="/ai_settings" class="btn btn-sm btn-purple w-100">Перейти</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Бары -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="fas fa-map-marker-alt text-danger me-2"></i>
+                        Бары
+                    </h6>
+                    <p class="text-muted small">Адреса, часы работы, контакты заведений</p>
+                    <a href="/bars" class="btn btn-sm btn-danger w-100">Перейти</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Тексты -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="fas fa-file-alt text-warning me-2"></i>
+                        Тексты
+                    </h6>
+                    <p class="text-muted small">Шаблоны сообщений, приветствия, тексты бота</p>
+                    <a href="/texts" class="btn btn-sm btn-warning w-100">Перейти</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.btn-purple {
+    background-color: #8b5cf6;
+    border-color: #8b5cf6;
+    color: white;
+}
+.btn-purple:hover {
+    background-color: #7c3aed;
+    border-color: #7c3aed;
+    color: white;
+}
+.text-purple {
+    color: #8b5cf6 !important;
+}
+</style>
+{% endblock %}

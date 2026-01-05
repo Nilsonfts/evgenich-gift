@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block title %}Рассылки - Евгенич{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Заголовок -->
+    <div class="mb-4">
+        <h2 class="mb-0">📨 Рассылки</h2>
+        <p class="text-muted">Отправка сообщений пользователям бота</p>
+    </div>
+
+    <div class="row">
+        <!-- Форма отправки -->
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">Новая рассылка</h5>
+                </div>
+                <div class="card-body">
+                    <form id="broadcastForm">
+                        <!-- Целевая аудитория -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Кому отправить?</label>
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <div class="card">
+                                        <input type="radio" class="btn-check" name="target" id="targetAll" value="all" checked>
+                                        <label class="card-body text-center" for="targetAll" style="cursor: pointer;">
+                                            <i class="fas fa-users fs-3 mb-2 text-primary"></i>
+                                            <h6>Все пользователи</h6>
+                                            <p class="text-muted small mb-0" id="allCount">~ человек</p>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card">
+                                        <input type="radio" class="btn-check" name="target" id="targetActive" value="active">
+                                        <label class="card-body text-center" for="targetActive" style="cursor: pointer;">
+                                            <i class="fas fa-user-check fs-3 mb-2 text-success"></i>
+                                            <h6>Активные</h6>
+                                            <p class="text-muted small mb-0">Погасили купон</p>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card">
+                                        <input type="radio" class="btn-check" name="target" id="targetNew" value="new">
+                                        <label class="card-body text-center" for="targetNew" style="cursor: pointer;">
+                                            <i class="fas fa-user-plus fs-3 mb-2 text-info"></i>
+                                            <h6>Новые</h6>
+                                            <p class="text-muted small mb-0">Не погасили купон</p>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Сообщение -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Текст сообщения *</label>
+                            <textarea class="form-control" id="broadcastMessage" rows="6" 
+                                      placeholder="Введите текст рассылки...&#10;&#10;Поддерживается Markdown:&#10;*жирный*&#10;_курсив_&#10;`код`"></textarea>
+                            <small class="text-muted">Макс. 4096 символов. Поддерживается Markdown</small>
+                        </div>
+
+                        <!-- Превью -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Предпросмотр</label>
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <div id="messagePreview" class="text-muted fst-italic">
+                                        Введите текст сообщения для предпросмотра...
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Настройки -->
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="withButton">
+                                    <label class="form-check-label" for="withButton">
+                                        Добавить кнопку
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="sendTest">
+                                    <label class="form-check-label" for="sendTest">
+                                        Сначала отправить тест себе
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="buttonSettings" class="mb-3" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <input type="text" class="form-control" id="buttonText" placeholder="Текст кнопки">
+                                </div>
+                                <div class="col-md-6">
+                                    <input type="url" class="form-control" id="buttonUrl" placeholder="URL ссылки">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Кнопки отправки -->
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-primary" onclick="sendBroadcast()">
+                                <i class="fas fa-paper-plane me-2"></i>Отправить рассылку
+                            </button>
+                            <button type="reset" class="btn btn-outline-secondary">
+                                <i class="fas fa-undo me-2"></i>Очистить
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- История рассылок -->
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">История рассылок</h5>
+                </div>
+                <div class="card-body" id="broadcastHistory">
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-inbox fs-1 mb-3 d-block"></i>
+                        <p>История рассылок пуста</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Быстрые шаблоны -->
+            <div class="card border-0 shadow-sm mt-3">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">Быстрые шаблоны</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-primary btn-sm text-start" onclick="useTemplate('promo')">
+                            <i class="fas fa-gift me-2"></i>Промоакция
+                        </button>
+                        <button class="btn btn-outline-success btn-sm text-start" onclick="useTemplate('event')">
+                            <i class="fas fa-calendar me-2"></i>Событие
+                        </button>
+                        <button class="btn btn-outline-info btn-sm text-start" onclick="useTemplate('reminder')">
+                            <i class="fas fa-bell me-2"></i>Напоминание
+                        </button>
+                        <button class="btn btn-outline-warning btn-sm text-start" onclick="useTemplate('greeting')">
+                            <i class="fas fa-hand-sparkles me-2"></i>Приветствие
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Предпросмотр сообщения
+document.getElementById('broadcastMessage').addEventListener('input', function() {
+    const preview = document.getElementById('messagePreview');
+    const text = this.value;
+    if (text) {
+        // Простой рендеринг Markdown
+        let html = text
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/`(.*?)`/g, '<code>$1</code>')
+            .replace(/\n/g, '<br>');
+        preview.innerHTML = html;
+    } else {
+        preview.innerHTML = '<span class="text-muted fst-italic">Введите текст сообщения для предпросмотра...</span>';
+    }
+});
+
+// Показать/скрыть настройки кнопки
+document.getElementById('withButton').addEventListener('change', function() {
+    document.getElementById('buttonSettings').style.display = this.checked ? 'block' : 'none';
+});
+
+// Отправка рассылки
+function sendBroadcast() {
+    const message = document.getElementById('broadcastMessage').value;
+    if (!message.trim()) {
+        alert('Введите текст сообщения!');
+        return;
+    }
+    
+    const target = document.querySelector('input[name="target"]:checked').value;
+    const sendTest = document.getElementById('sendTest').checked;
+    
+    if (!confirm(`Отправить рассылку для группы "${target}"?${sendTest ? '\n\nСначала будет отправлен тест.' : ''}`)) {
+        return;
+    }
+    
+    const data = {
+        message: message,
+        target: target,
+        sendTest: sendTest,
+        withButton: document.getElementById('withButton').checked
+    };
+    
+    if (data.withButton) {
+        data.buttonText = document.getElementById('buttonText').value;
+        data.buttonUrl = document.getElementById('buttonUrl').value;
+    }
+    
+    fetch('/api/broadcast', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Рассылка отправлена успешно!');
+            document.getElementById('broadcastForm').reset();
+            document.getElementById('messagePreview').innerHTML = '<span class="text-muted fst-italic">Введите текст сообщения для предпросмотра...</span>';
+        } else {
+            alert('Ошибка отправки: ' + (data.error || 'Неизвестная ошибка'));
+        }
+    })
+    .catch(error => {
+        console.error('Ошибка:', error);
+        alert('Ошибка отправки рассылки');
+    });
+}
+
+// Использование шаблона
+function useTemplate(type) {
+    const templates = {
+        'promo': '🎁 *Специальное предложение!*\n\nУ нас новая акция:\n\n...\n\nДействует до [дата]!\nПриходи и получи скидку! 😊',
+        'event': '🎉 *Событие в Евгениче!*\n\nПриглашаем тебя на:\n\n...\n\nКогда: [дата и время]\nГде: [адрес]\n\nБудет круто! 🔥',
+        'reminder': '⏰ *Напоминание*\n\nТоварищ, не забудь:\n\n...\n\nЖдём тебя! 👋',
+        'greeting': '👋 *Привет!*\n\nДавно не виделись!\n\nКак дела? Заходи к нам, будем рады 😊\n\nУ нас [что-то новое]!'
+    };
+    
+    document.getElementById('broadcastMessage').value = templates[type] || '';
+    document.getElementById('broadcastMessage').dispatchEvent(new Event('input'));
+}
+
+// Загрузка статистики
+window.addEventListener('DOMContentLoaded', function() {
+    // TODO: Загрузить количество пользователей
+    document.getElementById('allCount').textContent = '~ пользователей';
+});
+</script>
+
+<style>
+.btn-check:checked + label {
+    background-color: #e3f2fd;
+    border-color: #2196f3;
+}
+</style>
+{% endblock %}

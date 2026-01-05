@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+
+{% block title %}Промоакции - Евгенич{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Заголовок -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-0">🎁 Промоакции</h2>
+            <p class="text-muted">Управление акциями и специальными предложениями</p>
+        </div>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addPromoModal">
+            <i class="fas fa-plus me-2"></i>Добавить промоакцию
+        </button>
+    </div>
+
+    <!-- Фильтры -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <input type="text" class="form-control" id="searchPromo" placeholder="Поиск по названию...">
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="filterBar">
+                        <option value="all">Все бары</option>
+                        <option value="nevsky">Невский 53</option>
+                        <option value="rubinshteina">Рубинштейна 9</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="filterStatus">
+                        <option value="all">Все статусы</option>
+                        <option value="active">Активные</option>
+                        <option value="upcoming">Предстоящие</option>
+                        <option value="expired">Завершенные</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-outline-secondary w-100" onclick="applyFilters()">
+                        <i class="fas fa-filter me-2"></i>Применить
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Список промоакций -->
+    <div id="promosList" class="row g-3">
+        <!-- Промоакции загрузятся динамически -->
+    </div>
+</div>
+
+<!-- Модальное окно добавления промоакции -->
+<div class="modal fade" id="addPromoModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Добавить промоакцию</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addPromoForm">
+                    <div class="mb-3">
+                        <label class="form-label">Название акции *</label>
+                        <input type="text" class="form-control" id="promoTitle" required>
+                        <small class="text-muted">Короткое название, например "Счастливые часы"</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Описание *</label>
+                        <textarea class="form-control" id="promoDescription" rows="3" required></textarea>
+                        <small class="text-muted">Подробное описание акции</small>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Дата начала *</label>
+                            <input type="datetime-local" class="form-control" id="promoStartDate" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Дата окончания *</label>
+                            <input type="datetime-local" class="form-control" id="promoEndDate" required>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Бар</label>
+                        <select class="form-select" id="promoBar">
+                            <option value="all">Все бары</option>
+                            <option value="nevsky">Невский 53</option>
+                            <option value="rubinshteina">Рубинштейна 9</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" onclick="savePromo()">Сохранить</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Загрузка промоакций при загрузке страницы
+document.addEventListener('DOMContentLoaded', loadPromotions);
+
+function loadPromotions() {
+    fetch('/api/promotions')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displayPromotions(data.promotions);
+            }
+        })
+        .catch(error => console.error('Ошибка загрузки промоакций:', error));
+}
+
+function displayPromotions(promotions) {
+    const container = document.getElementById('promosList');
+    container.innerHTML = '';
+    
+    if (promotions.length === 0) {
+        container.innerHTML = `
+            <div class="col-12">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Нет активных промоакций. Добавьте первую!
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    promotions.forEach(promo => {
+        const statusBadge = getStatusBadge(promo);
+        const barName = getBarName(promo.bar_id);
+        
+        const promoCard = `
+            <div class="col-md-6 col-lg-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <h5 class="card-title mb-0">${promo.title}</h5>
+                            ${statusBadge}
+                        </div>
+                        <p class="text-muted small mb-2">
+                            <i class="fas fa-map-marker-alt me-1"></i>${barName}
+                        </p>
+                        <p class="card-text">${promo.description}</p>
+                        <div class="mb-3">
+                            <small class="text-muted">
+                                <i class="fas fa-calendar me-1"></i>
+                                ${formatDate(promo.start_date)} - ${formatDate(promo.end_date)}
+                            </small>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-primary" onclick="editPromo('${promo.id}')">
+                                <i class="fas fa-edit"></i> Редактировать
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deletePromo('${promo.id}')">
+                                <i class="fas fa-trash"></i> Удалить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        container.innerHTML += promoCard;
+    });
+}
+
+function getStatusBadge(promo) {
+    const now = new Date();
+    const start = new Date(promo.start_date);
+    const end = new Date(promo.end_date);
+    
+    if (now < start) {
+        return '<span class="badge bg-info">Предстоящая</span>';
+    } else if (now >= start && now <= end) {
+        return '<span class="badge bg-success">Активная</span>';
+    } else {
+        return '<span class="badge bg-secondary">Завершена</span>';
+    }
+}
+
+function getBarName(barId) {
+    const bars = {
+        'all': 'Все бары',
+        'nevsky': 'Невский 53',
+        'rubinshteina': 'Рубинштейна 9'
+    };
+    return bars[barId] || 'Неизвестно';
+}
+
+function formatDate(dateStr) {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('ru-RU', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric' 
+    });
+}
+
+function savePromo() {
+    const data = {
+        title: document.getElementById('promoTitle').value,
+        description: document.getElementById('promoDescription').value,
+        start_date: document.getElementById('promoStartDate').value,
+        end_date: document.getElementById('promoEndDate').value,
+        bar_id: document.getElementById('promoBar').value
+    };
+    
+    fetch('/api/promotions', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Промоакция успешно добавлена!');
+            bootstrap.Modal.getInstance(document.getElementById('addPromoModal')).hide();
+            document.getElementById('addPromoForm').reset();
+            loadPromotions();
+        }
+    })
+    .catch(error => console.error('Ошибка:', error));
+}
+
+function deletePromo(promoId) {
+    if (!confirm('Вы уверены, что хотите удалить эту промоакцию?')) return;
+    
+    fetch('/api/promotions', {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({promo_id: promoId})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Промоакция удалена!');
+            loadPromotions();
+        }
+    })
+    .catch(error => console.error('Ошибка:', error));
+}
+</script>
+{% endblock %}

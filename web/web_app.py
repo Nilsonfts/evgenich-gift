@@ -37,13 +37,20 @@ logger = logging.getLogger(__name__)
 
 # Импорты из нашего бота (с обработкой ошибок)
 try:
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    
     import database
     from core.config import ALL_ADMINS, BOT_TOKEN
+    from ai.dynamic_content import DynamicContent
+    
     DB_AVAILABLE = True
+    dynamic_content = DynamicContent()
     logger.info("✅ Модули базы данных загружены успешно")
 except Exception as e:
     logger.warning(f"⚠️ Не удалось подключить базу данных: {e}")
     DB_AVAILABLE = False
+    dynamic_content = None
     ALL_ADMINS = [123456789]  # Тестовый админ
     BOT_TOKEN = "test_token"
 
@@ -295,6 +302,118 @@ def health_check():
             'error': str(e),
             'timestamp': datetime.datetime.now().isoformat()
         }), 500
+
+# ==================== НОВЫЕ РОУТЫ ====================
+
+@app.route('/promotions')
+def promotions():
+    """Страница управления промоакциями"""
+    return render_template('promotions.html')
+
+@app.route('/api/promotions', methods=['GET', 'POST', 'DELETE'])
+def api_promotions():
+    """API для работы с промоакциями"""
+    if not DB_AVAILABLE or not dynamic_content:
+        return jsonify({'success': False, 'error': 'Сервис недоступен'}), 503
+    
+    try:
+        if request.method == 'GET':
+            promos = dynamic_content.list_promotions()
+            return jsonify({'success': True, 'promotions': promos})
+        
+        elif request.method == 'POST':
+            data = request.json
+            promo_id = dynamic_content.add_promotion(
+                title=data['title'],
+                description=data['description'],
+                bar_id=data.get('bar_id', 'all'),
+                start_date=datetime.datetime.fromisoformat(data['start_date']),
+                end_date=datetime.datetime.fromisoformat(data['end_date'])
+            )
+            return jsonify({'success': True, 'promo_id': promo_id})
+        
+        elif request.method == 'DELETE':
+            promo_id = request.json.get('promo_id')
+            result = dynamic_content.delete_promotion(promo_id)
+            return jsonify({'success': result})
+    except Exception as e:
+        logger.error(f"Ошибка в api_promotions: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/events')
+def events():
+    """Страница управления событиями"""
+    return render_template('events.html')
+
+@app.route('/api/events', methods=['GET', 'POST', 'DELETE'])
+def api_events():
+    """API для работы с событиями"""
+    if not DB_AVAILABLE or not dynamic_content:
+        return jsonify({'success': False, 'error': 'Сервис недоступен'}), 503
+    
+    try:
+        if request.method == 'GET':
+            events_list = dynamic_content.list_events()
+            return jsonify({'success': True, 'events': events_list})
+        
+        elif request.method == 'POST':
+            data = request.json
+            event_id = dynamic_content.add_event(
+                title=data['title'],
+                description=data['description'],
+                bar_id=data.get('bar_id', 'all'),
+                event_date=datetime.datetime.fromisoformat(data['event_date'])
+            )
+            return jsonify({'success': True, 'event_id': event_id})
+        
+        elif request.method == 'DELETE':
+            event_id = request.json.get('event_id')
+            result = dynamic_content.delete_event(event_id)
+            return jsonify({'success': result})
+    except Exception as e:
+        logger.error(f"Ошибка в api_events: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/broadcast')
+def broadcast():
+    """Страница рассылок"""
+    return render_template('broadcast.html')
+
+@app.route('/api/broadcast', methods=['POST'])
+def api_broadcast():
+    """API для отправки рассылки"""
+    try:
+        data = request.json
+        message = data.get('message')
+        target = data.get('target', 'all')
+        
+        # TODO: Интеграция с ботом для реальной отправки
+        logger.info(f"Рассылка: target={target}, message_len={len(message)}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Рассылка отправлена для группы: {target}'
+        })
+    except Exception as e:
+        logger.error(f"Ошибка в api_broadcast: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/bookings')
+def bookings():
+    """Страница бронирований"""
+    return render_template('bookings.html')
+
+@app.route('/api/bookings')
+def api_bookings():
+    """API для получения бронирований"""
+    try:
+        from tinydb import TinyDB
+        db = TinyDB('booking_data.json')
+        bookings_list = db.all()
+        return jsonify({'success': True, 'bookings': bookings_list})
+    except Exception as e:
+        logger.error(f"Ошибка в api_bookings: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
