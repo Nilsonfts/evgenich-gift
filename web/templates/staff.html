@@ -4,11 +4,9 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-4">
-        <div class="col-12">
-            <h2>👥 Управление персоналом</h2>
-            <p class="text-muted">Управляйте правами доступа и ролями</p>
-        </div>
+    <div class="page-header">
+        <h2>Staff Management</h2>
+        <p class="text-muted">Manage user roles and permissions</p>
     </div>
     
     {% if success %}
@@ -82,7 +80,7 @@
         <div class="col-md-4 mb-4">
             <div class="card border-success">
                 <div class="card-header bg-success text-white">
-                    <h5 class="mb-0">📱 СММ</h5>
+                    <h5 class="mb-0">СММ</h5>
                 </div>
                 <div class="card-body">
                     <p class="text-muted">Только отправка броней</p>
@@ -114,7 +112,7 @@
         <div class="col-12">
             <div class="card">
                 <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">ℹ️ Информация о ролях</h5>
+                    <h5 class="mb-0">Информация о ролях</h5>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
@@ -147,7 +145,7 @@
                                     <td><span class="badge bg-danger">✗</span></td>
                                 </tr>
                                 <tr>
-                                    <td><strong class="text-success">📱 СММ</strong></td>
+                                    <td><strong class="text-success">СММ</strong></td>
                                     <td><span class="badge bg-danger">✗</span></td>
                                     <td><span class="badge bg-success">✓</span></td>
                                     <td><span class="badge bg-danger">✗</span></td>
@@ -159,7 +157,7 @@
                     </div>
                     
                     <div class="alert alert-warning mt-3">
-                        <strong>⚠️ Важно:</strong> 
+                        <strong>Важно:</strong> 
                         <ul class="mb-0">
                             <li>Для получения Telegram ID пользователь должен отправить боту команду /start</li>
                             <li>После добавления/удаления необходимо перезапустить бота</li>
@@ -188,7 +186,7 @@
                 <form method="POST" action="/staff/remove" style="display: inline;">
                     <input type="hidden" name="user_id" id="removeUserIdInput">
                     <input type="hidden" name="role" id="removeUserRoleInput">
-                    <button type="submit" class="btn btn-danger">🗑️ Удалить</button>
+                    <button type="submit" class="btn btn-danger">Удалить</button>
                 </form>
             </div>
         </div>

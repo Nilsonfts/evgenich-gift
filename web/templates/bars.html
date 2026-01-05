@@ -4,11 +4,9 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-4">
-        <div class="col-12">
-            <h2>🍷 Управление барами</h2>
-            <p class="text-muted">Добавляйте, редактируйте и удаляйте бары</p>
-        </div>
+    <div class="page-header">
+        <h2>Bars Management</h2>
+        <p class="text-muted">Add, edit, and remove bars</p>
     </div>
     
     {% if success %}
@@ -29,7 +27,7 @@
         <div class="col-md-4 mb-4">
             <div class="card">
                 <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">➕ Добавить новый бар</h5>
+                    <h5 class="mb-0">Добавить новый бар</h5>
                 </div>
                 <div class="card-body">
                     <form method="POST" action="/bars/add">
@@ -71,7 +69,7 @@
                             <input type="url" class="form-control" name="menu_url" placeholder="https://spb.evgenich.bar/menu">
                         </div>
                         
-                        <button type="submit" class="btn btn-primary w-100">➕ Добавить бар</button>
+                        <button type="submit" class="btn btn-primary w-100">Добавить бар</button>
                     </form>
                 </div>
             </div>
@@ -80,7 +78,7 @@
         <div class="col-md-8 mb-4">
             <div class="card">
                 <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">📋 Список баров</h5>
+                    <h5 class="mb-0">Список баров</h5>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
@@ -105,10 +103,10 @@
                                     <td>{{ bar.phone if bar.phone else '-' }}</td>
                                     <td>
                                         <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editModal{{ bar.callback_id }}">
-                                            ✏️ Редактировать
+                                            Редактировать
                                         </button>
                                         <button class="btn btn-sm btn-danger" onclick="confirmDelete('{{ bar.name }}', '{{ bar.callback_id }}')">
-                                            🗑️ Удалить
+                                            Удалить
                                         </button>
                                     </td>
                                 </tr>
@@ -157,7 +155,7 @@
                                                 </div>
                                                 <div class="modal-footer">
                                                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                                                    <button type="submit" class="btn btn-warning">💾 Сохранить</button>
+                                                    <button type="submit" class="btn btn-warning">Сохранить</button>
                                                 </div>
                                             </form>
                                         </div>
@@ -171,7 +169,7 @@
             </div>
             
             <div class="alert alert-info">
-                <strong>ℹ️ Важно:</strong> После изменения баров необходимо перезапустить бота, чтобы изменения вступили в силу.
+                <strong>Важно:</strong> После изменения баров необходимо перезапустить бота, чтобы изменения вступили в силу.
             </div>
         </div>
     </div>
@@ -193,7 +191,7 @@
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
                 <form method="POST" action="/bars/delete" style="display: inline;">
                     <input type="hidden" name="callback_id" id="deleteBarId">
-                    <button type="submit" class="btn btn-danger">🗑️ Удалить</button>
+                    <button type="submit" class="btn btn-danger">Удалить</button>
                 </form>
             </div>
         </div>

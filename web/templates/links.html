@@ -4,11 +4,9 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-4">
-        <div class="col-12">
-            <h2>🔗 Управление ссылками</h2>
-            <p class="text-muted">Настройте основные ссылки для бота</p>
-        </div>
+    <div class="page-header">
+        <h2>Links Management</h2>
+        <p class="text-muted">Configure bot links and social media</p>
     </div>
     
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -26,7 +24,7 @@
         <div class="col-md-6 mb-4">
             <div class="card border-0 shadow-sm">
                 <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">📱 Основные ссылки</h5>
+                    <h5 class="mb-0">Основные ссылки</h5>
                 </div>
                 <div class="card-body">
                     <form method="POST" action="/links/update">
@@ -71,7 +69,7 @@
                         </div>
                         
                         <button type="submit" class="btn btn-primary w-100">
-                            💾 Сохранить изменения
+                            Сохранить изменения
                         </button>
                     </form>
                 </div>
@@ -81,7 +79,7 @@
         <div class="col-md-6 mb-4">
             <div class="card border-0 shadow-sm">
                 <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">🌐 Социальные сети</h5>
+                    <h5 class="mb-0">Социальные сети</h5>
                 </div>
                 <div class="card-body">
                     <form method="POST" action="/links/update">
@@ -114,7 +112,7 @@
                         </div>
                         
                         <button type="submit" class="btn btn-info w-100">
-                            💾 Сохранить соцсети
+                            Сохранить соцсети
                         </button>
                     </form>
                 </div>
