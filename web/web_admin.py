@@ -141,7 +141,14 @@ def logout():
 @login_required
 def dashboard():
     """Главная страница"""
-    return render_template('dashboard.html')
+    # Заглушки для статистики (пока нет подключения к БД бота)
+    stats = {
+        'total_users': 0,
+        'general_stats': [0, 0, 0],
+        'recent_activities': [],
+        'top_referrers': []
+    }
+    return render_template('dashboard.html', **stats)
 
 # ===== УПРАВЛЕНИЕ ТЕКСТАМИ =====
 
