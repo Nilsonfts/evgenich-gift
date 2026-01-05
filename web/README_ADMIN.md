@@ -46,30 +46,57 @@
 ### Настройки сервиса
 
 **Settings → Build:**
-- Root Directory: `web`
-- Build Command: `pip install -r web_requirements.txt`
-- Start Command: `gunicorn web_admin:app`
+- **Root Directory**: `web`
+- **Build Command**: оставить пустым (используется `railway.toml`)
+- **Start Command**: оставить пустым (используется `railway.toml`)
+
+Railway автоматически прочитает конфигурацию из `web/railway.toml`:
+```toml
+[build]
+buildCommand = "pip install -r web_requirements.txt"
+
+[deploy]
+startCommand = "gunicorn web_admin:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+```
 
 **Settings → Variables:**
 ```bash
 PORT=5000
-FLASK_SECRET_KEY=your-secret-key-here
+FLASK_SECRET_KEY=evgenich-secret-2026-very-secure
 ```
 
 **Settings → Networking:**
-- Сгенерировать публичный домен
+- Нажмите "Generate Domain"
+- Получите публичный URL
 
 ### Готово! 🎉
 
 Админ-панель будет доступна по адресу: `https://your-service.up.railway.app`
 
+### ❌ Решение проблем
+
+**"Application failed to respond":**
+- Проверьте, что Root Directory = `web`
+- Проверьте переменную `PORT` в Settings → Variables
+- Посмотрите Deploy Logs и Application Logs
+
+**"ModuleNotFoundError":**
+- Убедитесь, что `web_requirements.txt` содержит все зависимости
+- Проверьте Build Logs
+
+**Конфиги не сохраняются:**
+- Теперь конфиги сохраняются в `web/admin_config/` (относительный путь)
+- При каждом деплое создаются заново (если хотите сохранить - используйте Railway Volume)
+
 ## 📂 Структура конфигов
 
-Все настройки сохраняются в `/data/admin_config/`:
+Все настройки сохраняются в `web/admin_config/` (рядом с приложением):
 - `texts.json` - тексты бота
 - `bars.json` - список баров
 - `ai_settings.json` - настройки AI
 - `staff.json` - персонал
+
+**Важно:** Конфиги пересоздаются при каждом деплое. Для постоянного хранения настройте Railway Volume.
 
 ## 🔄 Применение изменений
 
