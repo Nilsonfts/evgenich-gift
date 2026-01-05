@@ -267,12 +267,16 @@ def register_booking_handlers(bot):
             _start_booking_process(call.message.chat.id, user_id)
 
     # --- УЛУЧШЕННЫЙ ОБРАБОТЧИК ВСЕХ ШАГОВ БРОНИРОВАНИЯ ---
-    @bot.message_handler(func=lambda message: db.contains(User.user_id == message.from_user.id), content_types=['text'])
+    @bot.message_handler(func=lambda message: db.contains(User.user_id == message.from_user.id) and message.chat.type == 'private', content_types=['text'])
     def process_booking_step(message: types.Message):
         user_id = message.from_user.id
         user_entry = db.get(User.user_id == user_id)
         
         if not user_entry or not user_entry.get('step'):
+            return
+        
+        # Игнорируем команды и кнопки - пусть их обрабатывают другие обработчики
+        if message.text.startswith('/') or message.text in ['📖 Меню', '🤝 Привести товарища', '🗣 Спроси у Евгенича', '🥃 Получить настойку по талону', '📍 Забронировать стол', '👑 Админка', '📨 Отправить БРОНЬ']:
             return
 
         step = user_entry.get('step')

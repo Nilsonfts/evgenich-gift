@@ -58,33 +58,45 @@ def register_ai_handlers(bot):
         # --- КОНЕЦ БЛОКИРОВКИ AI ---
         
         # --- РАБОТА В ГРУППОВЫХ ЧАТАХ ---
-        # В группах отвечаем только если бот упомянут или это reply на сообщение бота
-        if message.chat.type in ['group', 'supergroup']:
-            bot_mentioned = False
+        # В группах проверяем упоминание ТОЛЬКО если это НЕ вопрос о бронировании
+        is_group_chat = message.chat.type in ['group', 'supergroup']
+        
+        if is_group_chat:
+            # Сначала проверяем, не вопрос ли это о бронировании
+            text_lower = message.text.lower() if message.text else ""
+            booking_keywords = ['забронир', 'бронь', 'столик', 'резерв', 'стол']
+            is_booking_question = any(keyword in text_lower for keyword in booking_keywords)
             
-            # Проверяем упоминание по @username
-            if message.text and '@evgenichspbbot' in message.text.lower():
-                bot_mentioned = True
-            
-            # Проверяем reply на сообщение бота
-            if message.reply_to_message and message.reply_to_message.from_user.is_bot:
-                bot_mentioned = True
-            
-            # Проверяем entities (mentions)
-            if message.entities:
-                for entity in message.entities:
-                    if entity.type == 'mention':
-                        mention_text = message.text[entity.offset:entity.offset + entity.length]
-                        if 'evgenichspbbot' in mention_text.lower():
-                            bot_mentioned = True
-                            break
-            
-            # Если бот не упомянут, не отвечаем
-            if not bot_mentioned:
-                logging.info(f"Сообщение в группе {message.chat.id}, но бот не упомянут - игнорируем")
-                return
-            
-            logging.info(f"Бот упомянут в группе {message.chat.id}, отвечаем!")
+            # Если это вопрос о бронировании - отвечаем всегда
+            if is_booking_question:
+                logging.info(f"📍 Вопрос о бронировании в группе {message.chat.id}, отвечаем!")
+            else:
+                # Для остальных вопросов проверяем упоминание
+                bot_mentioned = False
+                
+                # Проверяем упоминание по @username
+                if message.text and '@evgenichspbbot' in message.text.lower():
+                    bot_mentioned = True
+                
+                # Проверяем reply на сообщение бота
+                if message.reply_to_message and message.reply_to_message.from_user.is_bot:
+                    bot_mentioned = True
+                
+                # Проверяем entities (mentions)
+                if message.entities:
+                    for entity in message.entities:
+                        if entity.type == 'mention':
+                            mention_text = message.text[entity.offset:entity.offset + entity.length]
+                            if 'evgenichspbbot' in mention_text.lower():
+                                bot_mentioned = True
+                                break
+                
+                # Если бот не упомянут, не отвечаем
+                if not bot_mentioned:
+                    logging.info(f"Сообщение в группе {message.chat.id}, но бот не упомянут - игнорируем")
+                    return
+                
+                logging.info(f"Бот упомянут в группе {message.chat.id}, отвечаем!")
         # --- КОНЕЦ БЛОКА ГРУППОВЫХ ЧАТОВ ---
 
         user_id = message.from_user.id
@@ -144,12 +156,19 @@ def register_ai_handlers(bot):
             
             # Бронирование
             elif intent['intent'] == 'booking':
-                bot.send_message(
-                    message.chat.id,
-                    texts.BOOKING_PROMPT_TEXT,
-                    reply_markup=keyboards.get_booking_options_keyboard()
-                )
-                return
+                # В группах - направляем на закрепленную кнопку через AI
+                # В личке - открываем форму
+                if is_group_chat:
+                    logging.info(f"📍 Бронирование в группе - направляем на кнопку через AI")
+                    # НЕ открываем форму, пусть AI ответит и направит на кнопку
+                else:
+                    # В личке открываем форму
+                    bot.send_message(
+                        message.chat.id,
+                        texts.BOOKING_PROMPT_TEXT,
+                        reply_markup=keyboards.get_booking_options_keyboard()
+                    )
+                    return
             
             # Жалоба - уведомить администраторов
             elif intent['intent'] == 'complaint':
@@ -197,7 +216,8 @@ def register_ai_handlers(bot):
             user_type=user_type,  # Тип пользователя (new/regular/vip)
             bar_context=bar_info,  # Контекст бара
             emotion=emotion,  # Эмоциональный тон
-            preferences=preferences_text  # Предпочтения пользователя
+            preferences=preferences_text,  # Предпочтения пользователя
+            is_group_chat=is_group_chat  # Групповой ли это чат
         )
 
         database.log_conversation_turn(user_id, "assistant", ai_response)
