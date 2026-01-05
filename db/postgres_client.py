@@ -284,7 +284,7 @@ class PostgresClient:
                 result = connection.execute(query).fetchone()
                 
                 if result:
-                    return dict(result)
+                    return dict(result._mapping)
                 return None
         except SQLAlchemyError as e:
             logging.error(f"PostgreSQL | Ошибка получения пользователя {user_id}: {e}")

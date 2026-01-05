@@ -198,7 +198,7 @@ def register_ai_handlers(bot):
         user_concept = database.get_user_concept(user_id)
         
         # Получаем информацию о пользователе для персонализации
-        user_info = database.get_user_by_id(user_id)
+        user_info = database.find_user_by_id(user_id)
         visits_count = len(database.get_user_visits(user_id)) if user_info else 0
         user_type = analyze_user_type(user_info, visits_count)
         
