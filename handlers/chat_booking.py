@@ -45,7 +45,7 @@ def register_chat_booking_handlers(bot):
             # Кнопка переводит в ЛС бота с параметром booking
             booking_button = types.InlineKeyboardButton(
                 text="📍 Забронировать столик",
-                url="https://t.me/EvgenichBarBot?start=booking"
+                url="https://t.me/evgenichspbbot?start=booking"
             )
             
             markup.add(booking_button)
