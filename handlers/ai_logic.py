@@ -82,8 +82,11 @@ def register_ai_handlers(bot):
             
             if has_booking_keyword:
                 logging.info(f"✅ Группа '{chat_title}' ({message.chat.id}): КЛЮЧЕВОЕ СЛОВО найдено в '{message.text[:50]}'")
+                # Установим флаг что нужна кнопка
+                message.should_attach_booking_button = True
                 # Продолжаем обработку AI
             else:
+                message.should_attach_booking_button = False
                 # ПРИОРИТЕТ 2: Проверяем упоминание или reply
                 bot_mentioned = False
                 
@@ -251,12 +254,12 @@ def register_ai_handlers(bot):
                 # Отправляем ответ AI
                 sent_message = bot.reply_to(message, ai_response, parse_mode="Markdown")
                 
-                # Если это группа И intent=booking, добавляем кнопку бронирования
-                if is_group_chat and intent.get('intent') == 'booking' and intent.get('confidence', 0) > 0.5:
+                # Если нужна кнопка бронирования - отправляем её
+                if is_group_chat and hasattr(message, 'should_attach_booking_button') and message.should_attach_booking_button:
                     logging.info(f"📍 Добавляю кнопку бронирования к ответу AI в группе")
                     bot.send_message(
                         message.chat.id,
-                        "👇",  # Просто стрелка вниз
+                        "👇 Жми сюда",
                         reply_markup=keyboards.get_quick_booking_button(),
                         reply_to_message_id=sent_message.message_id
                     )
@@ -267,10 +270,10 @@ def register_ai_handlers(bot):
                     sent_message = bot.reply_to(message, ai_response, parse_mode=None)
                     
                     # И здесь тоже добавляем кнопку если нужно
-                    if is_group_chat and intent.get('intent') == 'booking' and intent.get('confidence', 0) > 0.5:
+                    if is_group_chat and hasattr(message, 'should_attach_booking_button') and message.should_attach_booking_button:
                         bot.send_message(
                             message.chat.id,
-                            "👇",
+                            "👇 Жми сюда",
                             reply_markup=keyboards.get_quick_booking_button(),
                             reply_to_message_id=sent_message.message_id
                         )
