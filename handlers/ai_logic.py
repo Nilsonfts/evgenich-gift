@@ -251,31 +251,24 @@ def register_ai_handlers(bot):
             )
         else:
             try:
-                # Отправляем ответ AI
-                sent_message = bot.reply_to(message, ai_response, parse_mode="Markdown")
-                
-                # Если нужна кнопка бронирования - отправляем её
+                # Проверяем нужна ли кнопка бронирования
+                booking_button = None
                 if is_group_chat and hasattr(message, 'should_attach_booking_button') and message.should_attach_booking_button:
-                    logging.info(f"📍 Добавляю кнопку бронирования к ответу AI в группе")
-                    bot.send_message(
-                        message.chat.id,
-                        "👇 Жми сюда",
-                        reply_markup=keyboards.get_quick_booking_button(),
-                        reply_to_message_id=sent_message.message_id
-                    )
+                    booking_button = keyboards.get_quick_booking_button()
+                    logging.info(f"📍 Прикрепляю кнопку бронирования к ответу AI в группе")
+                
+                # Отправляем ответ AI с кнопкой (если нужно)
+                sent_message = bot.reply_to(message, ai_response, parse_mode="Markdown", reply_markup=booking_button)
                 
             except ApiTelegramException as e:
                 if "can't parse entities" in e.description:
                     logging.warning(f"Ошибка парсинга Markdown. Отправляю без форматирования. Текст: {ai_response}")
-                    sent_message = bot.reply_to(message, ai_response, parse_mode=None)
                     
-                    # И здесь тоже добавляем кнопку если нужно
+                    # Проверяем нужна ли кнопка бронирования
+                    booking_button = None
                     if is_group_chat and hasattr(message, 'should_attach_booking_button') and message.should_attach_booking_button:
-                        bot.send_message(
-                            message.chat.id,
-                            "👇 Жми сюда",
-                            reply_markup=keyboards.get_quick_booking_button(),
-                            reply_to_message_id=sent_message.message_id
-                        )
+                        booking_button = keyboards.get_quick_booking_button()
+                    
+                    sent_message = bot.reply_to(message, ai_response, parse_mode=None, reply_markup=booking_button)
                 else:
                     logging.error(f"Неизвестная ошибка Telegram API при отправке ответа AI: {e}")
