@@ -141,13 +141,18 @@ def logout():
 @login_required
 def dashboard():
     """Главная страница"""
+    from datetime import datetime, timedelta
+    
     # Заглушки для статистики (пока нет подключения к БД бота)
+    now = datetime.now()
     stats = {
         'total_users': 0,
         'general_stats': [0, 0, 0],
         'recent_activities': [],
         'top_referrers': [],
-        'staff_stats': {}  # Добавил пустой словарь для персонала
+        'staff_stats': {},
+        'start_time': now - timedelta(hours=24),
+        'end_time': now
     }
     return render_template('dashboard.html', **stats)
 
