@@ -7,6 +7,7 @@ from tinydb import TinyDB, Query
 
 # Импортируем конфиги, тексты и клавиатуры
 from core.config import BOOKING_NOTIFICATIONS_CHAT_ID, REPORT_CHAT_ID
+from core.admin_config import get_bars, get_bar_by_callback
 import texts
 import keyboards
 import core.settings_manager as settings_manager # Наш новый менеджер настроек
@@ -134,13 +135,22 @@ def register_booking_handlers(bot):
             return
 
         current_data = user_entry.get('data', {})
-        # Маппируем выбор бара на коды для AMO
-        bar_mapping = {
-            'bar_nevsky': 'ЕВГ_СПБ_НЕВ',
-            'bar_rubinstein': 'ЕВГ_СПБ_РУБ'
-        }
-        current_data['bar'] = call.data
-        current_data['amo_tag'] = bar_mapping.get(call.data, '')
+        
+        # Получаем информацию о баре из админ-панели
+        bar_info = get_bar_by_callback(call.data)
+        if bar_info:
+            current_data['bar'] = call.data
+            current_data['amo_tag'] = bar_info.get('code', '')
+            logging.info(f"✅ Сохраняю выбор бара: bar={call.data}, amo_tag={current_data.get('amo_tag')}, name={bar_info.get('name')}")
+        else:
+            # Фоллбэк на старую систему, если бар не найден
+            bar_mapping = {
+                'bar_nevsky': 'ЕВГ_СПБ_НЕВ',
+                'bar_rubinstein': 'ЕВГ_СПБ_РУБ'
+            }
+            current_data['bar'] = call.data
+            current_data['amo_tag'] = bar_mapping.get(call.data, '')
+            logging.warning(f"⚠️ Бар {call.data} не найден в админ-панели, использую старый маппинг")
         
         logging.info(f"✅ Сохраняю выбор бара: bar={current_data.get('bar')}, amo_tag={current_data.get('amo_tag')}")
         

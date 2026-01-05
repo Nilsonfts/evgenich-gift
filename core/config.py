@@ -27,6 +27,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 # === НОВАЯ СИСТЕМА РОЛЕЙ ===
+# Теперь роли также можно управлять через админ-панель (web/admin_config/staff.json)
+# Переменные окружения используются как фоллбэк
 
 # BOSS - полный доступ ко всему (только самые главные)
 BOSS_ID_STR = os.getenv("BOSS_ID", "")
@@ -51,9 +53,40 @@ if SMM_ID_STR:
 else:
     SMM_IDS = []
 
-# Объединенные списки для удобства проверки
-ALL_ADMINS = BOSS_IDS + ADMIN_IDS_LIST  # Кто имеет доступ к админке
-ALL_BOOKING_STAFF = BOSS_IDS + ADMIN_IDS_LIST + SMM_IDS  # Кто может отправлять брони
+# Функция для получения ролей с учетом админ-панели
+def get_all_roles():
+    """Получить все роли с учетом админ-панели и переменных окружения"""
+    try:
+        from core.admin_config import get_staff
+        staff = get_staff()
+        
+        # Объединяем ID из админ-панели и переменных окружения
+        bosses = [u['id'] for u in staff.get('bosses', [])] + BOSS_IDS
+        admins = [u['id'] for u in staff.get('admins', [])] + ADMIN_IDS_LIST
+        smm = [u['id'] for u in staff.get('smm', [])] + SMM_IDS
+        
+        return {
+            'bosses': list(set(bosses)),
+            'admins': list(set(admins)),
+            'smm': list(set(smm))
+        }
+    except:
+        # Фоллбэк на переменные окружения
+        return {
+            'bosses': BOSS_IDS,
+            'admins': ADMIN_IDS_LIST,
+            'smm': SMM_IDS
+        }
+
+# Объединенные списки для удобства проверки (с учетом админ-панели)
+def _get_combined_lists():
+    roles = get_all_roles()
+    return (
+        roles['bosses'] + roles['admins'],  # ALL_ADMINS
+        roles['bosses'] + roles['admins'] + roles['smm']  # ALL_BOOKING_STAFF
+    )
+
+ALL_ADMINS, ALL_BOOKING_STAFF = _get_combined_lists()
 
 # Старая переменная ADMIN_IDS для обратной совместимости
 ADMIN_IDS = ALL_ADMINS

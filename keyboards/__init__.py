@@ -1,6 +1,7 @@
 # keyboards.py
 from telebot import types
 from core.config import ALL_ADMINS, ALL_BOOKING_STAFF, MENU_URL
+from core.admin_config import get_bars, get_links
 from modules.menu_nastoiki import MENU_DATA
 from modules.food_menu import FOOD_MENU_DATA
 
@@ -161,12 +162,18 @@ def get_traffic_source_keyboard():
     return keyboard
 
 def get_bar_selection_keyboard():
-    """Клавиатура для выбора бара при бронировании."""
+    """Клавиатура для выбора бара при бронировании.
+    Загружает список баров из админ-панели."""
     keyboard = types.InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        types.InlineKeyboardButton("🍷 Невский", callback_data="bar_nevsky"),
-        types.InlineKeyboardButton("💎 Рубинштейна", callback_data="bar_rubinstein")
-    )
+    
+    # Получаем бары из конфига админ-панели
+    bars = get_bars()
+    
+    for bar in bars:
+        button_text = f"{bar.get('emoji', '🍷')} {bar.get('name', 'Неизвестно')}"
+        callback_data = bar.get('callback_id', 'bar_unknown')
+        keyboard.add(types.InlineKeyboardButton(button_text, callback_data=callback_data))
+    
     return keyboard
 
 def get_cancel_booking_keyboard():
