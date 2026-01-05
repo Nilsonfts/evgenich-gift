@@ -28,6 +28,10 @@ def get_ai_recommendation(
     *,
     daily_updates: dict[str, str] | None = None,
     user_concept: str = "evgenich",
+    user_type: str = "regular",
+    bar_context: str = "",
+    emotion: dict = None,
+    preferences: str = "",
     model: str = "gpt-4o",
     temperature: float = 0.85,
     max_tokens: int = 200,
@@ -41,9 +45,48 @@ def get_ai_recommendation(
     
     relevant_context = find_relevant_info(user_query)
     logger.info("Найденный релевантный контекст: %s", relevant_context)
+    
     updates_string = f"Спецпредложение сегодня: {daily_updates.get('special', 'нет')}. В стоп‑листе: {daily_updates.get('stop-list', 'ничего')}" if daily_updates else "нет оперативных данных"
+    
+    # Создаем расширенный контекст с информацией о баре и пользователе
+    extended_context = f"{updates_string}\n"
+    if bar_context:
+        extended_context += f"\nКонтекст бара: {bar_context}\n"
+    
+    # Персонализация по типу гостя
+    user_type_context = ""
+    if user_type == "new":
+        user_type_context = "Это новый гость, расскажи подробнее о баре, будь особенно гостеприимным."
+    elif user_type == "regular":
+        user_type_context = "Это постоянный гость, общайся как со старым знакомым."
+    elif user_type == "vip":
+        user_type_context = "Это VIP-гость, который часто у нас бывает! Особое уважение и внимание."
+    
+    if user_type_context:
+        extended_context += f"\n{user_type_context}\n"
+    
+    # Добавляем предпочтения пользователя
+    if preferences:
+        extended_context += f"\n{preferences}\n"
+    
+    # Адаптация по эмоции
+    if emotion and emotion.get('emotion') != 'neutral':
+        emotion_name = emotion['emotion']
+        emotion_context = ""
+        if emotion_name == 'joy':
+            emotion_context = "Гость в отличном настроении! Поддержи позитив."
+        elif emotion_name == 'sadness':
+            emotion_context = "Гость грустит. Будь деликатным и поддерживающим."
+        elif emotion_name == 'anger':
+            emotion_context = "Гость недоволен. Будь терпеливым и постарайся помочь."
+        elif emotion_name == 'surprise':
+            emotion_context = "Гость удивлен. Поддержи его интерес."
+        
+        if emotion_context:
+            extended_context += f"\n{emotion_context}\n"
+    
     messages: list[dict[str, str]] = [
-        {"role": "system", "content": create_system_prompt(updates_string, user_concept)}
+        {"role": "system", "content": create_system_prompt(extended_context, user_concept)}
     ]
     if conversation_history:
         messages.extend(conversation_history[-10:])  # расширенная история
