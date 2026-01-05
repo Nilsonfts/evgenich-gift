@@ -46,3 +46,13 @@ google_creds.json
 .env
 .env.*
 google_creds.json
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# pytest cache
+.pytest_cache/
