@@ -1,0 +1,3 @@
+admin_config/
+*.pyc
+__pycache__/

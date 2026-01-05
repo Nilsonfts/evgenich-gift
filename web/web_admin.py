@@ -18,10 +18,11 @@ app.permanent_session_lifetime = timedelta(hours=12)
 ADMIN_USERNAME = 'admin'
 ADMIN_PASSWORD_HASH = generate_password_hash('Evgenich83')
 
-# Файлы конфигурации
-CONFIG_DIR = '/data/admin_config'
+# Файлы конфигурации (используем относительный путь для Railway)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_DIR = os.path.join(BASE_DIR, 'admin_config')
 if not os.path.exists(CONFIG_DIR):
-    os.makedirs(CONFIG_DIR)
+    os.makedirs(CONFIG_DIR, exist_ok=True)
 
 TEXTS_FILE = os.path.join(CONFIG_DIR, 'texts.json')
 BARS_FILE = os.path.join(CONFIG_DIR, 'bars.json')
