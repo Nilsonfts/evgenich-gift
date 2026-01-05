@@ -1,6 +1,5 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "pip install -r web_requirements.txt"
 
 [deploy]
 startCommand = "gunicorn web_admin:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
