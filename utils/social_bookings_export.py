@@ -342,7 +342,8 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
     """
     try:
         # Подключение к Google Sheets
-        credentials_info = json.loads(GOOGLE_CREDENTIALS_JSON)
+        # GOOGLE_CREDENTIALS_JSON уже распарсен в config.py как dict
+        credentials_info = GOOGLE_CREDENTIALS_JSON if isinstance(GOOGLE_CREDENTIALS_JSON, dict) else json.loads(GOOGLE_CREDENTIALS_JSON)
         credentials = Credentials.from_service_account_info(
             credentials_info,
             scopes=['https://www.googleapis.com/auth/spreadsheets']
@@ -484,7 +485,8 @@ def export_guest_booking_to_sheets(booking_data: Dict[str, Any], user_id: int = 
     """
     try:
         # Подключение к Google Sheets
-        credentials_info = json.loads(GOOGLE_CREDENTIALS_JSON)
+        # GOOGLE_CREDENTIALS_JSON уже распарсен в config.py как dict
+        credentials_info = GOOGLE_CREDENTIALS_JSON if isinstance(GOOGLE_CREDENTIALS_JSON, dict) else json.loads(GOOGLE_CREDENTIALS_JSON)
         credentials = Credentials.from_service_account_info(
             credentials_info,
             scopes=['https://www.googleapis.com/auth/spreadsheets']
@@ -599,7 +601,8 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
         
     try:
         # Подключение к Google Sheets
-        credentials_info = _parse_credentials_json(GOOGLE_CREDENTIALS_JSON)
+        # GOOGLE_CREDENTIALS_JSON уже распарсен в config.py как dict
+        credentials_info = GOOGLE_CREDENTIALS_JSON if isinstance(GOOGLE_CREDENTIALS_JSON, dict) else _parse_credentials_json(GOOGLE_CREDENTIALS_JSON)
         if not credentials_info:
             logging.error("Не удалось парсить GOOGLE_CREDENTIALS_JSON")
             return False
