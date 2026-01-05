@@ -85,7 +85,7 @@ def get_ai_recommendation(
     if not user_query:
         return "Не понял вопрос 🤔 Попробуй сформулировать по-другому?"
     
-    # НОВОЕ: Детектируем намерение пользователя
+    # НОВОЕ: Детектируем намерение пользователя (для fallback при ошибках)
     detected_intent = intent_detector.detect(user_query)
     logger.info(
         f"Намерение: {detected_intent.name} "
@@ -93,26 +93,9 @@ def get_ai_recommendation(
         f"сущности: {detected_intent.entities})"
     )
     
-    # НОВОЕ: Проверяем можно ли использовать fallback ответ
-    if fallback_responses.should_use_fallback(detected_intent.name, detected_intent.confidence):
-        fallback_response = fallback_responses.get_response(
-            detected_intent.name,
-            detected_intent.entities
-        )
-        logger.info(f"Использован fallback ответ для намерения '{detected_intent.name}'")
-        
-        # Логируем метрики (0 токенов, так как не использовали API)
-        if user_id:
-            ai_metrics.log_request(
-                user_id=user_id,
-                model="fallback",
-                prompt_tokens=0,
-                completion_tokens=0,
-                response_time=time.time() - start_time,
-                success=True
-            )
-        
-        return fallback_response
+    # ВАЖНО: НЕ используем fallback для обычных запросов!
+    # Пусть AI общается живо и естественно.
+    # Fallback только как запасной вариант при сбоях API.
     
     # Получаем релевантную информацию из базы знаний (с кешированием)
     relevant_context = find_relevant_info(user_query)
@@ -225,15 +208,12 @@ def get_ai_recommendation(
         )
         
         if completion is None:
-            # НОВОЕ: Используем fallback ответ вместо общей ошибки
+            # НОВОЕ: Используем fallback ответ только при ошибке (force=True)
             logger.warning("API не ответил после retry, используем fallback")
             fallback_response = fallback_responses.get_response(
                 detected_intent.name,
                 detected_intent.entities
             )
-            # Если нет fallback для этого намерения - общая ошибка
-            if not fallback_response:
-                fallback_response = fallback_responses.get_error_response("connection")
             return fallback_response
         
         response_text = completion.choices[0].message.content

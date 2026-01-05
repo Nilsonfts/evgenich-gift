@@ -187,23 +187,24 @@ class FallbackResponses:
         else:
             return random.choice(self.RESPONSES["error"])
     
-    def should_use_fallback(self, intent: str, confidence: float) -> bool:
+    def should_use_fallback(self, intent: str, confidence: float, force: bool = False) -> bool:
         """
         Определить нужно ли использовать fallback вместо AI
         
         Args:
             intent: Намерение
             confidence: Уверенность в намерении
+            force: Принудительное использование fallback (при ошибках)
             
         Returns:
             True если можно использовать fallback
         """
-        # Для простых намерений с высокой уверенностью используем fallback
-        simple_intents = ["greeting", "gratitude", "address", "work_hours"]
-        
-        if intent in simple_intents and confidence > 0.7:
+        # Если force=True (ошибка API) - используем fallback всегда
+        if force:
             return True
         
+        # По умолчанию НЕ используем fallback - пусть AI общается живо!
+        # Fallback только как запасной вариант при сбоях
         return False
     
     def get_all_intents(self) -> list:
