@@ -1,128 +1,127 @@
 {% extends "base.html" %}
 
-{% block title %}Управление ссылками{% endblock %}
+{% block title %}Ссылки - Евгенич{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <div class="page-header">
-        <h2>Links Management</h2>
-        <p class="text-muted">Configure bot links and social media</p>
-    </div>
-    
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-                <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-dismissible fade show">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
-    
-    <div class="row">
-        <div class="col-md-6 mb-4">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">Основные ссылки</h5>
-                </div>
-                <div class="card-body">
-                    <form method="POST" action="/links/update">
-                        <div class="mb-3">
-                            <label class="form-label">Ссылка на меню (по умолчанию)</label>
-                            <input type="url" class="form-control" name="menu_url" 
-                                   value="{{ links.menu_url }}" 
-                                   placeholder="https://spb.evgenich.bar/menu">
-                            <small class="text-muted">Основная ссылка на меню баров</small>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Ссылка на форму брони</label>
-                            <input type="url" class="form-control" name="booking_url" 
-                                   value="{{ links.booking_url }}" 
-                                   placeholder="https://forms.gle/xxxxx">
-                            <small class="text-muted">Google Forms или другая форма бронирования</small>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Телефон для связи</label>
-                            <input type="tel" class="form-control" name="contact_phone" 
-                                   value="{{ links.contact_phone }}" 
-                                   placeholder="+7 (812) 123-45-67">
-                            <small class="text-muted">Основной телефон службы поддержки</small>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">WhatsApp</label>
-                            <input type="tel" class="form-control" name="whatsapp" 
-                                   value="{{ links.whatsapp }}" 
-                                   placeholder="+79991234567">
-                            <small class="text-muted">Номер для WhatsApp (без пробелов и +)</small>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Telegram для связи</label>
-                            <input type="text" class="form-control" name="telegram" 
-                                   value="{{ links.telegram }}" 
-                                   placeholder="@evgenich_support">
-                            <small class="text-muted">Username или ссылка на телеграм</small>
-                        </div>
-                        
-                        <button type="submit" class="btn btn-primary w-100">
-                            Сохранить изменения
-                        </button>
-                    </form>
-                </div>
+<div class="page-header mb-4">
+    <h2>Управление ссылками</h2>
+    <p>Настройте ссылки и контакты для бота</p>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-dismissible fade show">
+                <i class="fas {{ 'fa-check-circle' if category == 'success' else 'fa-exclamation-circle' }} me-2"></i>
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
-        </div>
-        
-        <div class="col-md-6 mb-4">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">Социальные сети</h5>
-                </div>
-                <div class="card-body">
-                    <form method="POST" action="/links/update">
-                        <div class="mb-3">
-                            <label class="form-label">Instagram</label>
-                            <input type="url" class="form-control" name="instagram" 
-                                   value="{{ links.instagram }}" 
-                                   placeholder="https://instagram.com/evgenichbar">
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">VK</label>
-                            <input type="url" class="form-control" name="vk" 
-                                   value="{{ links.vk }}" 
-                                   placeholder="https://vk.com/evgenichbar">
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Facebook</label>
-                            <input type="url" class="form-control" name="facebook" 
-                                   value="{{ links.facebook }}" 
-                                   placeholder="https://facebook.com/evgenichbar">
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">YouTube</label>
-                            <input type="url" class="form-control" name="youtube" 
-                                   value="{{ links.youtube }}" 
-                                   placeholder="https://youtube.com/@evgenichbar">
-                        </div>
-                        
-                        <button type="submit" class="btn btn-info w-100">
-                            Сохранить соцсети
-                        </button>
-                    </form>
-                </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header" style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);">
+                <i class="fas fa-link me-2"></i> Основные ссылки
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/links/update">
+                    <div class="mb-3">
+                        <label class="form-label">Ссылка на меню</label>
+                        <input type="url" class="form-control" name="menu_url" 
+                               value="{{ links.menu_url }}" 
+                               placeholder="https://spb.evgenich.bar/menu">
+                        <small class="text-muted">Основная ссылка на меню баров</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Форма бронирования</label>
+                        <input type="url" class="form-control" name="booking_url" 
+                               value="{{ links.booking_url }}" 
+                               placeholder="https://forms.gle/xxxxx">
+                        <small class="text-muted">Google Forms или другая форма</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Телефон</label>
+                        <input type="tel" class="form-control" name="contact_phone" 
+                               value="{{ links.contact_phone }}" 
+                               placeholder="+7 (812) 123-45-67">
+                        <small class="text-muted">Основной номер поддержки</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">WhatsApp</label>
+                        <input type="tel" class="form-control" name="whatsapp" 
+                               value="{{ links.whatsapp }}" 
+                               placeholder="+79991234567">
+                        <small class="text-muted">Номер без пробелов</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Telegram</label>
+                        <input type="text" class="form-control" name="telegram" 
+                               value="{{ links.telegram }}" 
+                               placeholder="@evgenich_support">
+                        <small class="text-muted">Username или ссылка</small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-save me-1"></i> Сохранить ссылки
+                    </button>
+                </form>
             </div>
         </div>
     </div>
     
-    <div class="alert alert-warning">
-        <i class="fas fa-exclamation-triangle me-2"></i>
-        <strong>Внимание:</strong> После изменения ссылок требуется перезапуск бота для применения изменений.
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header" style="background: linear-gradient(135deg, #ec4899 0%, #f43f5e 100%);">
+                <i class="fas fa-share-alt me-2"></i> Социальные сети
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/links/update">
+                    <div class="mb-3">
+                        <label class="form-label">Instagram</label>
+                        <input type="url" class="form-control" name="instagram" 
+                               value="{{ links.instagram }}" 
+                               placeholder="https://instagram.com/evgenichbar">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">VK</label>
+                        <input type="url" class="form-control" name="vk" 
+                               value="{{ links.vk }}" 
+                               placeholder="https://vk.com/evgenichbar">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Facebook</label>
+                        <input type="url" class="form-control" name="facebook" 
+                               value="{{ links.facebook }}" 
+                               placeholder="https://facebook.com/evgenichbar">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">YouTube</label>
+                        <input type="url" class="form-control" name="youtube" 
+                               value="{{ links.youtube }}" 
+                               placeholder="https://youtube.com/@evgenichbar">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-danger w-100">
+                        <i class="fas fa-save me-1"></i> Сохранить соцсети
+                    </button>
+                </form>
+            </div>
+        </div>
     </div>
+</div>
+
+<div class="alert alert-warning">
+    <i class="fas fa-exclamation-triangle me-2"></i>
+    <strong>Внимание:</strong> После изменения ссылок требуется перезапуск бота для применения изменений.
 </div>
 {% endblock %}

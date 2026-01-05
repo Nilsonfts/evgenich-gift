@@ -1,152 +1,151 @@
 {% extends "base.html" %}
 
-{% block title %}Управление текстами{% endblock %}
+{% block title %}Тексты - Евгенич{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <div class="page-header">
-        <h2>Text Management</h2>
-        <p class="text-muted">Edit bot message templates</p>
-    </div>
-    
-    {% if success %}
-    <div class="alert alert-success alert-dismissible fade show" role="alert">
-        <strong>Успешно!</strong> {{ success }}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-    {% endif %}
-    
-    <div class="row">
-        <div class="col-md-6 mb-4">
-            <div class="card">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">Приветствия</h5>
-                </div>
-                <div class="card-body">
-                    <form method="POST" action="/texts/update">
-                        <input type="hidden" name="section" value="greetings">
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Приветствие /start</label>
-                            <textarea class="form-control" name="greeting_start" rows="4">{{ texts.greeting_start }}</textarea>
-                            <small class="text-muted">Первое сообщение при запуске бота</small>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Главное меню</label>
-                            <textarea class="form-control" name="main_menu" rows="3">{{ texts.main_menu }}</textarea>
-                        </div>
-                        
-                        <button type="submit" class="btn btn-primary">Сохранить</button>
-                    </form>
-                </div>
+<div class="page-header mb-4">
+    <h2>Управление текстами</h2>
+    <p>Редактируйте текстовые сообщения бота</p>
+</div>
+
+{% if success %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="fas fa-check-circle me-2"></i>
+    {{ success }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header" style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);">
+                <i class="fas fa-handshake me-2"></i> Приветствия
             </div>
-        </div>
-        
-        <div class="col-md-6 mb-4">
-            <div class="card">
-                <div class="card-header bg-success text-white">
-                    <h5 class="mb-0">Бронирование</h5>
-                </div>
-                <div class="card-body">
-                    <form method="POST" action="/texts/update">
-                        <input type="hidden" name="section" value="booking">
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Начало бронирования</label>
-                            <textarea class="form-control" name="booking_start" rows="3">{{ texts.booking_start }}</textarea>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Запрос имени</label>
-                            <input type="text" class="form-control" name="ask_name" value="{{ texts.ask_name }}">
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Запрос телефона</label>
-                            <input type="text" class="form-control" name="ask_phone" value="{{ texts.ask_phone }}">
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Запрос даты</label>
-                            <input type="text" class="form-control" name="ask_date" value="{{ texts.ask_date }}">
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Запрос времени</label>
-                            <input type="text" class="form-control" name="ask_time" value="{{ texts.ask_time }}">
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Запрос кол-ва гостей</label>
-                            <input type="text" class="form-control" name="ask_guests" value="{{ texts.ask_guests }}">
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Выбор бара</label>
-                            <textarea class="form-control" name="ask_bar" rows="2">{{ texts.ask_bar }}</textarea>
-                        </div>
-                        
-                        <button type="submit" class="btn btn-success">Сохранить</button>
-                    </form>
-                </div>
+            <div class="card-body">
+                <form method="POST" action="/texts/update">
+                    <input type="hidden" name="section" value="greetings">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Приветствие /start</label>
+                        <textarea class="form-control" name="greeting_start" rows="4">{{ texts.greeting_start }}</textarea>
+                        <small class="text-muted">Первое сообщение при запуске бота</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Главное меню</label>
+                        <textarea class="form-control" name="main_menu" rows="3">{{ texts.main_menu }}</textarea>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </form>
             </div>
         </div>
     </div>
     
-    <div class="row">
-        <div class="col-md-6 mb-4">
-            <div class="card">
-                <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">Подтверждения</h5>
-                </div>
-                <div class="card-body">
-                    <form method="POST" action="/texts/update">
-                        <input type="hidden" name="section" value="confirmations">
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Успешное бронирование</label>
-                            <textarea class="form-control" name="booking_success" rows="4">{{ texts.booking_success }}</textarea>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Отмена бронирования</label>
-                            <textarea class="form-control" name="booking_cancelled" rows="2">{{ texts.booking_cancelled }}</textarea>
-                        </div>
-                        
-                        <button type="submit" class="btn btn-info">Сохранить</button>
-                    </form>
-                </div>
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                <i class="fas fa-calendar-check me-2"></i> Бронирование
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/texts/update">
+                    <input type="hidden" name="section" value="booking">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Начало бронирования</label>
+                        <textarea class="form-control" name="booking_start" rows="3">{{ texts.booking_start }}</textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Запрос имени</label>
+                        <input type="text" class="form-control" name="ask_name" value="{{ texts.ask_name }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Запрос телефона</label>
+                        <input type="text" class="form-control" name="ask_phone" value="{{ texts.ask_phone }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Запрос даты</label>
+                        <input type="text" class="form-control" name="ask_date" value="{{ texts.ask_date }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Запрос времени</label>
+                        <input type="text" class="form-control" name="ask_time" value="{{ texts.ask_time }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Запрос кол-ва гостей</label>
+                        <input type="text" class="form-control" name="ask_guests" value="{{ texts.ask_guests }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Выбор бара</label>
+                        <textarea class="form-control" name="ask_bar" rows="2">{{ texts.ask_bar }}</textarea>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-success">Сохранить</button>
+                </form>
             </div>
         </div>
-        
-        <div class="col-md-6 mb-4">
-            <div class="card">
-                <div class="card-header bg-warning text-dark">
-                    <h5 class="mb-0">Ошибки</h5>
-                </div>
-                <div class="card-body">
-                    <form method="POST" action="/texts/update">
-                        <input type="hidden" name="section" value="errors">
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Неверная команда</label>
-                            <input type="text" class="form-control" name="unknown_command" value="{{ texts.unknown_command }}">
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Нет доступа</label>
-                            <input type="text" class="form-control" name="no_access" value="{{ texts.no_access }}">
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Ошибка системы</label>
-                            <textarea class="form-control" name="system_error" rows="2">{{ texts.system_error }}</textarea>
-                        </div>
-                        
-                        <button type="submit" class="btn btn-warning">Сохранить</button>
-                    </form>
-                </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);">
+                <i class="fas fa-thumbs-up me-2"></i> Подтверждения
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/texts/update">
+                    <input type="hidden" name="section" value="confirmations">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Успешное бронирование</label>
+                        <textarea class="form-control" name="booking_success" rows="4">{{ texts.booking_success }}</textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Отмена бронирования</label>
+                        <textarea class="form-control" name="booking_cancelled" rows="2">{{ texts.booking_cancelled }}</textarea>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-info">Сохранить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                <i class="fas fa-exclamation-circle me-2"></i> Ошибки
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/texts/update">
+                    <input type="hidden" name="section" value="errors">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Неверная команда</label>
+                        <input type="text" class="form-control" name="unknown_command" value="{{ texts.unknown_command }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Нет доступа</label>
+                        <input type="text" class="form-control" name="no_access" value="{{ texts.no_access }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Ошибка системы</label>
+                        <textarea class="form-control" name="system_error" rows="2">{{ texts.system_error }}</textarea>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-warning">Сохранить</button>
+                </form>
             </div>
         </div>
     </div>

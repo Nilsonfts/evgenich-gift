@@ -1,76 +1,65 @@
 {% extends "base.html" %}
 
-{% block title %}Дашборд - Evgenich Bot Admin{% endblock %}
+{% block title %}Дашборд - Евгенич{% endblock %}
 
 {% block content %}
+<div class="page-header mb-4">
+    <h2>Дашборд</h2>
+    <p>Основные метрики и статистика</p>
+</div>
+
 <div class="row">
     <!-- Статистические карточки -->
     <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stat-card h-100">
-            <div class="card-body">
-                <div class="row align-items-center">
-                    <div class="col">
-                        <div class="text-white-50 small">Всего пользователей</div>
-                        <div class="h2 text-white">{{ total_users }}</div>
-                    </div>
-                    <div class="col-auto">
-                        <i class="fas fa-users fa-2x text-white-50"></i>
-                    </div>
-                </div>
+        <div class="card h-100">
+            <div class="card-header" style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);">
+                <i class="fas fa-users me-2"></i> Пользователей
+            </div>
+            <div class="card-body text-center">
+                <h3 style="color: #6366f1; font-weight: 700;">{{ total_users }}</h3>
+                <p class="text-muted small">Всего пользователей</p>
             </div>
         </div>
     </div>
     
     <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stat-card-success h-100">
-            <div class="card-body">
-                <div class="row align-items-center">
-                    <div class="col">
-                        <div class="text-white-50 small">Выдано купонов (24ч)</div>
-                        <div class="h2 text-white">{{ general_stats[0] }}</div>
-                    </div>
-                    <div class="col-auto">
-                        <i class="fas fa-ticket-alt fa-2x text-white-50"></i>
-                    </div>
-                </div>
+        <div class="card h-100">
+            <div class="card-header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                <i class="fas fa-ticket-alt me-2"></i> Купоны выданы
+            </div>
+            <div class="card-body text-center">
+                <h3 style="color: #10b981; font-weight: 700;">{{ general_stats[0] }}</h3>
+                <p class="text-muted small">За последние 24 часа</p>
             </div>
         </div>
     </div>
     
     <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stat-card-info h-100">
-            <div class="card-body">
-                <div class="row align-items-center">
-                    <div class="col">
-                        <div class="text-white-50 small">Погашено (24ч)</div>
-                        <div class="h2 text-white">{{ general_stats[1] }}</div>
-                    </div>
-                    <div class="col-auto">
-                        <i class="fas fa-glass-cheers fa-2x text-white-50"></i>
-                    </div>
-                </div>
+        <div class="card h-100">
+            <div class="card-header" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);">
+                <i class="fas fa-glass-cheers me-2"></i> Погашено
+            </div>
+            <div class="card-body text-center">
+                <h3 style="color: #3b82f6; font-weight: 700;">{{ general_stats[1] }}</h3>
+                <p class="text-muted small">За последние 24 часа</p>
             </div>
         </div>
     </div>
     
     <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stat-card-warning h-100">
-            <div class="card-body">
-                <div class="row align-items-center">
-                    <div class="col">
-                        <div class="text-white-50 small">Конверсия</div>
-                        <div class="h2 text-white">
-                            {% if general_stats[0] > 0 %}
-                                {{ "%.1f"|format((general_stats[1] / general_stats[0]) * 100) }}%
-                            {% else %}
-                                0%
-                            {% endif %}
-                        </div>
-                    </div>
-                    <div class="col-auto">
-                        <i class="fas fa-percentage fa-2x text-white-50"></i>
-                    </div>
-                </div>
+        <div class="card h-100">
+            <div class="card-header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                <i class="fas fa-percentage me-2"></i> Конверсия
+            </div>
+            <div class="card-body text-center">
+                <h3 style="color: #f59e0b; font-weight: 700;">
+                    {% if general_stats[0] > 0 %}
+                        {{ "%.1f"|format((general_stats[1] / general_stats[0]) * 100) }}%
+                    {% else %}
+                        0%
+                    {% endif %}
+                </h3>
+                <p class="text-muted small">Процент конверсии</p>
             </div>
         </div>
     </div>
@@ -80,14 +69,11 @@
     <!-- График активности за 7 дней -->
     <div class="col-lg-8 mb-4">
         <div class="card">
-            <div class="card-header bg-white">
-                <h5 class="card-title mb-0">
-                    <i class="fas fa-chart-line me-2"></i>
-                    Статистика за последние 7 дней
-                </h5>
+            <div class="card-header">
+                <i class="fas fa-chart-line me-2"></i> Статистика за 7 дней
             </div>
             <div class="card-body">
-                <div class="chart-container">
+                <div style="height: 300px;">
                     <canvas id="weeklyChart"></canvas>
                 </div>
             </div>
@@ -97,11 +83,8 @@
     <!-- Топ персонала -->
     <div class="col-lg-4 mb-4">
         <div class="card h-100">
-            <div class="card-header bg-white">
-                <h5 class="card-title mb-0">
-                    <i class="fas fa-trophy me-2"></i>
-                    Топ персонала (24ч)
-                </h5>
+            <div class="card-header">
+                <i class="fas fa-trophy me-2"></i> Топ персонала за 24ч
             </div>
             <div class="card-body">
                 {% if staff_stats %}
@@ -144,11 +127,8 @@
 <div class="row">
     <div class="col-12">
         <div class="card">
-            <div class="card-header bg-white">
-                <h5 class="card-title mb-0">
-                    <i class="fas fa-chart-pie me-2"></i>
-                    Источники подписчиков (24ч)
-                </h5>
+            <div class="card-header">
+                <i class="fas fa-chart-pie me-2"></i> Источники подписчиков за 24ч
             </div>
             <div class="card-body">
                 {% if general_stats[3] %}
@@ -156,9 +136,9 @@
                     {% for source, count in general_stats[3].items() %}
                         {% if not source.startswith('Сотрудник:') %}
                         <div class="col-md-3 mb-3">
-                            <div class="text-center">
-                                <div class="h4 text-primary">{{ count }}</div>
-                                <div class="text-muted small">{{ source }}</div>
+                            <div class="text-center p-3" style="background: rgba(99,102,241,0.05); border-radius: 0.5rem; border: 2px solid #e5e7eb;">
+                                <div style="font-size: 1.75rem; color: #6366f1; font-weight: 700;">{{ count }}</div>
+                                <div class="text-muted small mt-2">{{ source }}</div>
                             </div>
                         </div>
                         {% endif %}
