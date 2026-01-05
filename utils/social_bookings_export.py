@@ -417,7 +417,8 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
         }
         
         source_display = source_mapping.get(booking_data.get('source', ''), booking_data.get('source', 'Неизвестно'))
-        amo_tag = amo_tag_mapping.get(booking_data.get('source', ''), 'unknown')
+        # Если amo_tag уже установлен (код бара), используем его. Иначе берём от источника
+        amo_tag = booking_data.get('amo_tag') or amo_tag_mapping.get(booking_data.get('source', ''), 'unknown')
         admin_name = get_admin_name_by_id(admin_id)
         
         # Получаем UTM-данные для источника
@@ -441,17 +442,16 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
             datetime_combined,                      # D: Дата и время посещения
             booking_data.get('guests', ''),         # E: Кол-во гостей (было F)
             source_display,                         # F: Источник (было G)
-            amo_tag,                                # G: ТЕГ для АМО (было H)
-            booking_data.get('reason', ''),         # H: Повод Визита (было I)
-            admin_name,                             # I: Кто создал заявку (было J)
-            'Новая',                                # J: Статус (было K)
-            utm_data.get('utm_source', ''),         # K: UTM Source (было L)
-            utm_data.get('utm_medium', ''),         # L: UTM Medium (было M)
-            utm_data.get('utm_campaign', ''),       # M: UTM Campaign (было N)
-            utm_data.get('utm_content', ''),        # N: UTM Content (было O)
-            utm_data.get('utm_term', ''),           # O: UTM Term (было P)
-            f"BID-{int(time.time())}",              # P: ID заявки (было Q)
-            admin_id                                # Q: Telegram ID создателя (было R)
+            amo_tag,                                # G: ТЕГ для АМО (было H) - теперь код бара
+            admin_name,                             # H: Кто создал заявку (было J)
+            'Новая',                                # I: Статус (было K)
+            utm_data.get('utm_source', ''),         # J: UTM Source (было L)
+            utm_data.get('utm_medium', ''),         # K: UTM Medium (было M)
+            utm_data.get('utm_campaign', ''),       # L: UTM Campaign (было N)
+            utm_data.get('utm_content', ''),        # M: UTM Content (было O)
+            utm_data.get('utm_term', ''),           # N: UTM Term (было P)
+            f"BID-{int(time.time())}",              # O: ID заявки (было Q)
+            admin_id                                # P: Telegram ID создателя (было R)
         ]
         
         # Добавляем строку в таблицу
@@ -512,7 +512,7 @@ def export_guest_booking_to_sheets(booking_data: Dict[str, Any], user_id: int = 
         
         # Для гостевых бронирований без источника используем специальные значения
         source_display = "🤖 Гостевое бронирование (бот)"
-        amo_tag = "guest_bot"
+        amo_tag = booking_data.get('amo_tag', 'guest_bot')  # Код бара или 'guest_bot' если не указан
         creator_name = "👤 Посетитель (через бота)"
         
         # UTM-данные для гостевого бронирования через бота
@@ -536,17 +536,16 @@ def export_guest_booking_to_sheets(booking_data: Dict[str, Any], user_id: int = 
             datetime_combined,                      # D: Дата и время посещения
             booking_data.get('guests', ''),         # E: Кол-во гостей (было F)
             source_display,                         # F: Источник (было G)
-            amo_tag,                                # G: ТЕГ для АМО (было H)
-            booking_data.get('reason', ''),         # H: Повод Визита (было I)
-            creator_name,                           # I: Кто создал заявку (было J)
-            'Новая',                                # J: Статус (было K)
-            utm_data.get('utm_source', ''),         # K: UTM Source (было L)
-            utm_data.get('utm_medium', ''),         # L: UTM Medium (было M)
-            utm_data.get('utm_campaign', ''),       # M: UTM Campaign (было N)
-            utm_data.get('utm_content', ''),        # N: UTM Content (было O)
-            utm_data.get('utm_term', ''),           # O: UTM Term (было P)
-            f"BID-{int(time.time())}",              # P: ID заявки (было Q)
-            user_id if user_id else ""              # Q: Telegram ID создателя (было R)
+            amo_tag,                                # G: ТЕГ для АМО (было H) - теперь код бара
+            creator_name,                           # H: Кто создал заявку (было J)
+            'Новая',                                # I: Статус (было K)
+            utm_data.get('utm_source', ''),         # J: UTM Source (было L)
+            utm_data.get('utm_medium', ''),         # K: UTM Medium (было M)
+            utm_data.get('utm_campaign', ''),       # L: UTM Campaign (было N)
+            utm_data.get('utm_content', ''),        # M: UTM Content (было O)
+            utm_data.get('utm_term', ''),           # N: UTM Term (было P)
+            f"BID-{int(time.time())}",              # O: ID заявки (было Q)
+            user_id if user_id else ""              # P: Telegram ID создателя (было R)
         ]
         
         # Проверяем корректность данных
@@ -715,10 +714,10 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
             datetime_combined,                      # B: Сделка.Время прихода
             booking_data.get('guests', ''),         # C: Сделка.Кол-во гостей
             utm_data.get('utm_source', ''),         # D: Сделка.R.Источник сделки
-            "ЕВГ_СПБ",                              # E: Сделка.R.Тег города (автоматом)
+            booking_data.get('amo_tag', 'ЕВГ_СПБ'),  # E: Сделка.R.Тег города (код бара)
             booking_data.get('name', ''),           # F: Контакт.ФИО
             booking_data.get('phone', ''),          # G: Контакт.Телефон
-            booking_data.get('reason', ''),         # H: Повод Визита
+            '',                                     # H: Резерв (было "Повод")
             utm_data.get('utm_medium', ''),         # I: UTM Medium (Канал)
             utm_data.get('utm_campaign', ''),       # J: UTM Campaign (Кампания)
             utm_data.get('utm_content', ''),        # K: UTM Content (Содержание)

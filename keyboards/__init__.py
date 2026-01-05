@@ -160,6 +160,15 @@ def get_traffic_source_keyboard():
     )
     return keyboard
 
+def get_bar_selection_keyboard():
+    """Клавиатура для выбора бара при бронировании."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton("🍷 Невский", callback_data="bar_nevsky"),
+        types.InlineKeyboardButton("💎 Рубинштейна", callback_data="bar_rubinstein")
+    )
+    return keyboard
+
 def get_cancel_booking_keyboard():
     """Клавиатура с кнопкой отмены бронирования."""
     keyboard = types.InlineKeyboardMarkup(row_width=1)

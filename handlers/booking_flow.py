@@ -100,13 +100,44 @@ def register_booking_handlers(bot):
         current_data = user_entry.get('data', {})
         current_data['source'] = call.data
         
-        # Переходим к следующему шагу (повод)
-        db.update({'step': 'reason', 'data': current_data}, User.user_id == user_id)
+        # Переходим к следующему шагу (выбор бара)
+        db.update({'step': 'bar', 'data': current_data}, User.user_id == user_id)
         
         if current_data.get('is_admin_booking'):
-            bot.send_message(call.message.chat.id, texts.ADMIN_BOOKING_REASON)
+            bot.send_message(call.message.chat.id, texts.ADMIN_BOOKING_BAR, reply_markup=keyboards.get_bar_selection_keyboard())
         else:
-            bot.send_message(call.message.chat.id, texts.BOOKING_ASK_REASON)
+            bot.send_message(call.message.chat.id, texts.BOOKING_ASK_BAR, reply_markup=keyboards.get_bar_selection_keyboard())
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("bar_"))
+    def handle_bar_selection_callback(call: types.CallbackQuery):
+        user_id = call.from_user.id
+        bot.answer_callback_query(call.id)
+        try:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+        except ApiTelegramException:
+            pass
+
+        user_entry = db.get(User.user_id == user_id)
+        if not user_entry:
+            return
+
+        current_data = user_entry.get('data', {})
+        # Маппируем выбор бара на коды для AMO
+        bar_mapping = {
+            'bar_nevsky': 'ЕВГ_СПБ_НЕВ',
+            'bar_rubinstein': 'ЕВГ_СПБ_РУБ'
+        }
+        current_data['bar'] = call.data
+        current_data['amo_tag'] = bar_mapping.get(call.data, '')
+        
+        # Переходим к подтверждению
+        db.update({'step': 'confirmation', 'data': current_data}, User.user_id == user_id)
+        confirmation_text = texts.get_booking_confirmation_text(current_data)
+        bot.send_message(
+            call.message.chat.id,
+            confirmation_text,
+            reply_markup=keyboards.get_booking_confirmation_keyboard()
+        )
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("booking_"))
     def handle_booking_option_callback(call: types.CallbackQuery):
@@ -253,7 +284,7 @@ def register_booking_handlers(bot):
             'phone': {'next_step': 'date', 'prompt': texts.BOOKING_ASK_DATE, 'keyboard': keyboards.get_cancel_booking_keyboard()},
             'date': {'next_step': 'time', 'prompt': texts.BOOKING_ASK_TIME, 'keyboard': keyboards.get_cancel_booking_keyboard()},
             'time': {'next_step': 'guests', 'prompt': texts.BOOKING_ASK_GUESTS, 'keyboard': keyboards.get_cancel_booking_keyboard()},
-            'guests': {'next_step': 'reason', 'prompt': texts.BOOKING_ASK_REASON, 'keyboard': keyboards.get_cancel_booking_keyboard()},
+            'guests': {'next_step': 'bar', 'prompt': texts.BOOKING_ASK_BAR, 'keyboard': keyboards.get_bar_selection_keyboard()},
         }
 
         # Словарь-маршрутизатор для админского бронирования
@@ -282,13 +313,3 @@ def register_booking_handlers(bot):
                 bot.send_message(message.chat.id, next_step_info['prompt'], reply_markup=next_step_info['keyboard'])
             else:
                 bot.send_message(message.chat.id, next_step_info['prompt'])
-                
-        elif step == 'reason':
-            # Если это был последний шаг, показываем подтверждение
-            db.update({'step': 'confirmation', 'data': current_data}, User.user_id == user_id)
-            confirmation_text = texts.get_booking_confirmation_text(current_data)
-            bot.send_message(
-                message.chat.id,
-                confirmation_text,
-                reply_markup=keyboards.get_booking_confirmation_keyboard()
-            )
