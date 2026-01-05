@@ -22,6 +22,7 @@ from handlers.ai_logic import register_ai_handlers
 from handlers.iiko_data_handler import register_iiko_data_handlers
 from handlers.broadcast import register_broadcast_handlers
 from handlers.chat_booking import register_chat_booking_handlers
+from handlers.admin_content import register_content_handlers  # AI System v3.0
 from core.delayed_tasks_processor import DelayedTasksProcessor
 
 # Импортируем службу реферальных уведомлений
@@ -188,6 +189,7 @@ if __name__ == "__main__":
     register_callback_handlers(bot, scheduler, send_friend_bonus, request_feedback)
     register_booking_handlers(bot)
     register_admin_handlers(bot)
+    register_content_handlers(bot)  # AI System v3.0 - управление контентом
     register_ai_handlers(bot)
     register_iiko_data_handlers(bot)
     register_broadcast_handlers(bot)

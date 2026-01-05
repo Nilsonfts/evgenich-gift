@@ -56,3 +56,6 @@ __pycache__/
 
 # pytest cache
 .pytest_cache/
+
+# AI System v3.0 data (user memory, dynamic content)
+data/*.json

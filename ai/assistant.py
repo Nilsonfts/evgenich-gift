@@ -1,7 +1,7 @@
 # /ai/assistant.py
 """
 AI-логика и интеграция с OpenAI.
-Версия 2.0 с улучшениями: retry логика, кеширование, валидация, контекст, метрики
+Версия 3.0 с улучшениями: персонализация, умный детектор, динамический контент
 """
 import logging
 import time
@@ -9,7 +9,7 @@ from ai.knowledge import find_relevant_info
 from openai import OpenAI
 from core.config import OPENAI_API_KEY
 
-# Новые модули для улучшений
+# Модули AI System v2.x
 from ai.retry_handler import retry_with_backoff, get_user_friendly_error
 from ai.knowledge_cache import cached_knowledge_base
 from ai.response_validator import validate_ai_response, sanitize_user_input, check_response_quality
@@ -17,6 +17,11 @@ from ai.conversation_context import conversation_context
 from ai.metrics import ai_metrics
 from ai.intent_detector import intent_detector
 from ai.fallback_responses import fallback_responses
+
+# НОВЫЕ модули AI System v3.0
+from ai.user_memory import user_memory
+from ai.smart_intent_detector import smart_detector
+from ai.dynamic_content import dynamic_content
 
 # Инициализация OpenAI клиента
 openai_client = None
@@ -85,10 +90,16 @@ def get_ai_recommendation(
     if not user_query:
         return "Не понял вопрос 🤔 Попробуй сформулировать по-другому?"
     
-    # НОВОЕ: Детектируем намерение пользователя (для fallback при ошибках)
-    detected_intent = intent_detector.detect(user_query)
+    # ========== AI SYSTEM v3.0 ==========
+    
+    # 1. Извлекаем и запоминаем информацию о пользователе
+    if user_id:
+        user_memory.extract_info_from_message(user_id, user_query)
+    
+    # 2. Умный детектор намерений (с fuzzy matching для опечаток)
+    detected_intent = smart_detector.detect(user_query)
     logger.info(
-        f"Намерение: {detected_intent.name} "
+        f"🎯 Намерение: {detected_intent.name} "
         f"(уверенность: {detected_intent.confidence:.2f}, "
         f"сущности: {detected_intent.entities})"
     )
@@ -108,7 +119,24 @@ def get_ai_recommendation(
     if bar_context:
         extended_context += f"\nКонтекст бара: {bar_context}\n"
     
-    # Персонализация по типу гостя
+    # ========== AI SYSTEM v3.0: ПЕРСОНАЛИЗАЦИЯ ==========
+    
+    # Получаем персонализированный контекст из памяти о пользователе
+    if user_id:
+        personalization = user_memory.get_personalization_context(user_id)
+        if personalization:
+            extended_context += f"\n{personalization}\n"
+            logger.debug(f"📝 Персонализация для {user_id}: {personalization[:50]}...")
+    
+    # Добавляем динамический контент (акции, мероприятия)
+    dynamic_ctx = dynamic_content.get_context_for_ai()
+    if dynamic_ctx:
+        extended_context += f"\n{dynamic_ctx}\n"
+        logger.debug(f"📢 Динамический контент добавлен")
+    
+    # ========== КОНЕЦ v3.0 БЛОКА ==========
+    
+    # Персонализация по типу гостя (legacy)
     user_type_context = ""
     if user_type == "new":
         user_type_context = "Это новый гость, расскажи подробнее о баре, будь особенно гостеприимным."
