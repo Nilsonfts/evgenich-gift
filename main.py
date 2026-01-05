@@ -21,6 +21,7 @@ from handlers.reports import send_report
 from handlers.ai_logic import register_ai_handlers
 from handlers.iiko_data_handler import register_iiko_data_handlers
 from handlers.broadcast import register_broadcast_handlers
+from handlers.chat_booking import register_chat_booking_handlers
 from core.delayed_tasks_processor import DelayedTasksProcessor
 
 # Импортируем службу реферальных уведомлений
@@ -189,6 +190,7 @@ if __name__ == "__main__":
     register_ai_handlers(bot)
     register_iiko_data_handlers(bot)
     register_broadcast_handlers(bot)
+    register_chat_booking_handlers(bot)
     
     # Инициализируем систему рассылок с планировщиком
     init_admin_handlers(bot, scheduler)
