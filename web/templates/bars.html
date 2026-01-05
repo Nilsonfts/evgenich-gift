@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}Управление барами{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2>🍷 Управление барами</h2>
+            <p class="text-muted">Добавляйте, редактируйте и удаляйте бары</p>
+        </div>
+    </div>
+    
+    {% if success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <strong>Успешно!</strong> {{ success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+    
+    {% if error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <strong>Ошибка!</strong> {{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+    
+    <div class="row">
+        <div class="col-md-4 mb-4">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">➕ Добавить новый бар</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="/bars/add">
+                        <div class="mb-3">
+                            <label class="form-label">Название бара</label>
+                            <input type="text" class="form-control" name="name" placeholder="Невский" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Код для AMO (тег)</label>
+                            <input type="text" class="form-control" name="code" placeholder="ЕВГ_СПБ_НЕВ" required>
+                            <small class="text-muted">Уникальный код для системы</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Эмодзи</label>
+                            <input type="text" class="form-control" name="emoji" placeholder="🍷" maxlength="2">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Callback ID</label>
+                            <input type="text" class="form-control" name="callback_id" placeholder="bar_nevsky" required>
+                            <small class="text-muted">Используется в коде (только латиница, _ и цифры)</small>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">➕ Добавить бар</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-8 mb-4">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">📋 Список баров</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Эмодзи</th>
+                                    <th>Название</th>
+                                    <th>Код AMO</th>
+                                    <th>Callback ID</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for bar in bars %}
+                                <tr>
+                                    <td><h4 class="mb-0">{{ bar.emoji }}</h4></td>
+                                    <td><strong>{{ bar.name }}</strong></td>
+                                    <td><code>{{ bar.code }}</code></td>
+                                    <td><code>{{ bar.callback_id }}</code></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editModal{{ bar.callback_id }}">
+                                            ✏️ Редактировать
+                                        </button>
+                                        <button class="btn btn-sm btn-danger" onclick="confirmDelete('{{ bar.name }}', '{{ bar.callback_id }}')">
+                                            🗑️ Удалить
+                                        </button>
+                                    </td>
+                                </tr>
+                                
+                                <!-- Edit Modal -->
+                                <div class="modal fade" id="editModal{{ bar.callback_id }}" tabindex="-1">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title">Редактировать {{ bar.name }}</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <form method="POST" action="/bars/edit">
+                                                <div class="modal-body">
+                                                    <input type="hidden" name="callback_id" value="{{ bar.callback_id }}">
+                                                    
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Название</label>
+                                                        <input type="text" class="form-control" name="name" value="{{ bar.name }}" required>
+                                                    </div>
+                                                    
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Код AMO</label>
+                                                        <input type="text" class="form-control" name="code" value="{{ bar.code }}" required>
+                                                    </div>
+                                                    
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Эмодзи</label>
+                                                        <input type="text" class="form-control" name="emoji" value="{{ bar.emoji }}">
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                                                    <button type="submit" class="btn btn-warning">💾 Сохранить</button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="alert alert-info">
+                <strong>ℹ️ Важно:</strong> После изменения баров необходимо перезапустить бота, чтобы изменения вступили в силу.
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Подтверждение удаления</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Вы действительно хотите удалить бар <strong id="deleteBarName"></strong>?</p>
+                <p class="text-danger"><strong>Внимание!</strong> Это действие нельзя отменить.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <form method="POST" action="/bars/delete" style="display: inline;">
+                    <input type="hidden" name="callback_id" id="deleteBarId">
+                    <button type="submit" class="btn btn-danger">🗑️ Удалить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function confirmDelete(barName, callbackId) {
+    document.getElementById('deleteBarName').textContent = barName;
+    document.getElementById('deleteBarId').value = callbackId;
+    var modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    modal.show();
+}
+</script>
+{% endblock %}

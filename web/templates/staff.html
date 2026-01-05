@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Управление персоналом{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2>👥 Управление персоналом</h2>
+            <p class="text-muted">Управляйте правами доступа и ролями</p>
+        </div>
+    </div>
+    
+    {% if success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <strong>Успешно!</strong> {{ success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+    
+    <div class="row">
+        <div class="col-md-4 mb-4">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0">👑 Боссы</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Полный доступ ко всем функциям</p>
+                    <ul class="list-group mb-3">
+                        {% for boss in staff.bosses %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>
+                                <strong>{{ boss.name }}</strong><br>
+                                <small class="text-muted">ID: {{ boss.id }}</small>
+                            </span>
+                            <button class="btn btn-sm btn-danger" onclick="removeUser({{ boss.id }}, 'boss')">🗑️</button>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    
+                    <form method="POST" action="/staff/add">
+                        <input type="hidden" name="role" value="boss">
+                        <div class="input-group">
+                            <input type="number" class="form-control" name="user_id" placeholder="Telegram ID" required>
+                            <button class="btn btn-danger" type="submit">➕</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4 mb-4">
+            <div class="card border-primary">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">⚡ Админы</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Доступ к админке + отправка броней</p>
+                    <ul class="list-group mb-3">
+                        {% for admin in staff.admins %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>
+                                <strong>{{ admin.name }}</strong><br>
+                                <small class="text-muted">ID: {{ admin.id }}</small>
+                            </span>
+                            <button class="btn btn-sm btn-danger" onclick="removeUser({{ admin.id }}, 'admin')">🗑️</button>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    
+                    <form method="POST" action="/staff/add">
+                        <input type="hidden" name="role" value="admin">
+                        <div class="input-group">
+                            <input type="number" class="form-control" name="user_id" placeholder="Telegram ID" required>
+                            <button class="btn btn-primary" type="submit">➕</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4 mb-4">
+            <div class="card border-success">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">📱 СММ</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Только отправка броней</p>
+                    <ul class="list-group mb-3">
+                        {% for smm in staff.smm %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>
+                                <strong>{{ smm.name }}</strong><br>
+                                <small class="text-muted">ID: {{ smm.id }}</small>
+                            </span>
+                            <button class="btn btn-sm btn-danger" onclick="removeUser({{ smm.id }}, 'smm')">🗑️</button>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    
+                    <form method="POST" action="/staff/add">
+                        <input type="hidden" name="role" value="smm">
+                        <div class="input-group">
+                            <input type="number" class="form-control" name="user_id" placeholder="Telegram ID" required>
+                            <button class="btn btn-success" type="submit">➕</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">ℹ️ Информация о ролях</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>Роль</th>
+                                    <th>Админ-панель</th>
+                                    <th>Отправка броней</th>
+                                    <th>Отчеты</th>
+                                    <th>Настройки</th>
+                                    <th>Рассылки</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong class="text-danger">👑 Босс</strong></td>
+                                    <td><span class="badge bg-success">✓</span></td>
+                                    <td><span class="badge bg-success">✓</span></td>
+                                    <td><span class="badge bg-success">✓</span></td>
+                                    <td><span class="badge bg-success">✓</span></td>
+                                    <td><span class="badge bg-success">✓</span></td>
+                                </tr>
+                                <tr>
+                                    <td><strong class="text-primary">⚡ Админ</strong></td>
+                                    <td><span class="badge bg-success">✓</span></td>
+                                    <td><span class="badge bg-success">✓</span></td>
+                                    <td><span class="badge bg-success">✓</span></td>
+                                    <td><span class="badge bg-danger">✗</span></td>
+                                    <td><span class="badge bg-danger">✗</span></td>
+                                </tr>
+                                <tr>
+                                    <td><strong class="text-success">📱 СММ</strong></td>
+                                    <td><span class="badge bg-danger">✗</span></td>
+                                    <td><span class="badge bg-success">✓</span></td>
+                                    <td><span class="badge bg-danger">✗</span></td>
+                                    <td><span class="badge bg-danger">✗</span></td>
+                                    <td><span class="badge bg-danger">✗</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="alert alert-warning mt-3">
+                        <strong>⚠️ Важно:</strong> 
+                        <ul class="mb-0">
+                            <li>Для получения Telegram ID пользователь должен отправить боту команду /start</li>
+                            <li>После добавления/удаления необходимо перезапустить бота</li>
+                            <li>Изменения вступят в силу после перезагрузки</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Remove Confirmation Modal -->
+<div class="modal fade" id="removeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Подтверждение удаления</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Вы действительно хотите удалить пользователя <strong id="removeUserId"></strong> из роли <strong id="removeUserRole"></strong>?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <form method="POST" action="/staff/remove" style="display: inline;">
+                    <input type="hidden" name="user_id" id="removeUserIdInput">
+                    <input type="hidden" name="role" id="removeUserRoleInput">
+                    <button type="submit" class="btn btn-danger">🗑️ Удалить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function removeUser(userId, role) {
+    document.getElementById('removeUserId').textContent = userId;
+    document.getElementById('removeUserRole').textContent = role;
+    document.getElementById('removeUserIdInput').value = userId;
+    document.getElementById('removeUserRoleInput').value = role;
+    var modal = new bootstrap.Modal(document.getElementById('removeModal'));
+    modal.show();
+}
+</script>
+{% endblock %}
