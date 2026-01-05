@@ -244,6 +244,9 @@ def edit_bar():
             bar['name'] = request.form.get('name')
             bar['code'] = request.form.get('code')
             bar['emoji'] = request.form.get('emoji')
+            bar['tag'] = request.form.get('tag', '')
+            bar['phone'] = request.form.get('phone', '')
+            bar['menu_url'] = request.form.get('menu_url', '')
             break
     
     save_config(BARS_FILE, bars_data)
