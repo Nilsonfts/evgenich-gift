@@ -70,6 +70,19 @@ def register_user_command_handlers(bot):
             user_id = message.from_user.id
             status = database.get_reward_status(user_id)
 
+            # Проверяем, есть ли параметр booking для уже зарегистрированных пользователей
+            args = message.text.split(' ', 1)
+            if len(args) > 1 and args[1] == 'booking':
+                logging.info(f"Зарегистрированный пользователь {user_id} переходит к бронированию")
+                try:
+                    from handlers.booking_flow import _start_booking_process
+                    _start_booking_process(message.chat.id, user_id)
+                    return
+                except Exception as e:
+                    logging.error(f"Ошибка запуска бронирования для существующего пользователя: {e}")
+                    bot.send_message(user_id, "❌ Ошибка при запуске бронирования. Используйте команду /book")
+                    return
+
             if status in ['redeemed', 'redeemed_and_left']:
                 logging.info(f"Пользователь {user_id} уже получал награду. Показываем основное меню.")
                 bot.send_message(
@@ -111,6 +124,23 @@ def register_user_command_handlers(bot):
                             # При неправильном коде сотрудника считаем переход "прямым"
                             source = 'direct'
                             brought_by_staff_id = None
+                    elif payload == 'booking':
+                        # Пользователь пришел для бронирования - сразу открываем форму
+                        logging.info(f"Пользователь {user_id} пришел для бронирования через групповую кнопку")
+                        # Если пользователь новый, быстро регистрируем его
+                        if status == 'not_found':
+                            source = 'Группа бронирования'
+                            database.add_new_user(user_id, message.from_user.username, message.from_user.first_name, source, None, None)
+                        
+                        # Импортируем и сразу запускаем бронирование
+                        try:
+                            from handlers.booking_flow import _start_booking_process
+                            _start_booking_process(message.chat.id, user_id)
+                            return
+                        except Exception as e:
+                            logging.error(f"Ошибка запуска бронирования: {e}")
+                            bot.send_message(user_id, "❌ Ошибка при запуске бронирования. Используйте команду /book")
+                            return
                     elif payload.startswith('ref_'):
                         try:
                             referrer_id = int(payload.replace('ref_', ''))

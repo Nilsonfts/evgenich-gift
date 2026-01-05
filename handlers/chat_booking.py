@@ -37,14 +37,14 @@ def register_chat_booking_handlers(bot):
                 logging.warning(f"❌ Отказано в доступе пользователю {message.from_user.id}. Боссы: {boss_ids}")
                 return
             
-            # Создаем сообщение с кнопкой (только кнопка, без текста)
-            text = "🍷"
+            # Создаем сообщение с кнопкой
+            text = "📍Столик у Евгенича"
             
             markup = types.InlineKeyboardMarkup()
             
             # Кнопка переводит в ЛС бота с параметром booking
             booking_button = types.InlineKeyboardButton(
-                text="📍 ЗАБРОНИРОВАТЬ СТОЛ",
+                text="ЗАБРОНИРОВАТЬ🍷",
                 url="https://t.me/evgenichspbbot?start=booking"
             )
             
