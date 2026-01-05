@@ -183,6 +183,7 @@ if __name__ == "__main__":
     database.init_db()
 
     logging.info("🤖 Начинаю регистрацию обработчиков...")
+    register_chat_booking_handlers(bot)  # ПЕРВЫМ - для групповых команд
     register_user_command_handlers(bot)
     register_callback_handlers(bot, scheduler, send_friend_bonus, request_feedback)
     register_booking_handlers(bot)
@@ -190,7 +191,6 @@ if __name__ == "__main__":
     register_ai_handlers(bot)
     register_iiko_data_handlers(bot)
     register_broadcast_handlers(bot)
-    register_chat_booking_handlers(bot)
     
     # Инициализируем систему рассылок с планировщиком
     init_admin_handlers(bot, scheduler)
