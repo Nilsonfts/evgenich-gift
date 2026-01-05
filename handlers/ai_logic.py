@@ -162,18 +162,13 @@ def register_ai_handlers(bot):
             
             # Бронирование
             elif intent['intent'] == 'booking':
-                # В группах - отправляем кнопку быстрого бронирования
+                # В группах - генерируем персональный ответ через AI и отправляем кнопку
                 # В личке - открываем форму
                 if is_group_chat:
-                    logging.info(f"📍 Бронирование в группе - отправляю кнопку быстрого бронирования")
-                    # Отправляем кнопку с коротким сообщением
-                    bot.send_message(
-                        message.chat.id,
-                        "Товарищ, для бронирования жми кнопку ниже 👇\n\nОткроется моя личка с формой. Девчонки ответят за 30 минут! 😊",
-                        reply_markup=keyboards.get_quick_booking_button(),
-                        reply_to_message_id=message.message_id
-                    )
-                    return
+                    logging.info(f"📍 Бронирование в группе - генерирую персональный ответ через AI")
+                    # НЕ возвращаемся здесь - пусть AI сгенерирует персональный ответ
+                    # После ответа AI добавим кнопку
+                    pass
                 else:
                     # В личке открываем форму
                     bot.send_message(
@@ -245,10 +240,31 @@ def register_ai_handlers(bot):
             )
         else:
             try:
-                bot.reply_to(message, ai_response, parse_mode="Markdown")
+                # Отправляем ответ AI
+                sent_message = bot.reply_to(message, ai_response, parse_mode="Markdown")
+                
+                # Если это группа И intent=booking, добавляем кнопку бронирования
+                if is_group_chat and intent.get('intent') == 'booking' and intent.get('confidence', 0) > 0.5:
+                    logging.info(f"📍 Добавляю кнопку бронирования к ответу AI в группе")
+                    bot.send_message(
+                        message.chat.id,
+                        "👇",  # Просто стрелка вниз
+                        reply_markup=keyboards.get_quick_booking_button(),
+                        reply_to_message_id=sent_message.message_id
+                    )
+                
             except ApiTelegramException as e:
                 if "can't parse entities" in e.description:
                     logging.warning(f"Ошибка парсинга Markdown. Отправляю без форматирования. Текст: {ai_response}")
-                    bot.reply_to(message, ai_response, parse_mode=None)
+                    sent_message = bot.reply_to(message, ai_response, parse_mode=None)
+                    
+                    # И здесь тоже добавляем кнопку если нужно
+                    if is_group_chat and intent.get('intent') == 'booking' and intent.get('confidence', 0) > 0.5:
+                        bot.send_message(
+                            message.chat.id,
+                            "👇",
+                            reply_markup=keyboards.get_quick_booking_button(),
+                            reply_to_message_id=sent_message.message_id
+                        )
                 else:
                     logging.error(f"Неизвестная ошибка Telegram API при отправке ответа AI: {e}")
