@@ -58,29 +58,36 @@ def register_ai_handlers(bot):
         # --- КОНЕЦ БЛОКИРОВКИ AI ---
         
         # --- РАБОТА В ГРУППОВЫХ ЧАТАХ ---
-        # В группах проверяем упоминание ТОЛЬКО если это НЕ вопрос о бронировании
         is_group_chat = message.chat.type in ['group', 'supergroup']
         
         if is_group_chat:
-            # Сначала проверяем, не вопрос ли это о бронировании
+            chat_title = message.chat.title or "Без названия"
             text_lower = message.text.lower() if message.text else ""
-            booking_keywords = ['забронир', 'бронь', 'столик', 'резерв', 'стол']
-            is_booking_question = any(keyword in text_lower for keyword in booking_keywords)
             
-            # Если это вопрос о бронировании - отвечаем всегда
-            if is_booking_question:
-                logging.info(f"📍 Вопрос о бронировании в группе {message.chat.id}, отвечаем!")
+            # ПРИОРИТЕТ 1: Ключевые слова про бронирование (ВСЕГДА отвечаем!)
+            booking_keywords = [
+                'забронир', 'бронь', 'столик', 'резерв', 
+                'стол', 'место', 'заказать стол'
+            ]
+            
+            has_booking_keyword = any(keyword in text_lower for keyword in booking_keywords)
+            
+            if has_booking_keyword:
+                logging.info(f"✅ Группа '{chat_title}' ({message.chat.id}): КЛЮЧЕВОЕ СЛОВО найдено в '{message.text[:50]}'")
+                # Продолжаем обработку AI
             else:
-                # Для остальных вопросов проверяем упоминание
+                # ПРИОРИТЕТ 2: Проверяем упоминание или reply
                 bot_mentioned = False
                 
                 # Проверяем упоминание по @username
                 if message.text and '@evgenichspbbot' in message.text.lower():
                     bot_mentioned = True
+                    logging.info(f"✅ Группа '{chat_title}': УПОМИНАНИЕ @evgenichspbbot")
                 
                 # Проверяем reply на сообщение бота
                 if message.reply_to_message and message.reply_to_message.from_user.is_bot:
                     bot_mentioned = True
+                    logging.info(f"✅ Группа '{chat_title}': REPLY на бота")
                 
                 # Проверяем entities (mentions)
                 if message.entities:
@@ -89,14 +96,13 @@ def register_ai_handlers(bot):
                             mention_text = message.text[entity.offset:entity.offset + entity.length]
                             if 'evgenichspbbot' in mention_text.lower():
                                 bot_mentioned = True
+                                logging.info(f"✅ Группа '{chat_title}': УПОМИНАНИЕ через entity")
                                 break
                 
                 # Если бот не упомянут, не отвечаем
                 if not bot_mentioned:
-                    logging.info(f"Сообщение в группе {message.chat.id}, но бот не упомянут - игнорируем")
+                    logging.debug(f"⏭️  Группа '{chat_title}': пропуск - '{message.text[:30] if message.text else ''}'")
                     return
-                
-                logging.info(f"Бот упомянут в группе {message.chat.id}, отвечаем!")
         # --- КОНЕЦ БЛОКА ГРУППОВЫХ ЧАТОВ ---
 
         user_id = message.from_user.id
