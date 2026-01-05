@@ -28,6 +28,7 @@ TEXTS_FILE = os.path.join(CONFIG_DIR, 'texts.json')
 BARS_FILE = os.path.join(CONFIG_DIR, 'bars.json')
 AI_FILE = os.path.join(CONFIG_DIR, 'ai_settings.json')
 STAFF_FILE = os.path.join(CONFIG_DIR, 'staff.json')
+LINKS_FILE = os.path.join(CONFIG_DIR, 'links.json')
 
 # Декоратор для проверки авторизации
 def login_required(f):
@@ -108,6 +109,21 @@ def init_default_configs():
             'smm': [{'id': 1334453330, 'name': 'SMM 1'}, {'id': 208281210, 'name': 'SMM 2'}]
         }
         save_config(STAFF_FILE, default_staff)
+    
+    # Ссылки
+    if not os.path.exists(LINKS_FILE):
+        default_links = {
+            'menu_url': 'https://spb.evgenich.bar/menu',
+            'booking_url': '',
+            'contact_phone': '+7 (812) 123-45-67',
+            'whatsapp': '',
+            'telegram': '@evgenichbarspb',
+            'instagram': '',
+            'vk': '',
+            'facebook': '',
+            'youtube': ''
+        }
+        save_config(LINKS_FILE, default_links)
 
 # Инициализация
 init_default_configs()
@@ -200,7 +216,10 @@ def add_bar():
         'name': request.form.get('name'),
         'code': request.form.get('code'),
         'emoji': request.form.get('emoji', '🍷'),
-        'callback_id': request.form.get('callback_id')
+        'callback_id': request.form.get('callback_id'),
+        'tag': request.form.get('tag', ''),
+        'phone': request.form.get('phone', ''),
+        'menu_url': request.form.get('menu_url', '')
     }
     
     # Проверка на дубликаты
@@ -337,6 +356,33 @@ def remove_staff():
     save_config(STAFF_FILE, staff_data)
     flash(f'Пользователь {user_id} удалён из роли "{role}"!', 'success')
     return redirect(url_for('staff'))
+
+@app.route('/links')
+@login_required
+def links():
+    """Управление ссылками"""
+    links_data = load_config(LINKS_FILE, {})
+    return render_template('links.html', links=links_data)
+
+@app.route('/links/update', methods=['POST'])
+@login_required
+def update_links():
+    """Обновление ссылок"""
+    links_data = {
+        'menu_url': request.form.get('menu_url', ''),
+        'booking_url': request.form.get('booking_url', ''),
+        'contact_phone': request.form.get('contact_phone', ''),
+        'whatsapp': request.form.get('whatsapp', ''),
+        'telegram': request.form.get('telegram', ''),
+        'instagram': request.form.get('instagram', ''),
+        'vk': request.form.get('vk', ''),
+        'facebook': request.form.get('facebook', ''),
+        'youtube': request.form.get('youtube', '')
+    }
+    
+    save_config(LINKS_FILE, links_data)
+    flash('Ссылки успешно обновлены!', 'success')
+    return redirect(url_for('links'))
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))

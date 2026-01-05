@@ -55,6 +55,22 @@
                             <small class="text-muted">Используется в коде (только латиница, _ и цифры)</small>
                         </div>
                         
+                        <div class="mb-3">
+                            <label class="form-label">Тег</label>
+                            <input type="text" class="form-control" name="tag" placeholder="спб_невский">
+                            <small class="text-muted">Тег для категоризации (необязательно)</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Телефон</label>
+                            <input type="tel" class="form-control" name="phone" placeholder="+7 (812) 123-45-67">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Ссылка на меню</label>
+                            <input type="url" class="form-control" name="menu_url" placeholder="https://spb.evgenich.bar/menu">
+                        </div>
+                        
                         <button type="submit" class="btn btn-primary w-100">➕ Добавить бар</button>
                     </form>
                 </div>
@@ -74,7 +90,8 @@
                                     <th>Эмодзи</th>
                                     <th>Название</th>
                                     <th>Код AMO</th>
-                                    <th>Callback ID</th>
+                                    <th>Тег</th>
+                                    <th>Телефон</th>
                                     <th>Действия</th>
                                 </tr>
                             </thead>
@@ -84,7 +101,8 @@
                                     <td><h4 class="mb-0">{{ bar.emoji }}</h4></td>
                                     <td><strong>{{ bar.name }}</strong></td>
                                     <td><code>{{ bar.code }}</code></td>
-                                    <td><code>{{ bar.callback_id }}</code></td>
+                                    <td><span class="badge bg-secondary">{{ bar.tag if bar.tag else '-' }}</span></td>
+                                    <td>{{ bar.phone if bar.phone else '-' }}</td>
                                     <td>
                                         <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editModal{{ bar.callback_id }}">
                                             ✏️ Редактировать
