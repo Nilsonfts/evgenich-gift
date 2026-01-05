@@ -75,8 +75,21 @@ def register_user_command_handlers(bot):
             if len(args) > 1 and args[1] == 'booking':
                 logging.info(f"Зарегистрированный пользователь {user_id} переходит к бронированию")
                 try:
-                    from handlers.booking_flow import _start_booking_process
-                    _start_booking_process(message.chat.id, user_id)
+                    from tinydb import TinyDB
+                    from handlers.booking_flow import User
+                    import keyboards
+                    
+                    # Инициализируем базу бронирований
+                    db = TinyDB('booking_database.json')
+                    
+                    # Сразу начинаем процесс бронирования (как booking_bot callback)
+                    db.upsert({'user_id': user_id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == user_id)
+                    bot.send_message(
+                        message.chat.id, 
+                        "🌟 Отлично! Давайте забронируем для вас столик.\n\n"
+                        "Как вас зовут?",
+                        reply_markup=keyboards.get_cancel_booking_keyboard()
+                    )
                     return
                 except Exception as e:
                     logging.error(f"Ошибка запуска бронирования для существующего пользователя: {e}")
@@ -125,17 +138,29 @@ def register_user_command_handlers(bot):
                             source = 'direct'
                             brought_by_staff_id = None
                     elif payload == 'booking':
-                        # Пользователь пришел для бронирования - сразу открываем форму
+                        # Пользователь пришел для бронирования - сразу запускаем форму ввода
                         logging.info(f"Пользователь {user_id} пришел для бронирования через групповую кнопку")
                         # Если пользователь новый, быстро регистрируем его
                         if status == 'not_found':
                             source = 'Группа бронирования'
                             database.add_new_user(user_id, message.from_user.username, message.from_user.first_name, source, None, None)
                         
-                        # Импортируем и сразу запускаем бронирование
+                        # Импортируем TinyDB и сразу запускаем процесс бронирования
                         try:
-                            from handlers.booking_flow import _start_booking_process
-                            _start_booking_process(message.chat.id, user_id)
+                            from tinydb import TinyDB
+                            from handlers.booking_flow import User
+                            
+                            # Инициализируем базу бронирований
+                            db = TinyDB('booking_database.json')
+                            
+                            # Сразу начинаем процесс бронирования (как booking_bot callback)
+                            db.upsert({'user_id': user_id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == user_id)
+                            bot.send_message(
+                                message.chat.id, 
+                                "🌟 Отлично! Давайте забронируем для вас столик.\n\n"
+                                "Как вас зовут?",
+                                reply_markup=keyboards.get_cancel_booking_keyboard()
+                            )
                             return
                         except Exception as e:
                             logging.error(f"Ошибка запуска бронирования: {e}")
