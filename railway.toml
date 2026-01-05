@@ -1,0 +1,8 @@
+# Railway конфигурация для БОТА (корень проекта)
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "bash deployment/startup.sh"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
