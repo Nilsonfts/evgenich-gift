@@ -1,11 +1,20 @@
 # /ai/assistant.py
 """
 AI-логика и интеграция с OpenAI.
+Версия 2.0 с улучшениями: retry логика, кеширование, валидация, контекст, метрики
 """
 import logging
+import time
 from ai.knowledge import find_relevant_info
 from openai import OpenAI
 from core.config import OPENAI_API_KEY
+
+# Новые модули для улучшений
+from ai.retry_handler import retry_with_backoff, get_user_friendly_error
+from ai.knowledge_cache import cached_knowledge_base
+from ai.response_validator import validate_ai_response, sanitize_user_input, check_response_quality
+from ai.conversation_context import conversation_context
+from ai.metrics import ai_metrics
 
 # Инициализация OpenAI клиента
 openai_client = None
@@ -26,6 +35,7 @@ def get_ai_recommendation(
     user_query: str,
     conversation_history: list[dict[str, str]] | None = None,
     *,
+    user_id: int = 0,  # НОВОЕ: добавили user_id для контекста и метрик
     daily_updates: dict[str, str] | None = None,
     user_concept: str = "evgenich",
     user_type: str = "regular",
@@ -35,17 +45,47 @@ def get_ai_recommendation(
     is_group_chat: bool = False,
     model: str = "gpt-4o",
     temperature: float = 0.9,
-    max_tokens: int = 120,  # Уменьшили для более коротких ответов
+    max_tokens: int = 120,
 ) -> str:
-    logger.info("Получен запрос: %s", user_query)
+    """
+    Получить рекомендацию от AI с использованием всех улучшений
+    
+    Args:
+        user_query: Запрос пользователя
+        conversation_history: История разговора (опционально, теперь управляется автоматически)
+        user_id: ID пользователя (для контекста и метрик)
+        daily_updates: Обновления на сегодня
+        user_concept: Концепция бота
+        user_type: Тип пользователя (new/regular/vip)
+        bar_context: Контекст бара
+        emotion: Эмоция пользователя
+        preferences: Предпочтения пользователя
+        is_group_chat: Групповой ли чат
+        model: Модель OpenAI
+        temperature: Температура генерации
+        max_tokens: Максимум токенов
+        
+    Returns:
+        Ответ AI
+    """
+    start_time = time.time()
+    
+    logger.info(f"Получен запрос от пользователя {user_id}: {user_query[:100]}...")
     
     # Проверяем доступность API ключа
     if not openai_client:
         logger.error("OpenAI клиент не инициализирован")
         return "Товарищ, мой мыслительный аппарат не подключён к сети. Попроси администратора настроить подключение к AI."
     
+    # Очищаем ввод пользователя
+    user_query = sanitize_user_input(user_query)
+    
+    if not user_query:
+        return "Не понял вопрос 🤔 Попробуй сформулировать по-другому?"
+    
+    # Получаем релевантную информацию из базы знаний (с кешированием)
     relevant_context = find_relevant_info(user_query)
-    logger.info("Найденный релевантный контекст: %s", relevant_context)
+    logger.debug(f"Найденный контекст: {relevant_context[:100]}...")
     
     updates_string = f"Спецпредложение сегодня: {daily_updates.get('special', 'нет')}. В стоп‑листе: {daily_updates.get('stop-list', 'ничего')}" if daily_updates else "нет оперативных данных"
     
@@ -115,30 +155,112 @@ def get_ai_recommendation(
     messages: list[dict[str, str]] = [
         {"role": "system", "content": create_system_prompt(extended_context, user_concept)}
     ]
-    if conversation_history:
-        messages.extend(conversation_history[-10:])  # расширенная история
+    
+    # НОВОЕ: Используем автоматический контекст разговора
+    if user_id:
+        stored_context = conversation_context.get_context(user_id)
+        if stored_context:
+            messages.extend(stored_context)
+            logger.debug(f"Использован сохранённый контекст: {len(stored_context)} сообщений")
+    # Если передан ручной контекст (обратная совместимость)
+    elif conversation_history:
+        messages.extend(conversation_history[-10:])
+    
     user_content = (
         f"Вот мой вопрос: '{user_query}'\n\n"
         f"А вот информация, которую я нашел для ответа:\n---\n{relevant_context}\n---\n"
         "Помоги мне сформулировать душевный ответ в твоём стиле."
     )
     messages.append({"role": "user", "content": user_content})
-    try:
-        logger.info("Отправка запроса в OpenAI API…")
-        completion = openai_client.chat.completions.create(
+    
+    # НОВОЕ: Вызов API с retry логикой
+    def api_call():
+        """Обёртка для вызова API"""
+        return openai_client.chat.completions.create(
             model=model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
         )
+    
+    try:
+        logger.info("Отправка запроса в OpenAI API с retry логикой...")
+        
+        # Используем retry handler
+        completion = retry_with_backoff(
+            func=api_call,
+            max_retries=3,
+            fallback_response=None
+        )
+        
+        if completion is None:
+            return "Прости, товарищ! 😅 Сейчас связь барахлит. Попробуй через минутку"
+        
         response_text = completion.choices[0].message.content
-        logger.info("Ответ получен успешно.")
-        return response_text.strip().strip('"')
+        response_time = time.time() - start_time
+        
+        # НОВОЕ: Валидация ответа
+        is_valid, validated_response = validate_ai_response(response_text)
+        
+        if not is_valid:
+            logger.warning(f"Ответ не прошёл валидацию: {response_text[:100]}")
+            # Логируем неуспешный запрос
+            if user_id:
+                ai_metrics.log_request(
+                    user_id=user_id,
+                    model=model,
+                    prompt_tokens=completion.usage.prompt_tokens if hasattr(completion, 'usage') else 0,
+                    completion_tokens=completion.usage.completion_tokens if hasattr(completion, 'usage') else 0,
+                    response_time=response_time,
+                    success=False,
+                    error="Validation failed"
+                )
+            return validated_response  # Возвращаем fallback сообщение
+        
+        # НОВОЕ: Проверка качества
+        quality_metrics = check_response_quality(validated_response)
+        logger.debug(f"Качество ответа: {quality_metrics['quality_score']}/100")
+        
+        # НОВОЕ: Логируем метрики
+        if user_id:
+            ai_metrics.log_request(
+                user_id=user_id,
+                model=model,
+                prompt_tokens=completion.usage.prompt_tokens,
+                completion_tokens=completion.usage.completion_tokens,
+                response_time=response_time,
+                success=True
+            )
+            
+            # НОВОЕ: Сохраняем в контекст
+            conversation_context.add_message(user_id, "user", user_query)
+            conversation_context.add_message(user_id, "assistant", validated_response)
+        
+        logger.info(f"Ответ успешно получен и валидирован за {response_time:.2f}s")
+        return validated_response
+        
     except Exception as exc:
-        logger.error("Ошибка при обращении к OpenAI API: %s", exc)
-        with open("ai_failed_queries.log", "a") as f:
+        response_time = time.time() - start_time
+        logger.error(f"Ошибка при обращении к OpenAI API: {exc}", exc_info=True)
+        
+        # НОВОЕ: Логируем ошибку
+        if user_id:
+            ai_metrics.log_request(
+                user_id=user_id,
+                model=model,
+                prompt_tokens=0,
+                completion_tokens=0,
+                response_time=response_time,
+                success=False,
+                error=str(exc)
+            )
+        
+        # Логируем неудачный запрос в файл
+        with open("ai_failed_queries.log", "a", encoding='utf-8') as f:
             f.write(f"{user_query}\n")
-        return "Товарищ, мой мыслительный аппарат дал сбой. Провода, видать, заискрили. Попробуй обратиться ко мне чуть позже."
+        
+        # НОВОЕ: Возвращаем дружелюбное сообщение об ошибке
+        return get_user_friendly_error(exc)
 
 def create_system_prompt(updates_string: str, user_concept: str = "evgenich") -> str:
     # Базовые концепции

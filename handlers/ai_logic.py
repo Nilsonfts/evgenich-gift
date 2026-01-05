@@ -211,13 +211,14 @@ def register_ai_handlers(bot):
         ai_response = get_ai_recommendation(
             user_query=user_text,
             conversation_history=history,
+            user_id=user_id,  # НОВОЕ: передаём user_id для контекста и метрик
             daily_updates=daily_updates,
-            user_concept=user_concept,  # Передаем концепцию в AI
-            user_type=user_type,  # Тип пользователя (new/regular/vip)
-            bar_context=bar_info,  # Контекст бара
-            emotion=emotion,  # Эмоциональный тон
-            preferences=preferences_text,  # Предпочтения пользователя
-            is_group_chat=is_group_chat  # Групповой ли это чат
+            user_concept=user_concept,
+            user_type=user_type,
+            bar_context=bar_info,
+            emotion=emotion,
+            preferences=preferences_text,
+            is_group_chat=is_group_chat
         )
 
         database.log_conversation_turn(user_id, "assistant", ai_response)
