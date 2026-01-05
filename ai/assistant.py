@@ -15,6 +15,8 @@ from ai.knowledge_cache import cached_knowledge_base
 from ai.response_validator import validate_ai_response, sanitize_user_input, check_response_quality
 from ai.conversation_context import conversation_context
 from ai.metrics import ai_metrics
+from ai.intent_detector import intent_detector
+from ai.fallback_responses import fallback_responses
 
 # Инициализация OpenAI клиента
 openai_client = None
@@ -82,6 +84,35 @@ def get_ai_recommendation(
     
     if not user_query:
         return "Не понял вопрос 🤔 Попробуй сформулировать по-другому?"
+    
+    # НОВОЕ: Детектируем намерение пользователя
+    detected_intent = intent_detector.detect(user_query)
+    logger.info(
+        f"Намерение: {detected_intent.name} "
+        f"(уверенность: {detected_intent.confidence:.2f}, "
+        f"сущности: {detected_intent.entities})"
+    )
+    
+    # НОВОЕ: Проверяем можно ли использовать fallback ответ
+    if fallback_responses.should_use_fallback(detected_intent.name, detected_intent.confidence):
+        fallback_response = fallback_responses.get_response(
+            detected_intent.name,
+            detected_intent.entities
+        )
+        logger.info(f"Использован fallback ответ для намерения '{detected_intent.name}'")
+        
+        # Логируем метрики (0 токенов, так как не использовали API)
+        if user_id:
+            ai_metrics.log_request(
+                user_id=user_id,
+                model="fallback",
+                prompt_tokens=0,
+                completion_tokens=0,
+                response_time=time.time() - start_time,
+                success=True
+            )
+        
+        return fallback_response
     
     # Получаем релевантную информацию из базы знаний (с кешированием)
     relevant_context = find_relevant_info(user_query)
@@ -194,7 +225,16 @@ def get_ai_recommendation(
         )
         
         if completion is None:
-            return "Прости, товарищ! 😅 Сейчас связь барахлит. Попробуй через минутку"
+            # НОВОЕ: Используем fallback ответ вместо общей ошибки
+            logger.warning("API не ответил после retry, используем fallback")
+            fallback_response = fallback_responses.get_response(
+                detected_intent.name,
+                detected_intent.entities
+            )
+            # Если нет fallback для этого намерения - общая ошибка
+            if not fallback_response:
+                fallback_response = fallback_responses.get_error_response("connection")
+            return fallback_response
         
         response_text = completion.choices[0].message.content
         response_time = time.time() - start_time
@@ -259,8 +299,17 @@ def get_ai_recommendation(
         with open("ai_failed_queries.log", "a", encoding='utf-8') as f:
             f.write(f"{user_query}\n")
         
-        # НОВОЕ: Возвращаем дружелюбное сообщение об ошибке
-        return get_user_friendly_error(exc)
+        # НОВОЕ: Пробуем вернуть fallback ответ для намерения
+        try:
+            fallback_response = fallback_responses.get_response(
+                detected_intent.name,
+                detected_intent.entities
+            )
+            logger.info(f"Возвращён fallback ответ после ошибки API")
+            return fallback_response
+        except:
+            # Если и fallback не сработал - возвращаем дружелюбную ошибку
+            return get_user_friendly_error(exc)
 
 def create_system_prompt(updates_string: str, user_concept: str = "evgenich") -> str:
     # Базовые концепции
