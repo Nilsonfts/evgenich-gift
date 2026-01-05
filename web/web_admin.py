@@ -146,7 +146,8 @@ def dashboard():
         'total_users': 0,
         'general_stats': [0, 0, 0],
         'recent_activities': [],
-        'top_referrers': []
+        'top_referrers': [],
+        'staff_stats': {}  # Добавил пустой словарь для персонала
     }
     return render_template('dashboard.html', **stats)
 
