@@ -15,6 +15,7 @@ def register_chat_booking_handlers(bot):
         """Создает и закрепляет кнопку бронирования в чате"""
         
         logging.info(f"📌 ПОЛУЧЕНА команда /pin_booking от пользователя {message.from_user.id} ({message.from_user.first_name}) в чате {message.chat.id}")
+        logging.info(f"🔍 Тип чата: {message.chat.type}")
         
         try:
             # Получаем список боссов из админ-конфига
@@ -75,7 +76,18 @@ def register_chat_booking_handlers(bot):
     def test_chat_command(message):
         """Простой тест что бот работает в чате"""
         logging.info(f"🧪 Тестовая команда от {message.from_user.id} в чате {message.chat.id}")
-        bot.reply_to(message, f"🤖 Бот работает! Chat ID: {message.chat.id}")
+        logging.info(f"🔍 Тип чата: {message.chat.type}")
+        bot.reply_to(message, f"🤖 Бот работает! Chat ID: {message.chat.id}, Type: {message.chat.type}")
+
+    # Обработчик для текстовых сообщений с ключевыми словами в группах
+    @bot.message_handler(func=lambda message: message.chat.type in ['group', 'supergroup'] and 
+                         message.text and 
+                         ('закрепить' in message.text.lower() and 'бронирование' in message.text.lower()) or
+                         ('pin booking' in message.text.lower()))
+    def pin_booking_text(message):
+        """Альтернативный способ для групп - через текст"""
+        logging.info(f"📌 ПОЛУЧЕН текстовый запрос на закрепление от {message.from_user.id} в группе {message.chat.id}")
+        pin_booking_button(message)  # Вызываем основную функцию
         
     logging.info("✅ Обработчики для групповых чатов зарегистрированы")
 
