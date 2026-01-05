@@ -94,7 +94,7 @@ def init_default_configs():
     # Бары
     if not os.path.exists(BARS_FILE):
         default_bars = [
-            {'name': 'Невский', 'code': 'ЕВГ_СПБ_НЕВ', 'emoji': '🍷', 'callback_id': 'bar_nevsky'},
+            {'name': 'Невский', 'code': 'ЕВГ_СПБ', 'emoji': '🍷', 'callback_id': 'bar_nevsky'},
             {'name': 'Рубинштейна', 'code': 'ЕВГ_СПБ_РУБ', 'emoji': '💎', 'callback_id': 'bar_rubinstein'}
         ]
         save_config(BARS_FILE, default_bars)
