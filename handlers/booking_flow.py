@@ -58,6 +58,13 @@ def register_booking_handlers(bot):
     @bot.message_handler(commands=['book'])
     @bot.message_handler(func=lambda message: message.text == "📍 Забронировать стол")
     def handle_booking_entry(message: types.Message):
+        # В групповых чатах бронирование только для боссов/админов
+        if message.chat.type != 'private':
+            from core.config import ALL_ADMINS
+            if message.from_user.id not in ALL_ADMINS:
+                bot.reply_to(message, "🔒 Для бронирования используйте закрепленную кнопку в чате или напишите мне в личку: @evgenichspbbot")
+                return
+        
         if db.contains(User.user_id == message.from_user.id):
             bot.reply_to(message, texts.BOOKING_IN_PROGRESS_TEXT)
             return

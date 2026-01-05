@@ -339,6 +339,13 @@ def register_user_command_handlers(bot):
         Обработчик для кнопки 'Привести товарища'.
         Показывает реферальную ссылку и статистику.
         """
+        # В групповых чатах реферальная программа только для боссов/админов
+        if message.chat.type != 'private':
+            from core.config import ALL_ADMINS
+            if message.from_user.id not in ALL_ADMINS:
+                bot.reply_to(message, "🔒 Реферальная программа доступна только в личных сообщениях! Напиши мне в личку: @evgenichspbbot")
+                return
+        
         user_id = message.from_user.id
         bot_username = bot.get_me().username
         referral_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
@@ -400,6 +407,13 @@ def register_user_command_handlers(bot):
     @bot.message_handler(commands=['menu'])
     @bot.message_handler(func=lambda message: message.text == "📖 Меню")
     def handle_menu_command(message: types.Message):
+        # В групповых чатах меню только для боссов/админов
+        if message.chat.type != 'private':
+            from core.config import ALL_ADMINS
+            if message.from_user.id not in ALL_ADMINS:
+                bot.reply_to(message, "🔒 Меню доступно только в личных сообщениях! Напиши мне в личку: @evgenichspbbot")
+                return
+        
         bot.send_message(
             message.chat.id,
             texts.MENU_PROMPT_TEXT,
@@ -409,6 +423,13 @@ def register_user_command_handlers(bot):
     @bot.message_handler(func=lambda message: message.text == "🎮 Игры и развлечения")
     def handle_games_button(message: types.Message):
         """Обрабатывает кнопку игр и развлечений."""
+        # В групповых чатах игры только для боссов/админов
+        if message.chat.type != 'private':
+            from core.config import ALL_ADMINS
+            if message.from_user.id not in ALL_ADMINS:
+                bot.reply_to(message, "🔒 Игры доступны только в личных сообщениях! Напиши мне в личку: @evgenichspbbot")
+                return
+        
         user_id = message.from_user.id
         try:
             from modules.games import get_user_game_stats, can_play_game
@@ -460,6 +481,13 @@ def register_user_command_handlers(bot):
     @bot.message_handler(func=lambda message: message.text == "🥃 Получить настойку по талону")
     def handle_redeem_nastoika(message: types.Message):
         """Обрабатывает кнопку получения настойки по талону - начинает сбор профиля."""
+        # В групповых чатах получение настойки только для боссов/админов
+        if message.chat.type != 'private':
+            from core.config import ALL_ADMINS
+            if message.from_user.id not in ALL_ADMINS:
+                bot.reply_to(message, "🔒 Получение настойки доступно только в личных сообщениях! Напиши мне в личку: @evgenichspbbot 🥃")
+                return
+        
         user_id = message.from_user.id
         user_status = database.get_reward_status(user_id)
         
