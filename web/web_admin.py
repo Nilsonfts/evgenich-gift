@@ -7,8 +7,20 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from werkzeug.security import check_password_hash, generate_password_hash
 import json
 import os
+import sys
 from functools import wraps
-from datetime import timedelta
+from datetime import timedelta, datetime
+
+# Добавляем корневую директорию проекта в PYTHONPATH
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Импортируем database для статистики
+try:
+    from core import database as db
+    DATABASE_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ База данных недоступна: {e}")
+    DATABASE_AVAILABLE = False
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'evgenich-secret-key-2026')
@@ -157,10 +169,9 @@ def logout():
 @login_required
 def dashboard():
     """Главная страница"""
-    from datetime import datetime, timedelta
-    
-    # Заглушки для статистики (пока нет подключения к БД бота)
     now = datetime.now()
+    
+    # Заглушки по умолчанию
     stats = {
         'total_users': 0,
         'general_stats': [0, 0, 0],
@@ -170,6 +181,25 @@ def dashboard():
         'start_time': now - timedelta(hours=24),
         'end_time': now
     }
+    
+    # Если БД доступна - получаем реальные данные
+    if DATABASE_AVAILABLE:
+        try:
+            # Общее количество пользователей
+            stats['total_users'] = db.get_total_users_count()
+            
+            # Статистика за 24 часа
+            stats['general_stats'] = db.get_general_stats_last_24h() or [0, 0, 0]
+            
+            # Последние активности
+            stats['recent_activities'] = db.get_recent_activities(limit=10) or []
+            
+            # Топ реферралов
+            stats['top_referrers'] = db.get_top_referrers_last_24h(limit=10) or []
+            
+        except Exception as e:
+            print(f"Ошибка получения статистики: {e}")
+    
     return render_template('dashboard.html', **stats)
 
 # ===== УПРАВЛЕНИЕ ТЕКСТАМИ =====
