@@ -4,7 +4,7 @@
 
 import logging
 from telebot import types
-from core.config import BOSS_ID
+from core.admin_config import get_staff
 
 
 def register_chat_booking_handlers(bot):
@@ -14,18 +14,21 @@ def register_chat_booking_handlers(bot):
     def pin_booking_button(message):
         """Создает и закрепляет кнопку бронирования в чате"""
         
-        # Проверка прав (только боссы)
-        boss_ids = []
-        if isinstance(BOSS_ID, list):
-            boss_ids = BOSS_ID
-        elif isinstance(BOSS_ID, str):
-            boss_ids = [int(x.strip()) for x in BOSS_ID.split(',') if x.strip().isdigit()]
-        else:
-            boss_ids = [BOSS_ID] if isinstance(BOSS_ID, int) else []
+        logging.info(f"📌 Команда /pin_booking от пользователя {message.from_user.id} в чате {message.chat.id}")
         
-        if message.from_user.id not in boss_ids:
+        # Получаем список боссов из админ-конфига
+        staff = get_staff()
+        boss_ids = [boss['id'] for boss in staff.get('bosses', [])]
+        
+        logging.info(f"🔑 Список боссов из админ-конфига: {boss_ids}")
+        logging.info(f"👤 User ID: {message.from_user.id}")
+        
+        # Если список пустой, разрешаем всем
+        if not boss_ids:
+            logging.warning("⚠️ Список боссов пуст! Разрешаем команду всем")
+        elif message.from_user.id not in boss_ids:
             bot.reply_to(message, "❌ У вас нет прав на эту команду")
-            logging.warning(f"Попытка использовать /pin_booking от пользователя {message.from_user.id}")
+            logging.warning(f"❌ Отказано в доступе пользователю {message.from_user.id}. Боссы: {boss_ids}")
             return
         
         # Создаем сообщение с кнопкой
@@ -53,8 +56,10 @@ def register_chat_booking_handlers(bot):
             # Закрепляем сообщение в чате
             bot.pin_chat_message(message.chat.id, msg.message_id)
             bot.reply_to(message, "✅ Кнопка бронирования закреплена в чате!")
-            logging.info(f"✅ Кнопка бронирования закреплена в чате {message.chat.id}")
+            logging.info(f"✅ Кнопка бронирования закреплена в чате {message.chat.id}, сообщение {msg.message_id}")
             
         except Exception as e:
             bot.reply_to(message, f"⚠️ Ошибка при закреплении: {str(e)}")
             logging.error(f"❌ Ошибка при закреплении кнопки: {str(e)}")
+
+
