@@ -88,6 +88,9 @@ def register_booking_handlers(bot):
     def handle_traffic_source_callback(call: types.CallbackQuery):
         user_id = call.from_user.id
         bot.answer_callback_query(call.id)
+        
+        logging.info(f"📊 Админ {user_id} выбрал источник: {call.data}")
+        
         try:
             bot.delete_message(call.message.chat.id, call.message.message_id)
         except ApiTelegramException:
@@ -95,10 +98,14 @@ def register_booking_handlers(bot):
 
         user_entry = db.get(User.user_id == user_id)
         if not user_entry:
+            logging.error(f"❌ Запись о бронировании не найдена для администратора {user_id}")
+            bot.send_message(call.message.chat.id, "❌ Ошибка! Начни заново: /send_booking")
             return
 
         current_data = user_entry.get('data', {})
         current_data['source'] = call.data
+        
+        logging.info(f"✅ Источник сохранён: {current_data.get('source')}")
         
         # Переходим к следующему шагу (выбор бара)
         db.update({'step': 'bar', 'data': current_data}, User.user_id == user_id)
@@ -112,6 +119,9 @@ def register_booking_handlers(bot):
     def handle_bar_selection_callback(call: types.CallbackQuery):
         user_id = call.from_user.id
         bot.answer_callback_query(call.id)
+        
+        logging.info(f"🏠 Пользователь {user_id} выбрал бар: {call.data}")
+        
         try:
             bot.delete_message(call.message.chat.id, call.message.message_id)
         except ApiTelegramException:
@@ -119,6 +129,8 @@ def register_booking_handlers(bot):
 
         user_entry = db.get(User.user_id == user_id)
         if not user_entry:
+            logging.error(f"❌ Запись о бронировании не найдена для пользователя {user_id}")
+            bot.send_message(call.message.chat.id, "❌ Ошибка! Запись о бронировании потеряна. Начни заново: /book")
             return
 
         current_data = user_entry.get('data', {})
@@ -130,6 +142,8 @@ def register_booking_handlers(bot):
         current_data['bar'] = call.data
         current_data['amo_tag'] = bar_mapping.get(call.data, '')
         
+        logging.info(f"✅ Сохраняю выбор бара: bar={current_data.get('bar')}, amo_tag={current_data.get('amo_tag')}")
+        
         # Переходим к подтверждению
         db.update({'step': 'confirmation', 'data': current_data}, User.user_id == user_id)
         confirmation_text = texts.get_booking_confirmation_text(current_data)
@@ -138,6 +152,8 @@ def register_booking_handlers(bot):
             confirmation_text,
             reply_markup=keyboards.get_booking_confirmation_keyboard()
         )
+        
+        logging.info(f"✅ Подтверждение отправлено пользователю {user_id}")
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("booking_"))
     def handle_booking_option_callback(call: types.CallbackQuery):
@@ -259,6 +275,12 @@ def register_booking_handlers(bot):
                 bot.send_message(message.chat.id, "Товарищ, укажи количество гостей цифрой, пожалуйста. Например: 4", 
                                reply_markup=keyboards.get_cancel_booking_keyboard())
                 return
+        
+        # Проверяем если пользователь на шаге 'bar' - ему нужно нажать на кнопку!
+        if step == 'bar':
+            bot.send_message(message.chat.id, "Пожалуйста, выбери бар кнопкой выше 👆", 
+                           reply_markup=keyboards.get_bar_selection_keyboard())
+            return
 
         # Обрабатываем дату - парсим и проверяем
         if step == 'date':
