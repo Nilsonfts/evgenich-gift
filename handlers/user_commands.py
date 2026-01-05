@@ -75,12 +75,11 @@ def register_user_command_handlers(bot):
             if len(args) > 1 and args[1] == 'booking':
                 logging.info(f"Зарегистрированный пользователь {user_id} переходит к бронированию")
                 try:
-                    from tinydb import TinyDB
-                    from handlers.booking_flow import User
-                    import keyboards
+                    from tinydb import TinyDB, Query
                     
-                    # Инициализируем базу бронирований
-                    db = TinyDB('booking_database.json')
+                    # Инициализируем базу бронирований (та же что в booking_flow.py)
+                    db = TinyDB('booking_data.json')
+                    User = Query()
                     
                     # Сразу начинаем процесс бронирования (как booking_bot callback)
                     db.upsert({'user_id': user_id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == user_id)
@@ -147,11 +146,11 @@ def register_user_command_handlers(bot):
                         
                         # Импортируем TinyDB и сразу запускаем процесс бронирования
                         try:
-                            from tinydb import TinyDB
-                            from handlers.booking_flow import User
+                            from tinydb import TinyDB, Query
                             
-                            # Инициализируем базу бронирований
-                            db = TinyDB('booking_database.json')
+                            # Инициализируем базу бронирований (та же что в booking_flow.py)
+                            db = TinyDB('booking_data.json')
+                            User = Query()
                             
                             # Сразу начинаем процесс бронирования (как booking_bot callback)
                             db.upsert({'user_id': user_id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == user_id)
