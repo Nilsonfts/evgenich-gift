@@ -27,7 +27,7 @@ except ImportError:
 def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_feedback_func):
     """Регистрирует обработчики для всех inline-кнопок."""
 
-    @bot.callback_query_handler(func=lambda call: not (call.data.startswith('admin_') or call.data.startswith('boss_') or call.data.startswith('booking_') or call.data.startswith('source_') or call.data in ['confirm_booking', 'cancel_booking']))
+    @bot.callback_query_handler(func=lambda call: not (call.data.startswith('admin_') or call.data.startswith('boss_') or call.data.startswith('booking_') or call.data.startswith('source_') or call.data.startswith('bar_') or call.data in ['confirm_booking', 'cancel_booking']))
     def handle_all_callbacks(call: types.CallbackQuery):
         """Универсальный обработчик для неадминских callback-запросов."""
         logging.info(f"Получен callback: {call.data} от пользователя {call.from_user.id}")
