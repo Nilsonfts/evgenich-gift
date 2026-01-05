@@ -23,6 +23,7 @@ from handlers.iiko_data_handler import register_iiko_data_handlers
 from handlers.broadcast import register_broadcast_handlers
 from handlers.chat_booking import register_chat_booking_handlers
 from handlers.admin_content import register_content_handlers  # AI System v3.0
+from handlers.proactive_commands import register_proactive_commands  # Проактивные сообщения
 from core.delayed_tasks_processor import DelayedTasksProcessor
 
 # Импортируем службу реферальных уведомлений
@@ -190,6 +191,7 @@ if __name__ == "__main__":
     register_booking_handlers(bot)
     register_admin_handlers(bot)
     register_content_handlers(bot)  # AI System v3.0 - управление контентом
+    register_proactive_commands(bot)  # Проактивные команды для админа
     register_ai_handlers(bot)
     register_iiko_data_handlers(bot)
     register_broadcast_handlers(bot)

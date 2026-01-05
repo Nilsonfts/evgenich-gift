@@ -9,6 +9,7 @@ from ai.assistant import get_ai_recommendation
 from ai.intent_recognition import detect_intent, detect_emotion, analyze_user_type
 from ai.bar_context import get_current_bar_context, get_bar_info_text, get_location_info, get_working_hours
 from ai.user_preferences import extract_preferences_from_text, get_preferences_text
+from ai.proactive_messenger import proactive_messenger
 import core.database as database
 import texts
 import keyboards
@@ -63,6 +64,13 @@ def register_ai_handlers(bot):
         if is_group_chat:
             chat_title = message.chat.title or "Без названия"
             text_lower = message.text.lower() if message.text else ""
+            
+            # ПРИОРИТЕТ 0: Проактивные сообщения (РЕДКО!)
+            proactive_response = proactive_messenger.should_respond(message.text, message.chat.id)
+            if proactive_response:
+                logging.info(f"🎲 Проактивный ответ в группе '{chat_title}'")
+                bot.reply_to(message, proactive_response)
+                return
             
             # ПРИОРИТЕТ 1: Ключевые слова про бронирование (ВСЕГДА отвечаем!)
             booking_keywords = [
