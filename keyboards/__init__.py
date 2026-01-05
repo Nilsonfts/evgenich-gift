@@ -148,6 +148,17 @@ def get_secret_chat_keyboard():
     keyboard.add(url_button)
     return keyboard
 
+def get_quick_booking_button():
+    """Inline кнопка для быстрого бронирования (для групповых чатов)"""
+    keyboard = types.InlineKeyboardMarkup()
+    # Deep link для запуска бронирования в боте
+    booking_button = types.InlineKeyboardButton(
+        text="📍 Забронировать стол",
+        url="https://t.me/evgenichspbbot?start=booking"
+    )
+    keyboard.add(booking_button)
+    return keyboard
+
 def get_traffic_source_keyboard():
     """Клавиатура для выбора источника трафика при бронировании (для админов)."""
     keyboard = types.InlineKeyboardMarkup(row_width=2)
