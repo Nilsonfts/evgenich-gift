@@ -1,6 +1,7 @@
 # /handlers/booking_flow.py
 
 import logging
+import re
 from telebot import types
 from telebot.apihelper import ApiTelegramException
 from tinydb import TinyDB, Query
@@ -311,11 +312,27 @@ def register_booking_handlers(bot):
                 )
                 return
         
-        # Проверяем ввод на шаге 'гости'
+        # Проверяем ввод на шаге 'гости' - ТОЛЬКО ЦИФРЫ!
         if step == 'guests':
+            # Проверяем что введено число
             if not message.text.strip().isdigit():
-                bot.send_message(message.chat.id, "Товарищ, укажи количество гостей цифрой, пожалуйста. Например: 4", 
-                               reply_markup=keyboards.get_cancel_booking_keyboard())
+                bot.send_message(
+                    message.chat.id, 
+                    "❌ Товарищ, укажи количество гостей цифрой!\n\n"
+                    "👥 Например: 2, 4, 6, 10", 
+                    reply_markup=keyboards.get_cancel_booking_keyboard()
+                )
+                return
+            
+            # Проверяем что число разумное (от 1 до 50)
+            guests_count = int(message.text.strip())
+            if guests_count < 1 or guests_count > 50:
+                bot.send_message(
+                    message.chat.id,
+                    "❌ Количество гостей должно быть от 1 до 50 человек.\n\n"
+                    "👥 Для больших компаний позвони нам: +7(812)237-59-50",
+                    reply_markup=keyboards.get_cancel_booking_keyboard()
+                )
                 return
         
         # Проверяем если пользователь на шаге 'bar' - ему нужно нажать на кнопку!
@@ -327,17 +344,51 @@ def register_booking_handlers(bot):
         # Обрабатываем дату - парсим и проверяем
         if step == 'date':
             parsed_date = parse_booking_date(message.text)
+            
+            # Проверяем что дата была успешно распознана (формат DD.MM.YYYY)
+            date_pattern = r'^\d{2}\.\d{2}\.\d{4}$'
+            if not re.match(date_pattern, parsed_date):
+                bot.send_message(
+                    message.chat.id,
+                    "❌ Не могу понять дату, товарищ!\n\n"
+                    "📅 Напиши дату в одном из форматов:\n"
+                    "• Завтра\n"
+                    "• В субботу\n"
+                    "• 15 января\n"
+                    "• 15.01\n"
+                    "• 15.01.2026",
+                    reply_markup=keyboards.get_cancel_booking_keyboard()
+                )
+                return
+            
             current_data[step] = parsed_date
             # Показываем распознанную дату пользователю
             if parsed_date != message.text:
-                bot.send_message(message.chat.id, f"Понял, дата: {parsed_date}")
+                bot.send_message(message.chat.id, f"✅ Понял, дата: {parsed_date}")
+                
         # Обрабатываем время - парсим в формат ЧЧ:ММ  
         elif step == 'time':
             parsed_time = parse_booking_time(message.text)
+            
+            # Проверяем что время было успешно распознано (формат ЧЧ:ММ)
+            time_pattern = r'^\d{2}:\d{2}$'
+            if not re.match(time_pattern, parsed_time):
+                bot.send_message(
+                    message.chat.id,
+                    "❌ Не могу понять время, товарищ!\n\n"
+                    "⏰ Напиши время в одном из форматов:\n"
+                    "• 19:30\n"
+                    "• 19.30\n"
+                    "• 19 30\n"
+                    "• 1930",
+                    reply_markup=keyboards.get_cancel_booking_keyboard()
+                )
+                return
+            
             current_data[step] = parsed_time
             # Показываем распознанное время пользователю
             if parsed_time != message.text:
-                bot.send_message(message.chat.id, f"Понял, время: {parsed_time}")
+                bot.send_message(message.chat.id, f"✅ Понял, время: {parsed_time}")
         # Обрабатываем телефон - сохраняем только цифры
         elif step == 'phone':
             phone_clean = ''.join(filter(lambda x: x.isdigit() or x == '+', message.text))
