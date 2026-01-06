@@ -127,10 +127,9 @@ def get_concept_choice_keyboard():
 def get_booking_options_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
+        types.InlineKeyboardButton("🤖 Забронировать через меня", callback_data="booking_bot"),
         types.InlineKeyboardButton("📞 Позвонить", callback_data="booking_phone"),
-        types.InlineKeyboardButton("🌐 Забронировать через сайт", callback_data="booking_site"),
-        types.InlineKeyboardButton("🔐 Написать в секретный чат", callback_data="booking_secret"),
-        types.InlineKeyboardButton("🤖 Забронировать через меня", callback_data="booking_bot")
+        types.InlineKeyboardButton("🌐 Забронировать через сайт", callback_data="booking_site")
     )
     return markup
 
