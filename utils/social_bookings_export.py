@@ -159,6 +159,32 @@ GUEST_SOURCE_DISPLAY_NAMES = {
 # Объединенные названия источников
 ALL_SOURCE_DISPLAY_NAMES = {**SOURCE_DISPLAY_NAMES, **GUEST_SOURCE_DISPLAY_NAMES}
 
+def clean_phone_for_sheets(phone: str) -> str:
+    """
+    Очищает номер телефона для Google Sheets.
+    Убирает '+' в начале, чтобы Excel не воспринял как формулу.
+    
+    Args:
+        phone: Номер телефона (может содержать +)
+    
+    Returns:
+        str: Номер без + в начале (через 8 или 7)
+    """
+    if not phone:
+        return ''
+    
+    # Убираем все пробелы, дефисы, скобки
+    cleaned = ''.join(filter(lambda x: x.isdigit() or x == '+', phone))
+    
+    # Если начинается с +7, заменяем на 8
+    if cleaned.startswith('+7'):
+        cleaned = '8' + cleaned[2:]
+    # Если начинается с +, просто убираем
+    elif cleaned.startswith('+'):
+        cleaned = cleaned[1:]
+    
+    return cleaned
+
 def get_moscow_time() -> str:
     """
     Возвращает текущее время в московском часовом поясе (UTC+3).
@@ -439,7 +465,7 @@ def export_social_booking_to_sheets(booking_data: Dict[str, Any], admin_id: int)
         row_data = [
             creation_datetime,                      # A: Дата Заявки
             booking_data.get('name', ''),           # B: Имя Гостя
-            booking_data.get('phone', ''),          # C: Телефон
+            clean_phone_for_sheets(booking_data.get('phone', '')),  # C: Телефон (без +)
             datetime_combined,                      # D: Дата и время посещения
             booking_data.get('guests', ''),         # E: Кол-во гостей (было F)
             source_display,                         # F: Источник (было G)
@@ -534,7 +560,7 @@ def export_guest_booking_to_sheets(booking_data: Dict[str, Any], user_id: int = 
         row_data = [
             creation_datetime,                      # A: Дата Заявки
             booking_data.get('name', ''),           # B: Имя Гостя
-            booking_data.get('phone', ''),          # C: Телефон
+            clean_phone_for_sheets(booking_data.get('phone', '')),  # C: Телефон (без +)
             datetime_combined,                      # D: Дата и время посещения
             booking_data.get('guests', ''),         # E: Кол-во гостей (было F)
             source_display,                         # F: Источник (было G)
@@ -710,7 +736,9 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
         
         # Формируем строку для новой таблицы (колонки A-R)
         # Генерируем название сделки: ЕВГ_СПБ (имя) номер
-        deal_name = f"ЕВГ_СПБ ({booking_data.get('name', '')}) {booking_data.get('phone', '')}"
+        # Очищаем телефон от + для Excel
+        clean_phone = clean_phone_for_sheets(booking_data.get('phone', ''))
+        deal_name = f"ЕВГ_СПБ ({booking_data.get('name', '')}) {clean_phone}"
         
         row_data = [
             deal_name,                              # A: Сделка.Название
@@ -719,7 +747,7 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
             utm_data.get('utm_source', ''),         # D: Сделка.R.Источник сделки
             booking_data.get('amo_tag', 'ЕВГ_СПБ'),  # E: Сделка.R.Тег города (код бара)
             booking_data.get('name', ''),           # F: Контакт.ФИО
-            booking_data.get('phone', ''),          # G: Контакт.Телефон
+            clean_phone,                            # G: Контакт.Телефон (без +)
             '',                                     # H: Резерв (было "Повод")
             utm_data.get('utm_medium', ''),         # I: UTM Medium (Канал)
             utm_data.get('utm_campaign', ''),       # J: UTM Campaign (Кампания)

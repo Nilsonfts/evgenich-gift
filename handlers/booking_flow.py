@@ -290,6 +290,27 @@ def register_booking_handlers(bot):
         current_data = user_entry.get('data', {})
         is_admin_booking = current_data.get('is_admin_booking', False)
 
+        # Проверяем ввод на шаге 'телефон' - ТОЛЬКО ЦИФРЫ!
+        if step == 'phone':
+            # Убираем все кроме цифр и +
+            phone_digits = ''.join(filter(lambda x: x.isdigit() or x == '+', message.text))
+            
+            # Проверяем что осталось минимум 10 цифр
+            digit_count = len([c for c in phone_digits if c.isdigit()])
+            
+            if digit_count < 10:
+                bot.send_message(
+                    message.chat.id, 
+                    "❌ Это не похоже на номер телефона, товарищ!\n\n"
+                    "📱 Напиши только номер телефона (минимум 10 цифр).\n"
+                    "Примеры:\n"
+                    "• 89991234567\n"
+                    "• +79991234567\n"
+                    "• 8 (999) 123-45-67", 
+                    reply_markup=keyboards.get_cancel_booking_keyboard()
+                )
+                return
+        
         # Проверяем ввод на шаге 'гости'
         if step == 'guests':
             if not message.text.strip().isdigit():
@@ -317,6 +338,13 @@ def register_booking_handlers(bot):
             # Показываем распознанное время пользователю
             if parsed_time != message.text:
                 bot.send_message(message.chat.id, f"Понял, время: {parsed_time}")
+        # Обрабатываем телефон - сохраняем только цифры
+        elif step == 'phone':
+            phone_clean = ''.join(filter(lambda x: x.isdigit() or x == '+', message.text))
+            current_data[step] = phone_clean
+            # Показываем очищенный номер
+            if phone_clean != message.text:
+                bot.send_message(message.chat.id, f"✅ Понял, телефон: {phone_clean}")
         else:
             # Сохраняем ответ пользователя в его данные как есть
             current_data[step] = message.text
