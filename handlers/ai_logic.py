@@ -74,18 +74,35 @@ def register_ai_handlers(bot):
                 bot.reply_to(message, proactive_response)
                 return
             
-            # ПРИОРИТЕТ 1: Ключевые слова про бронирование (ВСЕГДА отвечаем!)
+            # ПРИОРИТЕТ 1: Ключевые слова для помощи (ВСЕГДА отвечаем!)
+            # Бронирование
             booking_keywords = [
                 'забронир', 'бронь', 'столик', 'резерв', 
                 'стол', 'место', 'заказать стол'
             ]
+            # Навигация и помощь
+            navigation_keywords = [
+                'меню', 'что умеешь', 'что можешь', 'помощь', 'help',
+                'как работа', 'как получить', 'как заказать', 'инструкция',
+                'настойка', 'настойку', 'купон', 'талон', 'скидка', 'бонус',
+                'друг', 'товарищ', 'реферал', 'привести', 'пригласить',
+                'адрес', 'где находи', 'как доехать', 'время работы', 'график',
+                'цена', 'цены', 'стоимость', 'сколько стоит'
+            ]
             
             has_booking_keyword = any(keyword in text_lower for keyword in booking_keywords)
+            has_navigation_keyword = any(keyword in text_lower for keyword in navigation_keywords)
             
-            if has_booking_keyword:
+            # Если есть любое ключевое слово - отвечаем
+            has_keyword = has_booking_keyword or has_navigation_keyword
+            
+            # Если есть любое ключевое слово - отвечаем
+            has_keyword = has_booking_keyword or has_navigation_keyword
+            
+            if has_keyword:
                 logging.info(f"✅ Группа '{chat_title}' ({message.chat.id}): КЛЮЧЕВОЕ СЛОВО найдено в '{message.text[:50]}'")
-                # Установим флаг что нужна кнопка
-                message.should_attach_booking_button = True
+                # Установим флаг что нужна кнопка бронирования только если это про бронь
+                message.should_attach_booking_button = has_booking_keyword
                 # Продолжаем обработку AI
             else:
                 message.should_attach_booking_button = False
