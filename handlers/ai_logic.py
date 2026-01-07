@@ -69,8 +69,12 @@ def register_ai_handlers(bot):
         is_group_chat = message.chat.type in ['group', 'supergroup']
         
         if is_group_chat:
+            from core.config import ALL_ADMINS
             chat_title = message.chat.title or "Без названия"
             text_lower = message.text.lower() if message.text else ""
+            
+            # Админы могут общаться с AI без упоминания
+            is_admin = message.from_user.id in ALL_ADMINS
             
             # ПРИОРИТЕТ 0: Проактивные сообщения (РЕДКО!)
             proactive_response = proactive_messenger.should_respond(message.text, message.chat.id)
@@ -94,30 +98,33 @@ def register_ai_handlers(bot):
                 # Продолжаем обработку AI
             else:
                 message.should_attach_booking_button = False
-                # ПРИОРИТЕТ 2: Проверяем упоминание или reply
-                bot_mentioned = False
+                # ПРИОРИТЕТ 2: Проверяем упоминание или reply (или это админ)
+                bot_mentioned = is_admin  # Админы могут писать без упоминания
                 
-                # Проверяем упоминание по @username
-                if message.text and '@evgenichspbbot' in message.text.lower():
-                    bot_mentioned = True
-                    logging.info(f"✅ Группа '{chat_title}': УПОМИНАНИЕ @evgenichspbbot")
+                if not bot_mentioned:
+                    # Проверяем упоминание по @username
+                    if message.text and '@evgenichspbbot' in message.text.lower():
+                        bot_mentioned = True
+                        logging.info(f"✅ Группа '{chat_title}': УПОМИНАНИЕ @evgenichspbbot")
+                    
+                    # Проверяем reply на сообщение бота
+                    if message.reply_to_message and message.reply_to_message.from_user.is_bot:
+                        bot_mentioned = True
+                        logging.info(f"✅ Группа '{chat_title}': REPLY на бота")
+                    
+                    # Проверяем entities (mentions)
+                    if message.entities:
+                        for entity in message.entities:
+                            if entity.type == 'mention':
+                                mention_text = message.text[entity.offset:entity.offset + entity.length]
+                                if 'evgenichspbbot' in mention_text.lower():
+                                    bot_mentioned = True
+                                    logging.info(f"✅ Группа '{chat_title}': УПОМИНАНИЕ через entity")
+                                    break
+                else:
+                    logging.info(f"✅ Группа '{chat_title}': АДМИН может писать без упоминания")
                 
-                # Проверяем reply на сообщение бота
-                if message.reply_to_message and message.reply_to_message.from_user.is_bot:
-                    bot_mentioned = True
-                    logging.info(f"✅ Группа '{chat_title}': REPLY на бота")
-                
-                # Проверяем entities (mentions)
-                if message.entities:
-                    for entity in message.entities:
-                        if entity.type == 'mention':
-                            mention_text = message.text[entity.offset:entity.offset + entity.length]
-                            if 'evgenichspbbot' in mention_text.lower():
-                                bot_mentioned = True
-                                logging.info(f"✅ Группа '{chat_title}': УПОМИНАНИЕ через entity")
-                                break
-                
-                # Если бот не упомянут, не отвечаем
+                # Если бот не упомянут и не админ, не отвечаем
                 if not bot_mentioned:
                     logging.debug(f"⏭️  Группа '{chat_title}': пропуск - '{message.text[:30] if message.text else ''}'")
                     return
