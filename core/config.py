@@ -24,7 +24,8 @@ def _parse_json_safe(json_string):
 
 # --- Telegram ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
+CHANNEL_ID = os.getenv("CHANNEL_ID")  # СПб канал (по умолчанию)
+CHANNEL_ID_MSK = os.getenv("CHANNEL_ID_MSK", "@evgenichmoscow")  # Москва канал
 
 # === НОВАЯ СИСТЕМА РОЛЕЙ ===
 # Теперь роли также можно управлять через админ-панель (web/admin_config/staff.json)
@@ -143,6 +144,21 @@ if not all([
     HELLO_STICKER_ID, NASTOYKA_STICKER_ID, THANK_YOU_STICKER_ID
 ]):
     raise ValueError("Основные переменные окружения не установлены! Проверь BOT_TOKEN, CHANNEL_ID, ADMIN_IDS, стикеры.")
+
+def get_channel_id_for_user(source: str) -> str:
+    """
+    Определяет какой канал использовать для проверки подписки по источнику пользователя.
+    
+    Args:
+        source: Источник регистрации пользователя
+        
+    Returns:
+        str: ID канала (@evgenich_bar или @evgenichmoscow)
+    """
+    # Если источник содержит МСК или заканчивается на _msk - московский канал
+    if source and ('МСК' in source or source.endswith('_msk')):
+        return CHANNEL_ID_MSK
+    return CHANNEL_ID
 
 # Опциональные переменные с дефолтными значениями
 if not GOOGLE_SHEET_KEY:

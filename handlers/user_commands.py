@@ -4,7 +4,7 @@ import logging
 import datetime
 from telebot import types
 
-from core.config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ALL_ADMINS, REPORT_CHAT_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID
+from core.config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ALL_ADMINS, REPORT_CHAT_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID, get_channel_id_for_user
 import core.database as database
 import core.settings_manager as settings_manager
 import texts
@@ -200,7 +200,19 @@ def register_user_command_handlers(bot):
                             '2gis': '2ГИС Кнопка СПБ',
                             'site': 'Кнопка Сайт СПБ',
                             'taplink': 'Таплинк на ТВ СПБ',
-                            'rubik_street_offline': 'ЕВГ РУБ около бара СПБ'
+                            'rubik_street_offline': 'ЕВГ РУБ около бара СПБ',
+                            # Московские метки
+                            'qr_tv_msk': 'QR-код на ТВ МСК',
+                            'qr_bar_msk': 'QR-код на баре МСК',
+                            'qr_waiter_msk': 'QR от официанта МСК',
+                            'qr_stol_msk': 'QR-код на столе МСК',
+                            'vk_msk': 'Ссылка из ВКонтакте МСК',
+                            'inst_msk': 'Ссылка из Instagram МСК',
+                            'menu_msk': 'Меню в баре МСК',
+                            'flyer_msk': 'Листовка на улице МСК',
+                            'street_msk': 'Уличное Меню МСК',
+                            '2gis_msk': '2ГИС Кнопка МСК',
+                            'site_msk': 'Кнопка Сайт МСК'
                         }
                         if payload in allowed_sources:
                             source = allowed_sources[payload]
@@ -626,10 +638,13 @@ def register_user_command_handlers(bot):
             )
         else:
             # Полный профиль есть, показываем подсказку о подписке на канал
+            user_data = database.get_user_by_id(user_id)
+            user_source = user_data.get('source', '') if user_data else ''
+            channel_to_show = get_channel_id_for_user(user_source)
             bot.send_message(
                 user_id,
                 texts.SUBSCRIBE_PROMPT_TEXT,
-                reply_markup=keyboards.get_subscription_keyboard(f"https://t.me/{CHANNEL_ID.replace('@', '')}")
+                reply_markup=keyboards.get_subscription_keyboard(f"https://t.me/{channel_to_show.replace('@', '')}")
             )
     def handle_get_gift_press(message: types.Message):
         user_id = message.from_user.id
@@ -637,15 +652,21 @@ def register_user_command_handlers(bot):
         if status in ['issued', 'redeemed', 'redeemed_and_left']:
             bot.send_message(user_id, "Вы уже получали свой подарок. Спасибо, что вы с нами! 😉")
             return
+        
+        # Получаем источник пользователя чтобы определить канал
+        user_data = database.get_user_by_id(user_id)
+        user_source = user_data.get('source', '') if user_data else ''
+        channel_to_check = get_channel_id_for_user(user_source)
+        
         try:
-            chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+            chat_member = bot.get_chat_member(chat_id=channel_to_check, user_id=user_id)
             if chat_member.status in ['member', 'administrator', 'creator']:
                 bot.send_message(user_id, texts.SUBSCRIPTION_SUCCESS_TEXT)
                 issue_coupon(bot, user_id, message.chat.id)
                 return
         except Exception:
             pass
-        channel_url = f"https://t.me/{CHANNEL_ID.lstrip('@')}"
+        channel_url = f"https://t.me/{channel_to_check.lstrip('@')}"
         try:
             bot.send_sticker(message.chat.id, HELLO_STICKER_ID)
         except Exception:
@@ -735,11 +756,16 @@ def register_user_command_handlers(bot):
                         texts.PROFILE_COMPLETED_TEXT
                     )
                     
+                    # Определяем правильный канал для пользователя
+                    user_data = database.get_user_by_id(user_id)
+                    user_source = user_data.get('source', '') if user_data else ''
+                    channel_to_show = get_channel_id_for_user(user_source)
+                    
                     # Переходим к подписке на канал
                     bot.send_message(
                         message.chat.id,
                         texts.SUBSCRIBE_PROMPT_TEXT,
-                        reply_markup=keyboards.get_subscription_keyboard(f"https://t.me/{CHANNEL_ID.replace('@', '')}")
+                        reply_markup=keyboards.get_subscription_keyboard(f"https://t.me/{channel_to_show.replace('@', '')}")
                     )
                 else:
                     bot.send_message(

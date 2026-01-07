@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import pytz # <--- ИЗМЕНЕНИЕ: Добавили библиотеку для часовых поясов
 
 # Импортируем конфиги, утилиты, тексты и клавиатуры
-from core.config import CHANNEL_ID, THANK_YOU_STICKER_ID
+from core.config import CHANNEL_ID, THANK_YOU_STICKER_ID, get_channel_id_for_user
 import core.database as database
 from modules.menu_nastoiki import MENU_DATA
 from modules.food_menu import FOOD_MENU_DATA
@@ -74,8 +74,17 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         user_id = call.from_user.id
         bot.answer_callback_query(call.id, text="Проверяю вашу подписку...")
         
+        # Получаем данные пользователя чтобы узнать его источник
+        user_data = database.get_user_by_id(user_id)
+        user_source = user_data.get('source', '') if user_data else ''
+        
+        # Определяем нужный канал по источнику
+        channel_to_check = get_channel_id_for_user(user_source)
+        
+        logging.info(f"Проверка подписки для {user_id}: источник='{user_source}', канал='{channel_to_check}'")
+        
         try:
-            chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+            chat_member = bot.get_chat_member(chat_id=channel_to_check, user_id=user_id)
             if chat_member.status in ['member', 'administrator', 'creator']:
                 try:
                     bot.delete_message(call.message.chat.id, call.message.message_id)
