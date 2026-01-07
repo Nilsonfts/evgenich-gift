@@ -648,7 +648,7 @@ def register_user_command_handlers(bot):
         else:
             # Полный профиль есть, показываем подсказку о подписке на канал
             user_data = database.find_user_by_id(user_id)
-            user_source = user_data.get('source', '') if user_data else ''
+            user_source = user_data['source'] if user_data and user_data['source'] else ''
             channel_to_show = get_channel_id_for_user(user_source)
             bot.send_message(
                 user_id,
@@ -664,7 +664,7 @@ def register_user_command_handlers(bot):
         
         # Получаем источник пользователя чтобы определить канал
         user_data = database.find_user_by_id(user_id)
-        user_source = user_data.get('source', '') if user_data else ''
+        user_source = user_data['source'] if user_data and user_data['source'] else ''
         channel_to_check = get_channel_id_for_user(user_source)
         
         try:
@@ -769,7 +769,7 @@ def register_user_command_handlers(bot):
                     
                     # ТЕПЕРЬ проверяем подписку на канал
                     user_data = database.find_user_by_id(user_id)
-                    user_source = user_data.get('source', '') if user_data else ''
+                    user_source = user_data['source'] if user_data and user_data['source'] else ''
                     channel_to_check = get_channel_id_for_user(user_source)
                     
                     logging.info(f"После ввода ДР для {user_id}: проверяю подписку на канал {channel_to_check} (источник: {user_source})")
