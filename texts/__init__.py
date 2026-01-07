@@ -335,13 +335,15 @@ def get_booking_report_text(data: dict[str, str], creator_id: int = None) -> str
         source_display = ALL_SOURCE_DISPLAY_NAMES.get(source, data.get('source', 'не указано'))
         utm_data = ALL_SOURCE_UTM_DATA.get(source, {})
     
-    # Маппинг баров
-    bar_names = {
-        'bar_nevsky': 'СПб, Невский 53',
-        'bar_rubinstein': 'СПб, Рубинштейна 9',
-        'bar_pyatnitskaya': 'МСК, Пятницкая 30'
+    # Маппинг баров с тегами
+    bar_info = {
+        'bar_nevsky': {'name': 'СПб, Невский 53', 'tag': '#ЕВГ_СПБ'},
+        'bar_rubinstein': {'name': 'СПб, Рубинштейна 9', 'tag': '#ЕВГ_СПБ_РУБ'},
+        'bar_pyatnitskaya': {'name': 'МСК, Пятницкая 30', 'tag': '#ЕВГ_МСК_ПЯТ'}
     }
-    bar_display = bar_names.get(data.get('bar', ''), data.get('bar', 'не указано'))
+    bar_data = bar_info.get(data.get('bar', ''), {'name': data.get('bar', 'не указано'), 'tag': ''})
+    bar_display = bar_data['name']
+    bar_tag = bar_data['tag']
     
     # Определяем создателя
     creator_name = "👤 Посетитель (через бота)"
@@ -355,6 +357,7 @@ def get_booking_report_text(data: dict[str, str], creator_id: int = None) -> str
     # Формируем красивое сообщение с HTML форматированием
     return (
         f"🚨 <b>НОВАЯ БРОНЬ!</b>\n\n"
+        f"{bar_tag}\n"
         f"#бронь_соц_сети\n"
         f"⏰ <b>Создано:</b> {current_datetime}\n\n"
         
