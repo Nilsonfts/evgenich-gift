@@ -525,34 +525,7 @@ def register_user_command_handlers(bot):
             )
             return
         
-        # Проверяем подписку на канал ПЕРЕД началом сбора профиля
-        user_data = database.get_user_by_id(user_id)
-        user_source = user_data.get('source', '') if user_data else ''
-        channel_to_check = get_channel_id_for_user(user_source)
-        
-        try:
-            chat_member = bot.get_chat_member(chat_id=channel_to_check, user_id=user_id)
-            if chat_member.status not in ['member', 'administrator', 'creator']:
-                # Пользователь НЕ подписан - показываем кнопку подписки
-                channel_url = f"https://t.me/{channel_to_check.lstrip('@')}"
-                bot.send_message(
-                    message.chat.id,
-                    texts.SUBSCRIBE_PROMPT_TEXT,
-                    reply_markup=keyboards.get_subscription_keyboard(channel_url)
-                )
-                return
-        except Exception as e:
-            logging.error(f"Ошибка проверки подписки для {user_id}: {e}")
-            # Если не смогли проверить, показываем кнопку подписки на всякий случай
-            channel_url = f"https://t.me/{channel_to_check.lstrip('@')}"
-            bot.send_message(
-                message.chat.id,
-                texts.SUBSCRIBE_PROMPT_TEXT,
-                reply_markup=keyboards.get_subscription_keyboard(channel_url)
-            )
-            return
-        
-        # Пользователь подписан - начинаем сбор профиля (запрашиваем контакт)
+        # Начинаем сбор профиля - запрашиваем контакт (БЕЗ проверки подписки!)
         bot.send_message(
             message.chat.id,
             texts.CONTACT_REQUEST_TEXT,
@@ -792,7 +765,34 @@ def register_user_command_handlers(bot):
                         texts.PROFILE_COMPLETED_TEXT
                     )
                     
-                    # Выдаем купон! (подписка уже была проверена перед началом сбора профиля)
+                    # ТЕПЕРЬ проверяем подписку на канал
+                    user_data = database.get_user_by_id(user_id)
+                    user_source = user_data.get('source', '') if user_data else ''
+                    channel_to_check = get_channel_id_for_user(user_source)
+                    
+                    try:
+                        chat_member = bot.get_chat_member(chat_id=channel_to_check, user_id=user_id)
+                        if chat_member.status not in ['member', 'administrator', 'creator']:
+                            # Пользователь НЕ подписан - показываем кнопку подписки
+                            channel_url = f"https://t.me/{channel_to_check.lstrip('@')}"
+                            bot.send_message(
+                                message.chat.id,
+                                texts.SUBSCRIBE_PROMPT_TEXT,
+                                reply_markup=keyboards.get_subscription_keyboard(channel_url)
+                            )
+                            return
+                    except Exception as e:
+                        logging.error(f"Ошибка проверки подписки для {user_id}: {e}")
+                        # Если не смогли проверить, показываем кнопку подписки
+                        channel_url = f"https://t.me/{channel_to_check.lstrip('@')}"
+                        bot.send_message(
+                            message.chat.id,
+                            texts.SUBSCRIBE_PROMPT_TEXT,
+                            reply_markup=keyboards.get_subscription_keyboard(channel_url)
+                        )
+                        return
+                    
+                    # Пользователь подписан - выдаем купон!
                     issue_coupon(bot, user_id, message.chat.id)
                 else:
                     bot.send_message(
