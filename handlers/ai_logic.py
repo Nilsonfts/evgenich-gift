@@ -25,6 +25,13 @@ def register_ai_handlers(bot):
 
     @bot.message_handler(func=lambda message: message.text == "🗣 Спроси у Евгенича")
     def handle_ai_prompt_button(message: types.Message):
+        # В групповых чатах AI только для боссов/админов
+        if message.chat.type != 'private':
+            from core.config import ALL_ADMINS
+            if message.from_user.id not in ALL_ADMINS:
+                bot.reply_to(message, "🔒 AI-ассистент доступен только в личных сообщениях! Напиши мне в личку: @evgenichspbbot")
+                return
+        
         if db.contains(User.user_id == message.from_user.id):
             bot.reply_to(message, texts.BOOKING_IN_PROGRESS_TEXT)
             return
