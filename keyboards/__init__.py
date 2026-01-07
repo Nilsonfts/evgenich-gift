@@ -180,7 +180,7 @@ def get_bar_selection_keyboard():
     bars = get_bars()
     
     for bar in bars:
-        button_text = f"{bar.get('emoji', '🍷')} {bar.get('name', 'Неизвестно')}"
+        button_text = bar.get('name', 'Неизвестно')  # Без эмодзи
         callback_data = bar.get('callback_id', 'bar_unknown')
         keyboard.add(types.InlineKeyboardButton(button_text, callback_data=callback_data))
     
