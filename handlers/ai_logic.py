@@ -265,11 +265,13 @@ def register_ai_handlers(bot):
             )
         else:
             try:
-                # Проверяем нужна ли кнопка бронирования
+                # Проверяем нужна ли кнопка бронирования в ГРУППЕ
                 booking_button = None
-                if is_group_chat and hasattr(message, 'should_attach_booking_button') and message.should_attach_booking_button:
+                
+                # Если это группа И намерение - бронирование, добавляем кнопку
+                if is_group_chat and intent.get('intent') == 'booking' and intent.get('confidence', 0) > 0.5:
                     booking_button = keyboards.get_quick_booking_button()
-                    logging.info(f"📍 Прикрепляю кнопку бронирования к ответу AI в группе")
+                    logging.info(f"📍 Прикрепляю кнопку бронирования к ответу AI в группе (intent: booking)")
                 
                 # Отправляем ответ AI с кнопкой (если нужно)
                 sent_message = bot.reply_to(message, ai_response, parse_mode="Markdown", reply_markup=booking_button)
@@ -278,9 +280,9 @@ def register_ai_handlers(bot):
                 if "can't parse entities" in e.description:
                     logging.warning(f"Ошибка парсинга Markdown. Отправляю без форматирования. Текст: {ai_response}")
                     
-                    # Проверяем нужна ли кнопка бронирования
+                    # Проверяем нужна ли кнопка бронирования в ГРУППЕ (при ошибке парсинга)
                     booking_button = None
-                    if is_group_chat and hasattr(message, 'should_attach_booking_button') and message.should_attach_booking_button:
+                    if is_group_chat and intent.get('intent') == 'booking' and intent.get('confidence', 0) > 0.5:
                         booking_button = keyboards.get_quick_booking_button()
                     
                     sent_message = bot.reply_to(message, ai_response, parse_mode=None, reply_markup=booking_button)
