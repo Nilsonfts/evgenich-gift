@@ -75,7 +75,7 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         bot.answer_callback_query(call.id, text="Проверяю вашу подписку...")
         
         # Получаем данные пользователя чтобы узнать его источник
-        user_data = database.get_user_by_id(user_id)
+        user_data = database.find_user_by_id(user_id)
         user_source = user_data.get('source', '') if user_data else ''
         
         # Определяем нужный канал по источнику
