@@ -734,18 +734,26 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
                 'utm_term': 'guest_direct'
             }
         
+        # Определяем тег бара по полю 'bar'
+        bar_tags = {
+            'bar_nevsky': 'ЕВГ_СПБ',
+            'bar_rubinstein': 'ЕВГ_СПБ_РУБ',
+            'bar_pyatnitskaya': 'ЕВГ_МСК_ПЯТ'
+        }
+        bar_tag = bar_tags.get(booking_data.get('bar', ''), 'ЕВГ_СПБ')
+        
         # Формируем строку для новой таблицы (колонки A-R)
-        # Генерируем название сделки: ЕВГ_СПБ (имя) номер
+        # Генерируем название сделки: TAG (имя) номер
         # Очищаем телефон от + для Excel
         clean_phone = clean_phone_for_sheets(booking_data.get('phone', ''))
-        deal_name = f"ЕВГ_СПБ ({booking_data.get('name', '')}) {clean_phone}"
+        deal_name = f"{bar_tag} ({booking_data.get('name', '')}) {clean_phone}"
         
         row_data = [
             deal_name,                              # A: Сделка.Название
             datetime_combined,                      # B: Сделка.Время прихода
             booking_data.get('guests', ''),         # C: Сделка.Кол-во гостей
             utm_data.get('utm_source', ''),         # D: Сделка.R.Источник сделки
-            booking_data.get('amo_tag', 'ЕВГ_СПБ'),  # E: Сделка.R.Тег города (код бара)
+            bar_tag,                                # E: Сделка.R.Тег города (код бара)
             booking_data.get('name', ''),           # F: Контакт.ФИО
             clean_phone,                            # G: Контакт.Телефон (без +)
             '',                                     # H: Резерв (было "Повод")
