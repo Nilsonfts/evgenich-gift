@@ -191,6 +191,7 @@ def register_user_command_handlers(bot):
                             'qr_tv': 'QR-код на ТВ', 
                             'qr_bar': 'QR-код на баре', 
                             'qr_waiter': 'QR от официанта',
+                            'qr_stol': 'QR-код на столе',
                             'vk': 'Ссылка из ВКонтакте', 
                             'inst': 'Ссылка из Instagram', 
                             'menu': 'Меню в баре',
@@ -198,7 +199,8 @@ def register_user_command_handlers(bot):
                             'street': 'Уличное Меню',
                             '2gis': '2ГИС Кнопка',
                             'site': 'Кнопка Сайт',
-                            'taplink': 'Таплинк на ТВ'
+                            'taplink': 'Таплинк на ТВ',
+                            'rubik_street_offline': 'Рубинштейна - Уличная реклама'
                         }
                         if payload in allowed_sources:
                             source = allowed_sources[payload]
