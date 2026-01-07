@@ -770,11 +770,15 @@ def register_user_command_handlers(bot):
                     user_source = user_data.get('source', '') if user_data else ''
                     channel_to_check = get_channel_id_for_user(user_source)
                     
+                    logging.info(f"После ввода ДР для {user_id}: проверяю подписку на канал {channel_to_check} (источник: {user_source})")
+                    
                     try:
                         chat_member = bot.get_chat_member(chat_id=channel_to_check, user_id=user_id)
+                        logging.info(f"Статус подписки {user_id}: {chat_member.status}")
                         if chat_member.status not in ['member', 'administrator', 'creator']:
                             # Пользователь НЕ подписан - показываем кнопку подписки
                             channel_url = f"https://t.me/{channel_to_check.lstrip('@')}"
+                            logging.info(f"Пользователь {user_id} НЕ подписан - показываю кнопку подписки на {channel_url}")
                             bot.send_message(
                                 message.chat.id,
                                 texts.SUBSCRIBE_PROMPT_TEXT,
@@ -785,6 +789,7 @@ def register_user_command_handlers(bot):
                         logging.error(f"Ошибка проверки подписки для {user_id}: {e}")
                         # Если не смогли проверить, показываем кнопку подписки
                         channel_url = f"https://t.me/{channel_to_check.lstrip('@')}"
+                        logging.info(f"Ошибка при проверке - показываю кнопку подписки на {channel_url}")
                         bot.send_message(
                             message.chat.id,
                             texts.SUBSCRIBE_PROMPT_TEXT,
@@ -793,6 +798,7 @@ def register_user_command_handlers(bot):
                         return
                     
                     # Пользователь подписан - выдаем купон!
+                    logging.info(f"Пользователь {user_id} подписан - выдаю купон!")
                     issue_coupon(bot, user_id, message.chat.id)
                 else:
                     bot.send_message(
