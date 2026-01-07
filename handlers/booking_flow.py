@@ -154,7 +154,8 @@ def register_booking_handlers(bot):
             # Фоллбэк на старую систему, если бар не найден
             bar_mapping = {
                 'bar_nevsky': 'ЕВГ_СПБ',
-                'bar_rubinstein': 'ЕВГ_СПБ_РУБ'
+                'bar_rubinstein': 'ЕВГ_СПБ_РУБ',
+                'bar_pyatnitskaya': 'ЕВГ_МСК_ПЯТ'
             }
             current_data['bar'] = call.data
             current_data['amo_tag'] = bar_mapping.get(call.data, '')
