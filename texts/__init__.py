@@ -282,8 +282,9 @@ def get_booking_confirmation_text(data: dict[str, str]) -> str:
         'source_tg': 'Забронируй Евгенича'
     }
     bar_names = {
-        'bar_nevsky': '🍷 Невский',
-        'bar_rubinstein': '💎 Рубинштейна'
+        'bar_nevsky': 'СПб, Невский 53',
+        'bar_rubinstein': 'СПб, Рубинштейна 9',
+        'bar_pyatnitskaya': 'МСК, Пятницкая 30'
     }
     source_display = source_names.get(data.get('source', ''), data.get('source', 'не указано'))
     bar_display = bar_names.get(data.get('bar', ''), data.get('bar', 'не указано'))
@@ -336,8 +337,9 @@ def get_booking_report_text(data: dict[str, str], creator_id: int = None) -> str
     
     # Маппинг баров
     bar_names = {
-        'bar_nevsky': '🍷 Невский',
-        'bar_rubinstein': '💎 Рубинштейна'
+        'bar_nevsky': 'СПб, Невский 53',
+        'bar_rubinstein': 'СПб, Рубинштейна 9',
+        'bar_pyatnitskaya': 'МСК, Пятницкая 30'
     }
     bar_display = bar_names.get(data.get('bar', ''), data.get('bar', 'не указано'))
     
