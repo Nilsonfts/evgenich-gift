@@ -765,6 +765,8 @@ def register_user_command_handlers(bot):
                         texts.PROFILE_COMPLETED_TEXT
                     )
                     
+                    logging.info(f"🔍 НАЧИНАЮ ПРОВЕРКУ ПОДПИСКИ для {user_id}")
+                    
                     # ТЕПЕРЬ проверяем подписку на канал
                     user_data = database.get_user_by_id(user_id)
                     user_source = user_data.get('source', '') if user_data else ''
