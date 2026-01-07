@@ -720,6 +720,16 @@ def get_reward_status(user_id: int) -> str:
     return user['status'] if user else 'not_found'
 
 def delete_user(user_id: int) -> Tuple[bool, str]:
+    # Сначала пробуем PostgreSQL
+    if USE_POSTGRES and pg_client:
+        try:
+            success, msg = pg_client.delete_user(user_id)
+            if success:
+                return success, msg
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка удаления пользователя: {e}")
+    
+    # Fallback на SQLite
     try:
         conn = get_db_connection()
         cur = conn.cursor()

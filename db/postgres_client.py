@@ -514,6 +514,36 @@ class PostgresClient:
             logging.error(f"PostgreSQL | Ошибка обновления источника пользователя {user_id}: {e}")
             return False
 
+    def delete_user(self, user_id):
+        """
+        Удаляет пользователя из базы данных.
+        
+        Args:
+            user_id (int): ID пользователя
+        
+        Returns:
+            tuple: (bool успех, str сообщение)
+        """
+        try:
+            with self.engine.connect() as connection:
+                stmt = self.users_table.delete().where(
+                    self.users_table.c.user_id == user_id
+                )
+                result = connection.execute(stmt)
+                connection.commit()
+                
+                if result.rowcount > 0:
+                    msg = f"PostgreSQL | Пользователь {user_id} успешно удален."
+                    logging.info(msg)
+                    return True, msg
+                else:
+                    msg = f"PostgreSQL | Пользователь {user_id} не найден для удаления."
+                    return False, msg
+        except SQLAlchemyError as e:
+            error_msg = f"PostgreSQL | Ошибка удаления пользователя {user_id}: {e}"
+            logging.error(error_msg)
+            return False, error_msg
+
     def get_report_data_for_period(self, start_time: datetime.datetime, end_time: datetime.datetime) -> tuple:
         """Получает данные для отчета за период из PostgreSQL."""
         try:
