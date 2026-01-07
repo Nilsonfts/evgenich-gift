@@ -792,17 +792,8 @@ def register_user_command_handlers(bot):
                         texts.PROFILE_COMPLETED_TEXT
                     )
                     
-                    # Определяем правильный канал для пользователя
-                    user_data = database.get_user_by_id(user_id)
-                    user_source = user_data.get('source', '') if user_data else ''
-                    channel_to_show = get_channel_id_for_user(user_source)
-                    
-                    # Переходим к подписке на канал
-                    bot.send_message(
-                        message.chat.id,
-                        texts.SUBSCRIBE_PROMPT_TEXT,
-                        reply_markup=keyboards.get_subscription_keyboard(f"https://t.me/{channel_to_show.replace('@', '')}")
-                    )
+                    # Выдаем купон! (подписка уже была проверена перед началом сбора профиля)
+                    issue_coupon(bot, user_id, message.chat.id)
                 else:
                     bot.send_message(
                         message.chat.id,
