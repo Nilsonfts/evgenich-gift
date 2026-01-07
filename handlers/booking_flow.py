@@ -7,7 +7,7 @@ from telebot.apihelper import ApiTelegramException
 from tinydb import TinyDB, Query
 
 # Импортируем конфиги, тексты и клавиатуры
-from core.config import BOOKING_NOTIFICATIONS_CHAT_ID, REPORT_CHAT_ID
+from core.config import BOOKING_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID_MSK, REPORT_CHAT_ID
 from core.admin_config import get_bars, get_bar_by_callback
 import texts
 import keyboards
@@ -254,11 +254,20 @@ def register_booking_handlers(bot):
                 pass
 
             # Отправляем отчет с поддержкой HTML-разметки
+            # Определяем куда отправлять в зависимости от бара
+            selected_bar = booking_data.get('bar', '')
+            if selected_bar == 'bar_pyatnitskaya':
+                notification_chat_id = BOOKING_NOTIFICATIONS_CHAT_ID_MSK
+                logging.info(f"🇷🇺 Московское бронирование - отправляю в чат МСК {notification_chat_id}")
+            else:
+                notification_chat_id = BOOKING_NOTIFICATIONS_CHAT_ID
+                logging.info(f"🏛️ Питерское бронирование - отправляю в чат СПБ {notification_chat_id}")
+            
             try:
-                bot.send_message(BOOKING_NOTIFICATIONS_CHAT_ID, report_text, parse_mode="HTML")
-                logging.info(f"Уведомление о бронировании успешно отправлено в чат {BOOKING_NOTIFICATIONS_CHAT_ID}")
+                bot.send_message(notification_chat_id, report_text, parse_mode="HTML")
+                logging.info(f"Уведомление о бронировании успешно отправлено в чат {notification_chat_id}")
             except Exception as e:
-                logging.error(f"Ошибка отправки уведомления в чат {BOOKING_NOTIFICATIONS_CHAT_ID}: {e}")
+                logging.error(f"Ошибка отправки уведомления в чат {notification_chat_id}: {e}")
                 # Fallback - отправляем в старый чат если новый недоступен
                 try:
                     bot.send_message(REPORT_CHAT_ID, report_text, parse_mode="HTML")

@@ -98,7 +98,8 @@ ADMIN_IDS = ALL_ADMINS
 REPORT_CHAT_ID = os.getenv("REPORT_CHAT_ID")
 
 # Специализированные чаты
-BOOKING_NOTIFICATIONS_CHAT_ID = -1002655754865  # Чат для заявок на бронирование
+BOOKING_NOTIFICATIONS_CHAT_ID = -1002655754865  # Чат для заявок на бронирование (СПБ)
+BOOKING_NOTIFICATIONS_CHAT_ID_MSK = -1003120803112  # Чат для заявок на бронирование (МСК)
 NASTOYKA_NOTIFICATIONS_CHAT_ID = -1002813620544  # Чат для уведомлений о настойках (отчеты, купоны)
 
 # --- Google Sheets ---
