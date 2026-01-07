@@ -55,7 +55,8 @@ class FallbackResponses:
     # Для ЛИЧНЫХ ЧАТОВ
     PRIVATE_RESPONSES = {
         "booking": [
-            "[START_BOOKING_FLOW]",
+            "Отлично! Сейчас запущу форму бронирования 📝\n\n[START_BOOKING_FLOW]",
+            "Супер! Давай забронируем столик 😊\n\n[START_BOOKING_FLOW]",
         ],
         
         "address": [

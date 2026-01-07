@@ -249,6 +249,15 @@ def register_ai_handlers(bot):
 
         if "[START_BOOKING_FLOW]" in ai_response:
             logging.info(f"AI определил намерение бронирования для пользователя {user_id}.")
+            
+            # Убираем маркер из текста, но оставляем остальное сообщение
+            clean_text = ai_response.replace("[START_BOOKING_FLOW]", "").strip()
+            
+            # Если есть текст перед маркером - отправляем его
+            if clean_text:
+                bot.send_message(message.chat.id, clean_text, parse_mode="Markdown")
+            
+            # Отправляем кнопки бронирования
             bot.send_message(
                 message.chat.id,
                 texts.BOOKING_PROMPT_TEXT,
