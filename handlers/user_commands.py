@@ -201,6 +201,7 @@ def register_user_command_handlers(bot):
                             'site': 'Кнопка Сайт СПБ',
                             'taplink': 'Таплинк на ТВ СПБ',
                             'rubik_street_offline': 'ЕВГ РУБ около бара СПБ',
+                            'qr_rubik_steer_offline': 'QR Рубик около бара СПБ',
                             # Московские метки
                             'qr_tv_msk': 'QR-код на ТВ МСК',
                             'qr_bar_msk': 'QR-код на баре МСК',
