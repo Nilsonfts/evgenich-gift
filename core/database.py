@@ -644,6 +644,16 @@ def update_user_birth_date(user_id: int, birth_date: str) -> bool:
 
 def update_user_source(user_id: int, source: str) -> bool:
     """Обновляет источник пользователя (при переходе по новой ссылке)."""
+    # Сначала пробуем PostgreSQL
+    if USE_POSTGRES and pg_client:
+        try:
+            success = pg_client.update_user_source(user_id, source)
+            if success:
+                return True
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка обновления источника: {e}")
+    
+    # Fallback на SQLite
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -661,14 +671,28 @@ def update_user_source(user_id: int, source: str) -> bool:
         logging.error(f"SQLite | Ошибка обновления источника для {user_id}: {e}")
         return False
 
-def find_user_by_id(user_id: int) -> Optional[sqlite3.Row]:
+def find_user_by_id(user_id: int) -> Optional[dict]:
+    """Находит пользователя по ID. Возвращает dict для совместимости."""
+    # Сначала пробуем PostgreSQL
+    if USE_POSTGRES and pg_client:
+        try:
+            user = pg_client.get_user_by_id(user_id)
+            if user:
+                return user
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка поиска пользователя {user_id}: {e}")
+    
+    # Fallback на SQLite
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
         user = cur.fetchone()
         conn.close()
-        return user
+        if user:
+            # Конвертируем sqlite3.Row в dict для совместимости
+            return dict(user)
+        return None
     except Exception as e:
         logging.error(f"SQLite | Ошибка поиска пользователя {user_id}: {e}")
         return None

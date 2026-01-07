@@ -723,7 +723,7 @@ def register_user_command_handlers(bot):
         else:
             # Полный профиль есть, показываем подсказку о подписке на канал
             user_data = database.find_user_by_id(user_id)
-            user_source = user_data['source'] if user_data and user_data['source'] else ''
+            user_source = user_data.get('source', '') if user_data else ''
             channel_to_show = get_channel_id_for_user(user_source)
             bot.send_message(
                 user_id,
@@ -739,7 +739,7 @@ def register_user_command_handlers(bot):
         
         # Получаем источник пользователя чтобы определить канал
         user_data = database.find_user_by_id(user_id)
-        user_source = user_data['source'] if user_data and user_data['source'] else ''
+        user_source = user_data.get('source', '') if user_data else ''
         channel_to_check = get_channel_id_for_user(user_source)
         
         try:
@@ -842,7 +842,7 @@ def register_user_command_handlers(bot):
                     
                     # Определяем правильный канал для пользователя
                     user_data = database.find_user_by_id(user_id)
-                    user_source = user_data['source'] if user_data and user_data['source'] else ''
+                    user_source = user_data.get('source', '') if user_data else ''
                     channel_to_show = get_channel_id_for_user(user_source)
                     channel_url = f"https://t.me/{channel_to_show.lstrip('@')}"
                     

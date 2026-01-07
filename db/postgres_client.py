@@ -488,6 +488,32 @@ class PostgresClient:
             logging.error(f"PostgreSQL | Ошибка обновления концепции пользователя {user_id}: {e}")
             return False
 
+    def update_user_source(self, user_id, source):
+        """
+        Обновляет источник пользователя (при переходе по новой ссылке).
+        
+        Args:
+            user_id (int): ID пользователя
+            source (str): Новый источник (QR-код на ТВ МСК и т.д.)
+        
+        Returns:
+            bool: True если успешно, False в случае ошибки
+        """
+        try:
+            with self.engine.connect() as connection:
+                stmt = update(self.users_table).where(
+                    self.users_table.c.user_id == user_id
+                ).values(source=source)
+                
+                connection.execute(stmt)
+                connection.commit()
+                
+                logging.info(f"PostgreSQL | Источник пользователя {user_id} обновлен на: {source}")
+                return True
+        except SQLAlchemyError as e:
+            logging.error(f"PostgreSQL | Ошибка обновления источника пользователя {user_id}: {e}")
+            return False
+
     def get_report_data_for_period(self, start_time: datetime.datetime, end_time: datetime.datetime) -> tuple:
         """Получает данные для отчета за период из PostgreSQL."""
         try:
