@@ -4,14 +4,25 @@ import logging
 import datetime
 from telebot import types
 
-from core.config import CHANNEL_ID, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ALL_ADMINS, REPORT_CHAT_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID, get_channel_id_for_user
+from core.config import CHANNEL_ID, CHANNEL_ID_MSK, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ALL_ADMINS, REPORT_CHAT_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID, get_channel_id_for_user
 import core.database as database
 import core.settings_manager as settings_manager
 import texts
 import keyboards
 from utils.qr_generator import create_qr_code
 
+# Словарь для хранения текущего payload пользователя (для определения канала)
+user_current_payload = {}
+
 # --- Вспомогательные функции ---
+
+def get_channel_for_payload(payload: str) -> str:
+    """Определяет канал напрямую по payload (жёсткая привязка)."""
+    if payload and payload.endswith('_msk'):
+        logging.info(f"🎯 Payload '{payload}' -> Московский канал @evgenichmoscow")
+        return CHANNEL_ID_MSK
+    logging.info(f"🎯 Payload '{payload}' -> Питерский канал {CHANNEL_ID}")
+    return CHANNEL_ID
 
 def issue_coupon(bot, user_id, chat_id):
     """Выдает пользователю купон на настойку."""
@@ -81,11 +92,17 @@ def register_user_command_handlers(bot):
             user_id = message.from_user.id
             status = database.get_reward_status(user_id)
             
+            # Сохраняем payload для определения канала (ЖЁСТКАЯ ПРИВЯЗКА)
+            args = message.text.split(' ', 1)
+            if len(args) > 1:
+                current_payload = args[1]
+                user_current_payload[user_id] = current_payload
+                logging.info(f"🎯 СОХРАНЁН PAYLOAD для {user_id}: '{current_payload}'")
+            
             # Детальное логирование для отладки
-            logging.info(f"🔍 /start от {user_id}: message.text='{message.text}', status='{status}'")
+            logging.info(f"🔍 /start от {user_id}: message.text='{message.text}', status='{status}', payload={user_current_payload.get(user_id, 'нет')}")
 
             # Проверяем, есть ли параметр booking (для любых пользователей)
-            args = message.text.split(' ', 1)
             if len(args) > 1 and args[1] == 'booking':
                 logging.info(f"✅ Пользователь {user_id} запускает быстрое бронирование через deep link")
                 try:
@@ -730,9 +747,10 @@ def register_user_command_handlers(bot):
             )
         else:
             # Полный профиль есть, показываем подсказку о подписке на канал
-            user_data = database.find_user_by_id(user_id)
-            user_source = user_data.get('source', '') if user_data else ''
-            channel_to_show = get_channel_id_for_user(user_source)
+            # ЖЁСТКАЯ ПРИВЯЗКА: используем сохранённый payload
+            saved_payload = user_current_payload.get(user_id, '')
+            channel_to_show = get_channel_for_payload(saved_payload)
+            logging.info(f"🎯 Профиль готов для {user_id}: payload='{saved_payload}', канал={channel_to_show}")
             bot.send_message(
                 user_id,
                 texts.SUBSCRIBE_PROMPT_TEXT,
@@ -745,10 +763,10 @@ def register_user_command_handlers(bot):
             bot.send_message(user_id, "Вы уже получали свой подарок. Спасибо, что вы с нами! 😉")
             return
         
-        # Получаем источник пользователя чтобы определить канал
-        user_data = database.find_user_by_id(user_id)
-        user_source = user_data.get('source', '') if user_data else ''
-        channel_to_check = get_channel_id_for_user(user_source)
+        # ЖЁСТКАЯ ПРИВЯЗКА: используем сохранённый payload
+        saved_payload = user_current_payload.get(user_id, '')
+        channel_to_check = get_channel_for_payload(saved_payload)
+        logging.info(f"🎯 handle_get_gift_press для {user_id}: payload='{saved_payload}', канал={channel_to_check}")
         
         try:
             chat_member = bot.get_chat_member(chat_id=channel_to_check, user_id=user_id)
@@ -848,15 +866,13 @@ def register_user_command_handlers(bot):
                         texts.PROFILE_COMPLETED_TEXT
                     )
                     
-                    # Определяем правильный канал для пользователя
-                    user_data = database.find_user_by_id(user_id)
-                    user_source = user_data.get('source', '') if user_data else ''
-                    channel_to_show = get_channel_id_for_user(user_source)
+                    # ЖЁСТКАЯ ПРИВЯЗКА: определяем канал по сохранённому payload
+                    saved_payload = user_current_payload.get(user_id, '')
+                    channel_to_show = get_channel_for_payload(saved_payload)
                     channel_url = f"https://t.me/{channel_to_show.lstrip('@')}"
                     
-                    logging.info(f"🔍 ПОКАЗ КНОПКИ ПОДПИСКИ для {user_id}:")
-                    logging.info(f"   - user_data: {user_data}")
-                    logging.info(f"   - source из БД: '{user_source}'")
+                    logging.info(f"🎯 ПОКАЗ КНОПКИ ПОДПИСКИ для {user_id}:")
+                    logging.info(f"   - Сохранённый payload: '{saved_payload}'")
                     logging.info(f"   - Выбранный канал: {channel_to_show}")
                     logging.info(f"   - URL кнопки: {channel_url}")
                     

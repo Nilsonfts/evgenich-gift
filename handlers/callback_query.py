@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import pytz # <--- ИЗМЕНЕНИЕ: Добавили библиотеку для часовых поясов
 
 # Импортируем конфиги, утилиты, тексты и клавиатуры
-from core.config import CHANNEL_ID, THANK_YOU_STICKER_ID, get_channel_id_for_user
+from core.config import CHANNEL_ID, CHANNEL_ID_MSK, THANK_YOU_STICKER_ID, get_channel_id_for_user
 import core.database as database
 from modules.menu_nastoiki import MENU_DATA
 from modules.food_menu import FOOD_MENU_DATA
@@ -15,7 +15,7 @@ import texts
 import keyboards
 
 # Импортируем вспомогательную функцию из другого файла нашего хендлера
-from .user_commands import issue_coupon
+from .user_commands import issue_coupon, user_current_payload, get_channel_for_payload
 
 # Импортируем систему уведомлений о рефералах
 try:
@@ -74,14 +74,11 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         user_id = call.from_user.id
         bot.answer_callback_query(call.id, text="Проверяю вашу подписку...")
         
-        # Получаем данные пользователя чтобы узнать его источник
-        user_data = database.find_user_by_id(user_id)
-        user_source = user_data.get('source', '') if user_data else ''
+        # ЖЁСТКАЯ ПРИВЯЗКА: используем сохранённый payload
+        saved_payload = user_current_payload.get(user_id, '')
+        channel_to_check = get_channel_for_payload(saved_payload)
         
-        # Определяем нужный канал по источнику
-        channel_to_check = get_channel_id_for_user(user_source)
-        
-        logging.info(f"Проверка подписки для {user_id}: источник='{user_source}', канал='{channel_to_check}'")
+        logging.info(f"🎯 Проверка подписки для {user_id}: payload='{saved_payload}', канал='{channel_to_check}'")
         
         try:
             chat_member = bot.get_chat_member(chat_id=channel_to_check, user_id=user_id)
