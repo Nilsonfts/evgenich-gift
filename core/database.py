@@ -642,6 +642,25 @@ def update_user_birth_date(user_id: int, birth_date: str) -> bool:
         logging.error(f"SQLite | Ошибка обновления даты рождения для {user_id}: {e}")
         return False
 
+def update_user_source(user_id: int, source: str) -> bool:
+    """Обновляет источник пользователя (при переходе по новой ссылке)."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute(
+            "UPDATE users SET source = ? WHERE user_id = ?",
+            (source, user_id)
+        )
+        
+        conn.commit()
+        conn.close()
+        logging.info(f"SQLite | Источник пользователя {user_id} обновлен: {source}")
+        return True
+    except Exception as e:
+        logging.error(f"SQLite | Ошибка обновления источника для {user_id}: {e}")
+        return False
+
 def find_user_by_id(user_id: int) -> Optional[sqlite3.Row]:
     try:
         conn = get_db_connection()

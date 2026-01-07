@@ -110,6 +110,43 @@ def register_user_command_handlers(bot):
                     return
 
             if status in ['redeemed', 'redeemed_and_left']:
+                # Проверяем, пришел ли пользователь по новой ссылке - обновляем source
+                args = message.text.split(' ', 1)
+                if len(args) > 1:
+                    payload = args[1]
+                    allowed_sources = {
+                        'qr_tv': 'QR-код на ТВ СПБ', 
+                        'qr_bar': 'QR-код на баре СПБ', 
+                        'qr_waiter': 'QR от официанта СПБ',
+                        'qr_stol': 'QR-код на столе СПБ',
+                        'vk': 'Ссылка из ВКонтакте СПБ', 
+                        'inst': 'Ссылка из Instagram СПБ', 
+                        'menu': 'Меню в баре СПБ',
+                        'flyer': 'Листовка на улице СПБ', 
+                        'street': 'Уличное Меню СПБ',
+                        '2gis': '2ГИС Кнопка СПБ',
+                        'site': 'Кнопка Сайт СПБ',
+                        'taplink': 'Таплинк на ТВ СПБ',
+                        'rubik_street_offline': 'ЕВГ РУБ около бара СПБ',
+                        'qr_rubik_steer_offline': 'QR Рубик около бара СПБ',
+                        # Московские метки
+                        'qr_tv_msk': 'QR-код на ТВ МСК',
+                        'qr_bar_msk': 'QR-код на баре МСК',
+                        'qr_waiter_msk': 'QR от официанта МСК',
+                        'qr_stol_msk': 'QR-код на столе МСК',
+                        'vk_msk': 'Ссылка из ВКонтакте МСК',
+                        'inst_msk': 'Ссылка из Instagram МСК',
+                        'menu_msk': 'Меню в баре МСК',
+                        'flyer_msk': 'Листовка на улице МСК',
+                        'street_msk': 'Уличное Меню МСК',
+                        '2gis_msk': '2ГИС Кнопка МСК',
+                        'site_msk': 'Кнопка Сайт МСК'
+                    }
+                    if payload in allowed_sources:
+                        new_source = allowed_sources[payload]
+                        database.update_user_source(user_id, new_source)
+                        logging.info(f"Обновлен source для существующего пользователя {user_id}: {new_source}")
+                
                 logging.info(f"Пользователь {user_id} уже получал награду. Показываем основное меню.")
                 bot.send_message(
                     user_id,
@@ -225,6 +262,43 @@ def register_user_command_handlers(bot):
                 database.add_new_user(user_id, message.from_user.username, message.from_user.first_name, source, referrer_id, brought_by_staff_id)
                 if referrer_id:
                     bot.send_message(user_id, texts.NEW_USER_REFERRED_TEXT)
+            else:
+                # Существующий пользователь (issued, registered) - обновляем source если пришел по новой ссылке
+                args = message.text.split(' ', 1)
+                if len(args) > 1:
+                    payload = args[1]
+                    allowed_sources = {
+                        'qr_tv': 'QR-код на ТВ СПБ', 
+                        'qr_bar': 'QR-код на баре СПБ', 
+                        'qr_waiter': 'QR от официанта СПБ',
+                        'qr_stol': 'QR-код на столе СПБ',
+                        'vk': 'Ссылка из ВКонтакте СПБ', 
+                        'inst': 'Ссылка из Instagram СПБ', 
+                        'menu': 'Меню в баре СПБ',
+                        'flyer': 'Листовка на улице СПБ', 
+                        'street': 'Уличное Меню СПБ',
+                        '2gis': '2ГИС Кнопка СПБ',
+                        'site': 'Кнопка Сайт СПБ',
+                        'taplink': 'Таплинк на ТВ СПБ',
+                        'rubik_street_offline': 'ЕВГ РУБ около бара СПБ',
+                        'qr_rubik_steer_offline': 'QR Рубик около бара СПБ',
+                        # Московские метки
+                        'qr_tv_msk': 'QR-код на ТВ МСК',
+                        'qr_bar_msk': 'QR-код на баре МСК',
+                        'qr_waiter_msk': 'QR от официанта МСК',
+                        'qr_stol_msk': 'QR-код на столе МСК',
+                        'vk_msk': 'Ссылка из ВКонтакте МСК',
+                        'inst_msk': 'Ссылка из Instagram МСК',
+                        'menu_msk': 'Меню в баре МСК',
+                        'flyer_msk': 'Листовка на улице МСК',
+                        'street_msk': 'Уличное Меню МСК',
+                        '2gis_msk': '2ГИС Кнопка МСК',
+                        'site_msk': 'Кнопка Сайт МСК'
+                    }
+                    if payload in allowed_sources:
+                        new_source = allowed_sources[payload]
+                        database.update_user_source(user_id, new_source)
+                        logging.info(f"Обновлен source для пользователя {user_id}: {new_source}")
 
             # Отправляем приветствие с кнопкой получения подарка
             bot.send_message(
