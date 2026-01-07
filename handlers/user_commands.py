@@ -80,6 +80,9 @@ def register_user_command_handlers(bot):
             
             user_id = message.from_user.id
             status = database.get_reward_status(user_id)
+            
+            # Детальное логирование для отладки
+            logging.info(f"🔍 /start от {user_id}: message.text='{message.text}', status='{status}'")
 
             # Проверяем, есть ли параметр booking (для любых пользователей)
             args = message.text.split(' ', 1)
@@ -265,8 +268,10 @@ def register_user_command_handlers(bot):
             else:
                 # Существующий пользователь (issued, registered) - обновляем source если пришел по новой ссылке
                 args = message.text.split(' ', 1)
+                logging.info(f"🔍 Существующий пользователь {user_id}, проверяю payload: args={args}")
                 if len(args) > 1:
                     payload = args[1]
+                    logging.info(f"🔍 Payload для {user_id}: '{payload}'")
                     allowed_sources = {
                         'qr_tv': 'QR-код на ТВ СПБ', 
                         'qr_bar': 'QR-код на баре СПБ', 
@@ -297,8 +302,11 @@ def register_user_command_handlers(bot):
                     }
                     if payload in allowed_sources:
                         new_source = allowed_sources[payload]
+                        logging.info(f"✅ Обновляю source для {user_id}: '{new_source}'")
                         database.update_user_source(user_id, new_source)
-                        logging.info(f"Обновлен source для пользователя {user_id}: {new_source}")
+                        logging.info(f"✅ Source обновлен для пользователя {user_id}: {new_source}")
+                    else:
+                        logging.warning(f"⚠️ Payload '{payload}' не найден в allowed_sources!")
 
             # Отправляем приветствие с кнопкой получения подарка
             bot.send_message(
