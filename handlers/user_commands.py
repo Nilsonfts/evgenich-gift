@@ -846,7 +846,11 @@ def register_user_command_handlers(bot):
                     channel_to_show = get_channel_id_for_user(user_source)
                     channel_url = f"https://t.me/{channel_to_show.lstrip('@')}"
                     
-                    logging.info(f"После ДР для {user_id}: показываю кнопку подписки на {channel_url}")
+                    logging.info(f"🔍 ПОКАЗ КНОПКИ ПОДПИСКИ для {user_id}:")
+                    logging.info(f"   - user_data: {user_data}")
+                    logging.info(f"   - source из БД: '{user_source}'")
+                    logging.info(f"   - Выбранный канал: {channel_to_show}")
+                    logging.info(f"   - URL кнопки: {channel_url}")
                     
                     # ВСЕГДА показываем кнопку подписки - проверка будет при нажатии "Я подписался"
                     bot.send_message(
