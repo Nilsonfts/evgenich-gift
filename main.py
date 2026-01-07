@@ -8,7 +8,7 @@ from apscheduler.triggers.cron import CronTrigger
 import datetime
 import pytz
 
-from core.config import BOT_TOKEN, FRIEND_BONUS_STICKER_ID, REPORT_CHAT_ID, CHANNEL_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, USE_POSTGRES, DATABASE_URL, DATABASE_PATH
+from core.config import BOT_TOKEN, FRIEND_BONUS_STICKER_ID, REPORT_CHAT_ID, CHANNEL_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, USE_POSTGRES, DATABASE_URL, DATABASE_PATH, get_channel_id_for_user
 import core.database as database
 import keyboards
 import texts
@@ -144,7 +144,11 @@ def run_nightly_auditor_job():
             import time
             time.sleep(1)
             
-            chat_member = bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+            # Определяем правильный канал для проверки на основе источника пользователя
+            user_source = user_row.get('source', '')
+            channel_to_check = get_channel_id_for_user(user_source)
+            
+            chat_member = bot.get_chat_member(chat_id=channel_to_check, user_id=user_id)
             if chat_member.status not in ['member', 'administrator', 'creator']:
                 # Пользователь отписался
                 database.mark_user_as_left(user_id)

@@ -24,7 +24,7 @@ def _parse_json_safe(json_string):
 
 # --- Telegram ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")  # СПб канал (по умолчанию)
+CHANNEL_ID = os.getenv("CHANNEL_ID", "@evgenichbarspb")  # СПб канал (по умолчанию)
 CHANNEL_ID_MSK = os.getenv("CHANNEL_ID_MSK", "@evgenichmoscow")  # Москва канал
 
 # === НОВАЯ СИСТЕМА РОЛЕЙ ===
