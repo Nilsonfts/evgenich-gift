@@ -188,19 +188,19 @@ def register_user_command_handlers(bot):
                             logging.warning(f"Не удалось распознать ref_id из {payload}")
                     else:
                         allowed_sources = {
-                            'qr_tv': 'QR-код на ТВ', 
-                            'qr_bar': 'QR-код на баре', 
-                            'qr_waiter': 'QR от официанта',
-                            'qr_stol': 'QR-код на столе',
-                            'vk': 'Ссылка из ВКонтакте', 
-                            'inst': 'Ссылка из Instagram', 
-                            'menu': 'Меню в баре',
-                            'flyer': 'Листовка на улице', 
-                            'street': 'Уличное Меню',
-                            '2gis': '2ГИС Кнопка',
-                            'site': 'Кнопка Сайт',
-                            'taplink': 'Таплинк на ТВ',
-                            'rubik_street_offline': 'Рубинштейна - Уличная реклама'
+                            'qr_tv': 'QR-код на ТВ СПБ', 
+                            'qr_bar': 'QR-код на баре СПБ', 
+                            'qr_waiter': 'QR от официанта СПБ',
+                            'qr_stol': 'QR-код на столе СПБ',
+                            'vk': 'Ссылка из ВКонтакте СПБ', 
+                            'inst': 'Ссылка из Instagram СПБ', 
+                            'menu': 'Меню в баре СПБ',
+                            'flyer': 'Листовка на улице СПБ', 
+                            'street': 'Уличное Меню СПБ',
+                            '2gis': '2ГИС Кнопка СПБ',
+                            'site': 'Кнопка Сайт СПБ',
+                            'taplink': 'Таплинк на ТВ СПБ',
+                            'rubik_street_offline': 'ЕВГ РУБ около бара СПБ'
                         }
                         if payload in allowed_sources:
                             source = allowed_sources[payload]
