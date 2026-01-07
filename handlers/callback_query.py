@@ -76,7 +76,7 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         
         # Получаем данные пользователя чтобы узнать его источник
         user_data = database.find_user_by_id(user_id)
-        user_source = user_data.get('source', '') if user_data else ''
+        user_source = user_data['source'] if user_data and user_data['source'] else ''
         
         # Определяем нужный канал по источнику
         channel_to_check = get_channel_id_for_user(user_source)

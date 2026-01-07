@@ -765,43 +765,20 @@ def register_user_command_handlers(bot):
                         texts.PROFILE_COMPLETED_TEXT
                     )
                     
-                    logging.info(f"🔍 НАЧИНАЮ ПРОВЕРКУ ПОДПИСКИ для {user_id}")
-                    
-                    # ТЕПЕРЬ проверяем подписку на канал
+                    # Определяем правильный канал для пользователя
                     user_data = database.find_user_by_id(user_id)
                     user_source = user_data['source'] if user_data and user_data['source'] else ''
-                    channel_to_check = get_channel_id_for_user(user_source)
+                    channel_to_show = get_channel_id_for_user(user_source)
+                    channel_url = f"https://t.me/{channel_to_show.lstrip('@')}"
                     
-                    logging.info(f"После ввода ДР для {user_id}: проверяю подписку на канал {channel_to_check} (источник: {user_source})")
+                    logging.info(f"После ДР для {user_id}: показываю кнопку подписки на {channel_url}")
                     
-                    try:
-                        chat_member = bot.get_chat_member(chat_id=channel_to_check, user_id=user_id)
-                        logging.info(f"Статус подписки {user_id}: {chat_member.status}")
-                        if chat_member.status not in ['member', 'administrator', 'creator']:
-                            # Пользователь НЕ подписан - показываем кнопку подписки
-                            channel_url = f"https://t.me/{channel_to_check.lstrip('@')}"
-                            logging.info(f"Пользователь {user_id} НЕ подписан - показываю кнопку подписки на {channel_url}")
-                            bot.send_message(
-                                message.chat.id,
-                                texts.SUBSCRIBE_PROMPT_TEXT,
-                                reply_markup=keyboards.get_subscription_keyboard(channel_url)
-                            )
-                            return
-                    except Exception as e:
-                        logging.error(f"Ошибка проверки подписки для {user_id}: {e}")
-                        # Если не смогли проверить, показываем кнопку подписки
-                        channel_url = f"https://t.me/{channel_to_check.lstrip('@')}"
-                        logging.info(f"Ошибка при проверке - показываю кнопку подписки на {channel_url}")
-                        bot.send_message(
-                            message.chat.id,
-                            texts.SUBSCRIBE_PROMPT_TEXT,
-                            reply_markup=keyboards.get_subscription_keyboard(channel_url)
-                        )
-                        return
-                    
-                    # Пользователь подписан - выдаем купон!
-                    logging.info(f"Пользователь {user_id} подписан - выдаю купон!")
-                    issue_coupon(bot, user_id, message.chat.id)
+                    # ВСЕГДА показываем кнопку подписки - проверка будет при нажатии "Я подписался"
+                    bot.send_message(
+                        message.chat.id,
+                        texts.SUBSCRIBE_PROMPT_TEXT,
+                        reply_markup=keyboards.get_subscription_keyboard(channel_url)
+                    )
                 else:
                     bot.send_message(
                         message.chat.id,
