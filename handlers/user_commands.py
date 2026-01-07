@@ -516,6 +516,15 @@ def register_user_command_handlers(bot):
             )
             return
         
+        if user_status == 'issued':
+            # Купон уже выдан, показываем меню с кнопкой погашения
+            bot.send_message(
+                message.chat.id,
+                "У тебя уже есть купон на настойку! 🥃\n\nПокажи этот экран бармену для получения настойки:",
+                reply_markup=keyboards.get_redeem_keyboard()
+            )
+            return
+        
         # Проверяем подписку на канал ПЕРЕД началом сбора профиля
         user_data = database.get_user_by_id(user_id)
         user_source = user_data.get('source', '') if user_data else ''
