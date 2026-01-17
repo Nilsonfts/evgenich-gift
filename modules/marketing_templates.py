@@ -162,3 +162,34 @@ def get_template_suggestions(category: str) -> dict:
         'utm_campaign': UTM_CAMPAIGNS.get(category, 'general'),
         'send_time': SEND_TIME_RECOMMENDATIONS.get(category, '12:00-18:00')
     }
+
+def get_template_preview(category: str) -> dict:
+    """Возвращает предпросмотр шаблона для указанной категории."""
+    category_names = {
+        'promo': 'Акции и скидки',
+        'menu': 'Новое меню',
+        'event': 'Мероприятия',
+        'booking': 'Бронирование',
+        'welcome': 'Приветствие',
+        'loyalty': 'Программа лояльности'
+    }
+    
+    titles = TITLE_TEMPLATES.get(category, ['Заголовок не найден'])
+    content_key = {
+        'promo': 'promo_discount',
+        'menu': 'new_menu', 
+        'event': 'event_announcement',
+        'booking': 'weekend_booking'
+    }.get(category, 'welcome')
+    
+    return {
+        'category_name': category_names.get(category, 'Неизвестная категория'),
+        'title': titles[0] if titles else 'Заголовок не найден',
+        'content': CONTENT_TEMPLATES.get(content_key, 'Содержимое не найдено'),
+        'buttons': [CTA_BUTTONS[key] for key in ['booking', 'menu', 'call']],
+        'utm_campaign': UTM_CAMPAIGNS.get(category, 'general')
+    }
+
+def get_template_data(category: str) -> dict:
+    """Возвращает данные шаблона для использования в рассылке."""
+    return get_template_preview(category)
