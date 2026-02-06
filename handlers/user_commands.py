@@ -18,6 +18,11 @@ user_current_payload = {}
 
 def get_channel_for_payload(payload: str) -> str:
     """Определяет канал напрямую по payload (жёсткая привязка)."""
+    # Специальная проверка для qr_bar - направляем на московский канал
+    if payload == 'qr_bar':
+        logging.info(f"🎯 Payload '{payload}' -> Московский канал @evgenichmoscow")
+        return CHANNEL_ID_MSK
+    # Общая проверка для всех _msk источников
     if payload and payload.endswith('_msk'):
         logging.info(f"🎯 Payload '{payload}' -> Московский канал @evgenichmoscow")
         return CHANNEL_ID_MSK
