@@ -196,9 +196,9 @@ if __name__ == "__main__":
     register_admin_handlers(bot)
     register_content_handlers(bot)  # AI System v3.0 - управление контентом
     register_proactive_commands(bot)  # Проактивные команды для админа
-    register_ai_handlers(bot)
+    register_broadcast_handlers(bot)  # ПЕРЕД AI — чтобы broadcast_states ловили текст раньше
+    register_ai_handlers(bot)  # AI catch-all — ПОСЛЕДНИМ среди message handlers
     register_iiko_data_handlers(bot)
-    register_broadcast_handlers(bot)
     
     # Инициализируем систему рассылок с планировщиком
     init_admin_handlers(bot, scheduler)
