@@ -48,6 +48,15 @@ def get_contact_request_keyboard():
 
 # === INLINE-КЛАВИАТУРЫ ДЛЯ ПОДПИСКИ И ПОДАРКА ===
 
+def get_loyalty_keyboard():
+    """Возвращает клавиатуру с кнопкой регистрации карты лояльности."""
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(
+        text="🎁 Получить 500₽ — Регистрация карты",
+        url="https://evgenich.getmeback.ru/wallet/frontend?code=tg_bot#/auth"
+    ))
+    return keyboard
+
 def get_subscription_keyboard(channel_url):
     """Возвращает клавиатуру для проверки подписки на канал."""
     inline_keyboard = types.InlineKeyboardMarkup(row_width=1)

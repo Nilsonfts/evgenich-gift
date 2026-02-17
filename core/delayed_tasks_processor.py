@@ -75,14 +75,16 @@ class DelayedTasksProcessor:
             logging.warning(f"Неизвестный тип задачи: {task_type}")
             
     def _send_engagement_message(self, user_id: int):
-        """Отправляет вовлекающее сообщение после погашения купона."""
+        """Отправляет вовлекающее сообщение с картой лояльности после погашения купона."""
         try:
+            import keyboards
             self.bot.send_message(
                 user_id,
                 DELAYED_ENGAGEMENT_TEXT,
-                parse_mode='Markdown'
+                parse_mode='Markdown',
+                reply_markup=keyboards.get_loyalty_keyboard()
             )
-            logging.info(f"Отправлено вовлекающее сообщение пользователю {user_id}")
+            logging.info(f"Отправлено вовлекающее сообщение с картой лояльности пользователю {user_id}")
         except Exception as e:
             logging.error(f"Ошибка отправки вовлекающего сообщения пользователю {user_id}: {e}")
     
