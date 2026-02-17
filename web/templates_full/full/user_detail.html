@@ -1,0 +1,111 @@
+{% extends "full/base.html" %}
+{% block title %}Пользователь {{ user.user_id }}{% endblock %}
+
+{% block content %}
+<div class="page-h">
+    <a href="/users" class="btn btn-sm btn-outline-primary mb-2"><i class="fas fa-arrow-left me-1"></i>Назад</a>
+    <h2><i class="fas fa-user me-2"></i>Профиль пользователя</h2>
+</div>
+
+<div class="row g-3">
+    <!-- Main info -->
+    <div class="col-lg-6">
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-id-card me-2"></i>Основная информация</div>
+            <div class="p-3">
+                <table class="table table-sm">
+                    <tr><td class="fw-bold" style="width:180px">Telegram ID</td><td><code>{{ user.user_id }}</code></td></tr>
+                    <tr><td class="fw-bold">Username</td><td>{% if user.username %}<a href="https://t.me/{{ user.username }}" target="_blank">@{{ user.username }}</a>{% else %}—{% endif %}</td></tr>
+                    <tr><td class="fw-bold">Имя (Telegram)</td><td>{{ user.first_name or '—' }}</td></tr>
+                    <tr><td class="fw-bold">Настоящее имя</td><td>{{ user.real_name or '—' }}</td></tr>
+                    <tr><td class="fw-bold">Телефон</td><td>{{ user.phone_number or '—' }}</td></tr>
+                    <tr><td class="fw-bold">Дата рождения</td><td>{{ user.birth_date or '—' }}</td></tr>
+                    <tr><td class="fw-bold">AI-концепция</td><td>{{ user.ai_concept or 'evgenich' }}</td></tr>
+                    <tr><td class="fw-bold">Профиль заполнен</td><td>{{ '✅ Да' if user.profile_completed else '❌ Нет' }}</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status & dates -->
+    <div class="col-lg-6">
+        <div class="table-card mb-3">
+            <div class="card-header"><i class="fas fa-info-circle me-2"></i>Статус и даты</div>
+            <div class="p-3">
+                <table class="table table-sm">
+                    <tr>
+                        <td class="fw-bold" style="width:180px">Статус</td>
+                        <td>
+                            {% if user.status == 'registered' %}<span class="badge bg-info">Зарегистрирован</span>
+                            {% elif user.status == 'issued' %}<span class="badge bg-warning text-dark">Купон выдан</span>
+                            {% elif user.status == 'redeemed' %}<span class="badge bg-success">Погашено</span>
+                            {% elif user.status == 'redeemed_and_left' %}<span class="badge bg-danger">Отписался</span>
+                            {% else %}<span class="badge bg-secondary">{{ user.status or '—' }}</span>{% endif %}
+                        </td>
+                    </tr>
+                    <tr><td class="fw-bold">Источник</td><td><span class="badge bg-secondary">{{ user.source or '—' }}</span></td></tr>
+                    <tr><td class="fw-bold">Реферер</td><td>{% if user.referrer_id %}<a href="/users/{{ user.referrer_id }}">{{ user.referrer_id }}</a>{% else %}—{% endif %}</td></tr>
+                    <tr><td class="fw-bold">Сотрудник</td><td>{{ user.brought_by_staff_id or '—' }}</td></tr>
+                    <tr><td class="fw-bold">Дата регистрации</td><td>{{ user.signup_date or user.register_date or '—' }}</td></tr>
+                    <tr><td class="fw-bold">Купон выдан</td><td>{{ user.redeem_date or '—' }}</td></tr>
+                    <tr><td class="fw-bold">Контакт отправлен</td><td>{{ user.contact_shared_date or '—' }}</td></tr>
+                    <tr><td class="fw-bold">Заблокировал бота</td><td>{{ '🚫 Да' if user.blocked else '—' }}</td></tr>
+                </table>
+            </div>
+        </div>
+
+        {% if referral_stats %}
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-share-alt me-2"></i>Реферальная статистика</div>
+            <div class="p-3">
+                <table class="table table-sm">
+                    <tr><td class="fw-bold">Всего приглашено</td><td>{{ referral_stats.total_referrals or 0 }}</td></tr>
+                    <tr><td class="fw-bold">Погасили настойку</td><td>{{ referral_stats.redeemed_referrals or 0 }}</td></tr>
+                    <tr><td class="fw-bold">Наград получено</td><td>{{ referral_stats.rewards_received or 0 }}</td></tr>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Actions -->
+<div class="row g-3 mt-2">
+    <div class="col-lg-6">
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-cog me-2"></i>Действия</div>
+            <div class="p-3">
+                <form method="POST" action="/users/{{ user.user_id }}/action" class="mb-3">
+                    <input type="hidden" name="action" value="update_status">
+                    <label class="form-label">Изменить статус</label>
+                    <div class="d-flex gap-2">
+                        <select name="status" class="form-select">
+                            <option value="registered" {{ 'selected' if user.status=='registered' }}>registered</option>
+                            <option value="issued" {{ 'selected' if user.status=='issued' }}>issued</option>
+                            <option value="redeemed" {{ 'selected' if user.status=='redeemed' }}>redeemed</option>
+                            <option value="redeemed_and_left" {{ 'selected' if user.status=='redeemed_and_left' }}>redeemed_and_left</option>
+                        </select>
+                        <button class="btn btn-primary"><i class="fas fa-save"></i></button>
+                    </div>
+                </form>
+
+                <form method="POST" action="/users/{{ user.user_id }}/action" class="mb-3">
+                    <input type="hidden" name="action" value="update_source">
+                    <label class="form-label">Изменить источник</label>
+                    <div class="d-flex gap-2">
+                        <input type="text" name="source" class="form-control" value="{{ user.source or '' }}">
+                        <button class="btn btn-primary"><i class="fas fa-save"></i></button>
+                    </div>
+                </form>
+
+                <hr>
+                <form method="POST" action="/users/{{ user.user_id }}/action"
+                      onsubmit="return confirm('Удалить пользователя {{ user.user_id }}?')">
+                    <input type="hidden" name="action" value="delete">
+                    <button class="btn btn-danger"><i class="fas fa-trash me-1"></i>Удалить пользователя</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

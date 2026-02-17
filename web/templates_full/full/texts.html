@@ -1,0 +1,71 @@
+{% extends "full/base.html" %}
+{% block title %}Тексты бота{% endblock %}
+
+{% block content %}
+<div class="page-h">
+    <h2><i class="fas fa-file-alt me-2"></i>Тексты бота</h2>
+    <p>Редактирование сообщений, которые бот отправляет пользователям</p>
+</div>
+
+<form method="POST" action="/texts/update" id="textsForm">
+    <div class="row g-3">
+        {% for key, val in texts.items()|sort %}
+        <div class="col-lg-6">
+            <div class="table-card h-100">
+                <div class="card-header d-flex align-items-center justify-content-between">
+                    <span><i class="fas fa-comment-dots me-1 text-primary"></i>{{ key }}</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetField('{{ key }}')">
+                        <i class="fas fa-undo"></i>
+                    </button>
+                </div>
+                <div class="p-3">
+                    {% if val is string and val|length > 120 %}
+                    <textarea name="{{ key }}" class="form-control" rows="5" id="f_{{ key }}">{{ val }}</textarea>
+                    {% elif val is string %}
+                    <input type="text" name="{{ key }}" class="form-control" value="{{ val }}" id="f_{{ key }}">
+                    {% else %}
+                    <textarea name="{{ key }}" class="form-control" rows="3" id="f_{{ key }}">{{ val|tojson }}</textarea>
+                    <small class="text-muted">JSON-значение</small>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="text-end mt-4 mb-4">
+        <button type="submit" class="btn btn-primary btn-lg">
+            <i class="fas fa-save me-1"></i>Сохранить все тексты
+        </button>
+    </div>
+</form>
+
+{% if not texts %}
+<div class="text-center py-5">
+    <i class="fas fa-file-alt fa-3x text-muted mb-3"></i>
+    <h4>Тексты не настроены</h4>
+    <p class="text-muted">Файл texts.json пуст или отсутствует. Бот использует тексты по умолчанию из кода.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const originals={};
+document.querySelectorAll('[id^="f_"]').forEach(el=>{
+    originals[el.name]=el.value;
+});
+function resetField(k){
+    const el=document.getElementById('f_'+k);
+    if(el && originals[k]!==undefined) el.value=originals[k];
+}
+
+document.getElementById('textsForm').addEventListener('submit',function(e){
+    let changed=0;
+    document.querySelectorAll('[id^="f_"]').forEach(el=>{
+        if(el.value!==originals[el.name]) changed++;
+    });
+    if(!changed){e.preventDefault();alert('Нет изменений');}
+});
+</script>
+{% endblock %}

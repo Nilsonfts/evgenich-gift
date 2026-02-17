@@ -1,0 +1,111 @@
+{% extends "full/base.html" %}
+{% block title %}Акции{% endblock %}
+
+{% block content %}
+<div class="page-h">
+    <h2><i class="fas fa-tags me-2"></i>Управление акциями</h2>
+    <p>Включение/выключение промо-акций бота</p>
+</div>
+
+<div class="row g-3">
+    <!-- Group bonus -->
+    <div class="col-lg-4">
+        <div class="table-card h-100">
+            <div class="card-header"><i class="fas fa-users me-2"></i>Бонус компании</div>
+            <div class="p-3">
+                <form method="POST" action="/promotions/update">
+                    <input type="hidden" name="promo" value="group_bonus">
+
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" name="enabled" id="gb_en"
+                               {{ 'checked' if promos.group_bonus.enabled }}>
+                        <label class="form-check-label fw-bold" for="gb_en">Включена</label>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Мин. гостей</label>
+                        <input type="number" name="min_guests" class="form-control"
+                               value="{{ promos.group_bonus.min_guests or 6 }}" min="2" max="50">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Текст бонуса</label>
+                        <textarea name="text" class="form-control" rows="3">{{ promos.group_bonus.text or '' }}</textarea>
+                    </div>
+
+                    <button class="btn btn-primary w-100"><i class="fas fa-save me-1"></i>Сохранить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Happy hours -->
+    <div class="col-lg-4">
+        <div class="table-card h-100">
+            <div class="card-header"><i class="fas fa-clock me-2"></i>Счастливые часы</div>
+            <div class="p-3">
+                <form method="POST" action="/promotions/update">
+                    <input type="hidden" name="promo" value="happy_hours">
+
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" name="enabled" id="hh_en"
+                               {{ 'checked' if promos.happy_hours.enabled }}>
+                        <label class="form-check-label fw-bold" for="hh_en">Включена</label>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Начало</label>
+                            <input type="time" name="start" class="form-control"
+                                   value="{{ promos.happy_hours.start or '15:00' }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Конец</label>
+                            <input type="time" name="end" class="form-control"
+                                   value="{{ promos.happy_hours.end or '18:00' }}">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Текст</label>
+                        <textarea name="text" class="form-control" rows="3">{{ promos.happy_hours.text or '' }}</textarea>
+                    </div>
+
+                    <button class="btn btn-primary w-100"><i class="fas fa-save me-1"></i>Сохранить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password of the day -->
+    <div class="col-lg-4">
+        <div class="table-card h-100">
+            <div class="card-header"><i class="fas fa-key me-2"></i>Пароль дня</div>
+            <div class="p-3">
+                <form method="POST" action="/promotions/update">
+                    <input type="hidden" name="promo" value="password_of_day">
+
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" name="enabled" id="pd_en"
+                               {{ 'checked' if promos.password_of_day.enabled }}>
+                        <label class="form-check-label fw-bold" for="pd_en">Включена</label>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Кодовое слово</label>
+                        <input type="text" name="word" class="form-control"
+                               value="{{ promos.password_of_day.word or '' }}" placeholder="Например: настойка">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Бонус за пароль</label>
+                        <textarea name="bonus" class="form-control" rows="3">{{ promos.password_of_day.bonus or '' }}</textarea>
+                    </div>
+
+                    <button class="btn btn-primary w-100"><i class="fas fa-save me-1"></i>Сохранить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,86 @@
+{% extends "full/base.html" %}
+{% block title %}AI-ассистент{% endblock %}
+
+{% block content %}
+<div class="page-h">
+    <h2><i class="fas fa-robot me-2"></i>Настройки AI-ассистента</h2>
+    <p>Конфигурация OpenAI для бота «Евгенич»</p>
+</div>
+
+<form method="POST" action="/ai/update">
+<div class="row g-3">
+    <!-- Main settings -->
+    <div class="col-lg-8">
+        <div class="table-card mb-3">
+            <div class="card-header"><i class="fas fa-brain me-2"></i>Системный промпт</div>
+            <div class="p-3">
+                <div class="mb-3">
+                    <label class="form-label">System Prompt</label>
+                    <textarea name="system_prompt" class="form-control" rows="6" style="font-family:monospace;font-size:.85rem">{{ ai.system_prompt or '' }}</textarea>
+                    <small class="text-muted">Определяет характер и стиль ответов AI</small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Информация о баре</label>
+                    <textarea name="bar_info" class="form-control" rows="4">{{ ai.bar_info or '' }}</textarea>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Информация о меню</label>
+                    <textarea name="menu_info" class="form-control" rows="4">{{ ai.menu_info or '' }}</textarea>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Правила заведения</label>
+                    <textarea name="rules" class="form-control" rows="3">{{ ai.rules or '' }}</textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Model params -->
+    <div class="col-lg-4">
+        <div class="table-card mb-3">
+            <div class="card-header"><i class="fas fa-sliders-h me-2"></i>Параметры модели</div>
+            <div class="p-3">
+                <div class="mb-3">
+                    <label class="form-label">Модель</label>
+                    <select name="model" class="form-select">
+                        <option value="gpt-3.5-turbo" {{ 'selected' if ai.model == 'gpt-3.5-turbo' }}>GPT-3.5 Turbo</option>
+                        <option value="gpt-4" {{ 'selected' if ai.model == 'gpt-4' }}>GPT-4</option>
+                        <option value="gpt-4-turbo" {{ 'selected' if ai.model == 'gpt-4-turbo' }}>GPT-4 Turbo</option>
+                        <option value="gpt-4o" {{ 'selected' if ai.model == 'gpt-4o' }}>GPT-4o</option>
+                        <option value="gpt-4o-mini" {{ 'selected' if ai.model == 'gpt-4o-mini' }}>GPT-4o Mini</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Temperature: <span id="tempVal">{{ ai.temperature or 0.7 }}</span></label>
+                    <input type="range" name="temperature" class="form-range" min="0" max="2" step="0.1"
+                           value="{{ ai.temperature or 0.7 }}" oninput="document.getElementById('tempVal').textContent=this.value">
+                    <small class="text-muted">0 = точный, 2 = творческий</small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Max Tokens</label>
+                    <input type="number" name="max_tokens" class="form-control"
+                           value="{{ ai.max_tokens or 500 }}" min="50" max="4000" step="50">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Тон общения</label>
+                    <select name="tone" class="form-select">
+                        <option value="friendly" {{ 'selected' if ai.tone == 'friendly' }}>🤗 Дружелюбный</option>
+                        <option value="formal" {{ 'selected' if ai.tone == 'formal' }}>👔 Формальный</option>
+                        <option value="humorous" {{ 'selected' if ai.tone == 'humorous' }}>😄 С юмором</option>
+                        <option value="bartender" {{ 'selected' if ai.tone == 'bartender' }}>🍸 Бармен</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <button class="btn btn-primary w-100 py-2"><i class="fas fa-save me-2"></i>Сохранить настройки</button>
+    </div>
+</div>
+</form>
+{% endblock %}

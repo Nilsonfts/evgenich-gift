@@ -1,0 +1,179 @@
+{% extends "full/base.html" %}
+{% block title %}Аналитика{% endblock %}
+
+{% block content %}
+<div class="page-h">
+    <h2><i class="fas fa-chart-line me-2"></i>Аналитика</h2>
+    <p>Детальная статистика и отчёты</p>
+</div>
+
+<!-- Broadcast stats -->
+<div class="row g-3 mb-4">
+    <div class="col-xl-3 col-sm-6">
+        <div class="stat-card">
+            <div class="d-flex align-items-center justify-content-between">
+                <div><small>Всего в базе</small><h3>{{ bstats.total or 0 }}</h3></div>
+                <div class="icon" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)"><i class="fas fa-database"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-sm-6">
+        <div class="stat-card">
+            <div class="d-flex align-items-center justify-content-between">
+                <div><small>Активных</small><h3 style="color:#10b981">{{ bstats.active or 0 }}</h3></div>
+                <div class="icon" style="background:linear-gradient(135deg,#10b981,#059669)"><i class="fas fa-user-check"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-sm-6">
+        <div class="stat-card">
+            <div class="d-flex align-items-center justify-content-between">
+                <div><small>Заблокировали</small><h3 style="color:#ef4444">{{ bstats.blocked or 0 }}</h3></div>
+                <div class="icon" style="background:linear-gradient(135deg,#ef4444,#dc2626)"><i class="fas fa-user-slash"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-sm-6">
+        <div class="stat-card">
+            <div class="d-flex align-items-center justify-content-between">
+                <div><small>Новых за 30 дней</small><h3 style="color:#3b82f6">{{ bstats.recent_30d or 0 }}</h3></div>
+                <div class="icon" style="background:linear-gradient(135deg,#3b82f6,#2563eb)"><i class="fas fa-calendar-plus"></i></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reports selector -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-8">
+        <div class="table-card">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <span><i class="fas fa-file-alt me-2"></i>Отчёт за период</span>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary active" onclick="loadReport('shift')">Смена</button>
+                    <button class="btn btn-outline-primary" onclick="loadReport('24h')">24ч</button>
+                    <button class="btn btn-outline-primary" onclick="loadReport('7d')">7 дней</button>
+                    <button class="btn btn-outline-primary" onclick="loadReport('30d')">30 дней</button>
+                </div>
+            </div>
+            <div class="p-3" id="reportContent">
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-spinner fa-spin me-2"></i>Загрузка...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Churn analysis -->
+    <div class="col-lg-4">
+        <div class="table-card h-100">
+            <div class="card-header"><i class="fas fa-chart-pie me-2"></i>Анализ оттока</div>
+            <div class="p-3">
+                {% if churn %}
+                    {% if churn is mapping %}
+                        {% for key, val in churn.items() %}
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>{{ key }}</span>
+                            <span class="fw-bold">{{ val }}</span>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted">{{ churn }}</p>
+                    {% endif %}
+                {% else %}
+                    <p class="text-muted text-center py-4">Нет данных об оттоке</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Referral leaders -->
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-medal me-2"></i>Топ рефералов за месяц</div>
+            <div class="p-3">
+                {% if leaders %}
+                <table class="table table-sm table-hover">
+                    <thead><tr><th>#</th><th>Пользователь</th><th class="text-end">Приглашено</th></tr></thead>
+                    <tbody>
+                    {% for l in leaders %}
+                    <tr>
+                        <td>{% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{{ loop.index }}{% endif %}</td>
+                        <td>
+                            <a href="/users/{{ l.user_id or l[0] }}" class="text-decoration-none">
+                                {{ l.first_name or l.username or l.user_id or l[0] or '—' }}
+                            </a>
+                        </td>
+                        <td class="text-end fw-bold">{{ l.count or l.referral_count or l[1] or 0 }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted text-center py-4">Нет данных</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Funnel -->
+    <div class="col-lg-6">
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-filter me-2"></i>Воронка пользователей</div>
+            <div class="p-3">
+                <canvas id="funnelChart" style="height:250px"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function loadReport(period){
+    const el=document.getElementById('reportContent');
+    el.innerHTML='<div class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin me-2"></i>Загрузка...</div>';
+    document.querySelectorAll('.btn-group .btn').forEach(b=>b.classList.remove('active'));
+    event.target.classList.add('active');
+
+    fetch('/api/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({period})})
+    .then(r=>r.json()).then(d=>{
+        const r=d.report||{};
+        const issued=r.issued||0, redeemed=r.redeemed||0;
+        const conv=issued>0?((redeemed/issued)*100).toFixed(1):0;
+        el.innerHTML=`
+            <div class="row g-3">
+                <div class="col-4 text-center">
+                    <div class="fw-bold" style="font-size:2rem;color:#6366f1">${issued}</div>
+                    <small class="text-muted">Купонов выдано</small>
+                </div>
+                <div class="col-4 text-center">
+                    <div class="fw-bold" style="font-size:2rem;color:#10b981">${redeemed}</div>
+                    <small class="text-muted">Погашено</small>
+                </div>
+                <div class="col-4 text-center">
+                    <div class="fw-bold" style="font-size:2rem;color:#f59e0b">${conv}%</div>
+                    <small class="text-muted">Конверсия</small>
+                </div>
+            </div>
+            <div class="text-muted mt-3" style="font-size:.8rem">
+                Период: ${new Date(d.start).toLocaleString('ru')} — ${new Date(d.end).toLocaleString('ru')}
+            </div>`;
+    }).catch(()=>{el.innerHTML='<p class="text-danger text-center">Ошибка загрузки</p>'});
+}
+loadReport('shift');
+
+// Funnel chart
+const total={{bstats.total or 0}}, active={{bstats.active or 0}}, blocked={{bstats.blocked or 0}};
+new Chart(document.getElementById('funnelChart'),{
+    type:'doughnut',
+    data:{
+        labels:['Активные','Заблокировали','Новые 30д'],
+        datasets:[{data:[active,blocked,{{bstats.recent_30d or 0}}],backgroundColor:['#10b981','#ef4444','#3b82f6'],borderWidth:0}]
+    },
+    options:{responsive:true,plugins:{legend:{position:'bottom'}}}
+});
+</script>
+{% endblock %}

@@ -1,0 +1,98 @@
+{% extends "full/base.html" %}
+{% block title %}Рассылки{% endblock %}
+
+{% block content %}
+<div class="page-h">
+    <h2><i class="fas fa-bullhorn me-2"></i>Рассылки</h2>
+    <p>Статистика аудитории для рассылок. Создание рассылок — через Telegram бота (команда /broadcast)</p>
+</div>
+
+<!-- Stats cards -->
+<div class="row g-3 mb-4">
+    <div class="col-xl-3 col-sm-6">
+        <div class="stat-card">
+            <div class="d-flex align-items-center justify-content-between">
+                <div><small>Всего в базе</small><h3>{{ stats.total or 0 }}</h3></div>
+                <div class="icon" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)"><i class="fas fa-users"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-sm-6">
+        <div class="stat-card">
+            <div class="d-flex align-items-center justify-content-between">
+                <div><small>Получат рассылку</small><h3 style="color:#10b981">{{ stats.active or 0 }}</h3></div>
+                <div class="icon" style="background:linear-gradient(135deg,#10b981,#059669)"><i class="fas fa-paper-plane"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-sm-6">
+        <div class="stat-card">
+            <div class="d-flex align-items-center justify-content-between">
+                <div><small>Заблокировали бота</small><h3 style="color:#ef4444">{{ stats.blocked or 0 }}</h3></div>
+                <div class="icon" style="background:linear-gradient(135deg,#ef4444,#dc2626)"><i class="fas fa-ban"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-sm-6">
+        <div class="stat-card">
+            <div class="d-flex align-items-center justify-content-between">
+                <div><small>Новых за 30 дней</small><h3 style="color:#3b82f6">{{ stats.recent_30d or 0 }}</h3></div>
+                <div class="icon" style="background:linear-gradient(135deg,#3b82f6,#2563eb)"><i class="fas fa-user-plus"></i></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Info -->
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-info-circle me-2"></i>Как отправить рассылку</div>
+            <div class="p-3">
+                <ol style="font-size:.95rem">
+                    <li class="mb-2">Откройте бота в Telegram</li>
+                    <li class="mb-2">Отправьте команду <code>/broadcast</code></li>
+                    <li class="mb-2">Нажмите <strong>«Создать рассылку»</strong></li>
+                    <li class="mb-2">Отправьте текст, фото, видео или документ</li>
+                    <li class="mb-2">Добавьте инлайн-кнопки (URL) — до 3 штук</li>
+                    <li class="mb-2">Протестируйте — бот отправит сообщение вам</li>
+                    <li class="mb-2">Подтвердите массовую рассылку</li>
+                </ol>
+                <div class="alert alert-info">
+                    <i class="fas fa-shield-alt me-2"></i>
+                    Рассылка доступна только для <strong>BOSS</strong> аккаунтов
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-chart-bar me-2"></i>Доставляемость</div>
+            <div class="p-3">
+                <canvas id="deliveryChart" style="height:250px"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const active={{stats.active or 0}}, blocked={{stats.blocked or 0}}, total={{stats.total or 0}};
+const delivRate = total > 0 ? ((active/total)*100).toFixed(1) : 0;
+new Chart(document.getElementById('deliveryChart'),{
+    type:'doughnut',
+    data:{
+        labels:[`Доставляемые (${active})`,`Заблокировали (${blocked})`],
+        datasets:[{data:[active,blocked],backgroundColor:['#10b981','#ef4444'],borderWidth:0,cutout:'65%'}]
+    },
+    options:{
+        responsive:true,
+        plugins:{
+            legend:{position:'bottom'},
+            tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.parsed} (${((ctx.parsed/total)*100).toFixed(1)}%)`}}
+        }
+    }
+});
+</script>
+{% endblock %}

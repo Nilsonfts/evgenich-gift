@@ -1,0 +1,111 @@
+{% extends "full/base.html" %}
+{% block title %}Ссылки{% endblock %}
+
+{% block content %}
+<div class="page-h">
+    <h2><i class="fas fa-link me-2"></i>Внешние ссылки</h2>
+    <p>Ссылки на соц. сети, контакты и внешние ресурсы</p>
+</div>
+
+<form method="POST" action="/links/update">
+    <div class="row g-4">
+        <!-- Main links -->
+        <div class="col-lg-6">
+            <div class="table-card h-100">
+                <div class="card-header"><i class="fas fa-globe me-1"></i>Основные</div>
+                <div class="p-3">
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fas fa-utensils me-1 text-primary"></i>Ссылка на меню</label>
+                        <input type="url" name="menu_url" class="form-control" value="{{ links.menu_url or '' }}" placeholder="https://...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fas fa-phone me-1 text-success"></i>Телефон</label>
+                        <input type="text" name="phone" class="form-control" value="{{ links.phone or '' }}" placeholder="+7 (999) 123-45-67">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fas fa-gift me-1 text-danger"></i>Карта лояльности</label>
+                        <input type="url" name="loyalty_url" class="form-control" value="{{ links.loyalty_url or '' }}" placeholder="https://...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fas fa-globe me-1 text-info"></i>Сайт</label>
+                        <input type="url" name="website" class="form-control" value="{{ links.website or '' }}" placeholder="https://...">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Social -->
+        <div class="col-lg-6">
+            <div class="table-card h-100">
+                <div class="card-header"><i class="fas fa-share-alt me-1"></i>Социальные сети</div>
+                <div class="p-3">
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fab fa-telegram me-1" style="color:#0088cc"></i>Telegram</label>
+                        <input type="text" name="telegram" class="form-control" value="{{ links.telegram or '' }}" placeholder="@username или https://t.me/...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fab fa-instagram me-1" style="color:#e4405f"></i>Instagram</label>
+                        <input type="text" name="instagram" class="form-control" value="{{ links.instagram or '' }}" placeholder="https://instagram.com/...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fab fa-vk me-1" style="color:#4a76a8"></i>VK</label>
+                        <input type="text" name="vk" class="form-control" value="{{ links.vk or '' }}" placeholder="https://vk.com/...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fab fa-whatsapp me-1" style="color:#25d366"></i>WhatsApp</label>
+                        <input type="text" name="whatsapp" class="form-control" value="{{ links.whatsapp or '' }}" placeholder="https://wa.me/...">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Custom links -->
+        <div class="col-12">
+            <div class="table-card">
+                <div class="card-header d-flex align-items-center justify-content-between">
+                    <span><i class="fas fa-plus-circle me-1"></i>Дополнительные ссылки</span>
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="addCustomLink()">
+                        <i class="fas fa-plus me-1"></i>Добавить
+                    </button>
+                </div>
+                <div class="p-3" id="customLinks">
+                    {% for key, val in links.items() if key not in ['menu_url','phone','loyalty_url','website','telegram','instagram','vk','whatsapp'] %}
+                    <div class="row mb-2 custom-link-row">
+                        <div class="col-4">
+                            <input type="text" name="custom_key[]" class="form-control form-control-sm" value="{{ key }}" placeholder="Название">
+                        </div>
+                        <div class="col-7">
+                            <input type="text" name="custom_val[]" class="form-control form-control-sm" value="{{ val }}" placeholder="URL или значение">
+                        </div>
+                        <div class="col-1">
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.custom-link-row').remove()"><i class="fas fa-times"></i></button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="text-end mt-4 mb-4">
+        <button type="submit" class="btn btn-primary btn-lg">
+            <i class="fas fa-save me-1"></i>Сохранить ссылки
+        </button>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function addCustomLink(){
+    const c=document.getElementById('customLinks');
+    const row=document.createElement('div');
+    row.className='row mb-2 custom-link-row';
+    row.innerHTML=`
+        <div class="col-4"><input type="text" name="custom_key[]" class="form-control form-control-sm" placeholder="Название"></div>
+        <div class="col-7"><input type="text" name="custom_val[]" class="form-control form-control-sm" placeholder="URL или значение"></div>
+        <div class="col-1"><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.custom-link-row').remove()"><i class="fas fa-times"></i></button></div>`;
+    c.appendChild(row);
+}
+</script>
+{% endblock %}

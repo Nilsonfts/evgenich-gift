@@ -1,0 +1,107 @@
+{% extends "full/base.html" %}
+{% block title %}Бары{% endblock %}
+
+{% block content %}
+<div class="page-h d-flex align-items-center justify-content-between flex-wrap">
+    <div>
+        <h2><i class="fas fa-store me-2"></i>Управление барами</h2>
+        <p>Список заведений для бронирования</p>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
+        <i class="fas fa-plus me-1"></i>Добавить бар
+    </button>
+</div>
+
+<div class="row g-3">
+    {% for bar in bars %}
+    <div class="col-lg-4 col-md-6">
+        <div class="table-card h-100">
+            <div class="card-header">
+                {{ bar.emoji or '🍷' }} {{ bar.name }}
+                <span class="badge bg-light text-dark float-end">{{ bar.code }}</span>
+            </div>
+            <div class="p-3">
+                <form method="POST" action="/bars/save">
+                    <input type="hidden" name="action" value="edit">
+                    <input type="hidden" name="callback_id" value="{{ bar.callback_id }}">
+
+                    <div class="mb-2">
+                        <label class="form-label">Название</label>
+                        <input type="text" name="name" class="form-control form-control-sm" value="{{ bar.name }}">
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-8">
+                            <label class="form-label">Код</label>
+                            <input type="text" name="code" class="form-control form-control-sm" value="{{ bar.code }}">
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label">Эмодзи</label>
+                            <input type="text" name="emoji" class="form-control form-control-sm" value="{{ bar.emoji }}">
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Телефон</label>
+                        <input type="text" name="phone" class="form-control form-control-sm" value="{{ bar.phone or '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Меню URL</label>
+                        <input type="url" name="menu_url" class="form-control form-control-sm" value="{{ bar.menu_url or '' }}">
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-sm btn-primary flex-fill"><i class="fas fa-save me-1"></i>Сохранить</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger"
+                                onclick="deleteBar('{{ bar.callback_id }}','{{ bar.name }}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Add modal -->
+<div class="modal fade" id="addModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Добавить бар</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form method="POST" action="/bars/save">
+                <input type="hidden" name="action" value="add">
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Название</label><input type="text" name="name" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label">Код</label><input type="text" name="code" class="form-control" required placeholder="ЕВГ_СПБ"></div>
+                    <div class="mb-3"><label class="form-label">Callback ID</label><input type="text" name="callback_id" class="form-control" required placeholder="bar_name"></div>
+                    <div class="row mb-3">
+                        <div class="col-6"><label class="form-label">Эмодзи</label><input type="text" name="emoji" class="form-control" value="🍷"></div>
+                        <div class="col-6"><label class="form-label">Телефон</label><input type="text" name="phone" class="form-control"></div>
+                    </div>
+                    <div class="mb-3"><label class="form-label">Меню URL</label><input type="url" name="menu_url" class="form-control"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-plus me-1"></i>Добавить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete form -->
+<form id="deleteForm" method="POST" action="/bars/save" style="display:none">
+    <input type="hidden" name="action" value="delete">
+    <input type="hidden" name="callback_id" id="delBarId">
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function deleteBar(id, name){
+    if(confirm(`Удалить бар «${name}»?`)){
+        document.getElementById('delBarId').value=id;
+        document.getElementById('deleteForm').submit();
+    }
+}
+</script>
+{% endblock %}

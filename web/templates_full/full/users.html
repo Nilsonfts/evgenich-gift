@@ -1,0 +1,119 @@
+{% extends "full/base.html" %}
+{% block title %}Пользователи{% endblock %}
+
+{% block content %}
+<div class="page-h d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+        <h2><i class="fas fa-users me-2"></i>Пользователи</h2>
+        <p>Всего найдено: {{ total_users }}</p>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="table-card mb-4">
+    <div class="p-3">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label">Поиск (ID / @username / имя)</label>
+                <input type="text" name="q" class="form-control" value="{{ search }}" placeholder="Введите запрос...">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Статус</label>
+                <select name="status" class="form-select">
+                    <option value="">Все</option>
+                    <option value="registered" {{ 'selected' if status_filter=='registered' }}>Зарегистрирован ({{ status_counts.get('registered',0) }})</option>
+                    <option value="issued" {{ 'selected' if status_filter=='issued' }}>Купон выдан ({{ status_counts.get('issued',0) }})</option>
+                    <option value="redeemed" {{ 'selected' if status_filter=='redeemed' }}>Погашено ({{ status_counts.get('redeemed',0) }})</option>
+                    <option value="redeemed_and_left" {{ 'selected' if status_filter=='redeemed_and_left' }}>Отписался ({{ status_counts.get('redeemed_and_left',0) }})</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100"><i class="fas fa-search me-1"></i>Найти</button>
+            </div>
+            <div class="col-md-2">
+                <a href="/users" class="btn btn-outline-primary w-100">Сброс</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Status pills -->
+<div class="d-flex flex-wrap gap-2 mb-3">
+    {% for st, cnt in status_counts.items() %}
+    <a href="/users?status={{ st }}" class="badge text-decoration-none
+        {% if st == 'registered' %}bg-info
+        {% elif st == 'issued' %}bg-warning text-dark
+        {% elif st == 'redeemed' %}bg-success
+        {% elif st == 'redeemed_and_left' %}bg-danger
+        {% else %}bg-secondary{% endif %}"
+        style="font-size:.85rem;padding:.5rem .8rem">
+        {{ st }}: {{ cnt }}
+    </a>
+    {% endfor %}
+</div>
+
+<!-- Table -->
+<div class="table-card">
+    <div style="overflow-x:auto">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Имя</th>
+                    <th>Статус</th>
+                    <th>Источник</th>
+                    <th>Дата</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in users %}
+                <tr>
+                    <td><code>{{ u.user_id }}</code></td>
+                    <td>{% if u.username %}<a href="https://t.me/{{ u.username }}" target="_blank">@{{ u.username }}</a>{% else %}—{% endif %}</td>
+                    <td>{{ u.first_name or u.real_name or '—' }}</td>
+                    <td>
+                        {% if u.status == 'registered' %}<span class="badge bg-info badge-status badge-registered">Зарег.</span>
+                        {% elif u.status == 'issued' %}<span class="badge bg-warning text-dark badge-status badge-issued">Купон</span>
+                        {% elif u.status == 'redeemed' %}<span class="badge bg-success badge-status badge-redeemed">Погашено</span>
+                        {% elif u.status == 'redeemed_and_left' %}<span class="badge bg-danger badge-status badge-left">Отписался</span>
+                        {% else %}<span class="badge bg-secondary">{{ u.status or '—' }}</span>{% endif %}
+                    </td>
+                    <td><span class="text-muted">{{ u.source or '—' }}</span></td>
+                    <td style="font-size:.8rem;color:#64748b">{{ u.signup_date or u.register_date or '—' }}</td>
+                    <td>
+                        <a href="/users/{{ u.user_id }}" class="btn btn-sm btn-outline-primary"><i class="fas fa-eye"></i></a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted py-4">Пользователи не найдены</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<nav class="mt-3">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {{ 'disabled' if page <= 1 }}">
+            <a class="page-link" href="?page={{ page-1 }}&q={{ search }}&status={{ status_filter }}">‹</a>
+        </li>
+        {% for p in range(1, total_pages+1) %}
+            {% if p == page or p <= 3 or p >= total_pages-2 or (p >= page-1 and p <= page+1) %}
+            <li class="page-item {{ 'active' if p == page }}">
+                <a class="page-link" href="?page={{ p }}&q={{ search }}&status={{ status_filter }}">{{ p }}</a>
+            </li>
+            {% elif p == 4 or p == total_pages-3 %}
+            <li class="page-item disabled"><span class="page-link">…</span></li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {{ 'disabled' if page >= total_pages }}">
+            <a class="page-link" href="?page={{ page+1 }}&q={{ search }}&status={{ status_filter }}">›</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
