@@ -21,10 +21,6 @@ if os.path.exists('.env.web'):
                 key, value = line.strip().split('=', 1)
                 os.environ[key] = value
 
-# Исправляем некоторые переменные для Railway
-if os.getenv('MENU_UR'):  # Опечатка в переменной
-    os.environ['MENU_URL'] = os.getenv('MENU_UR')
-    
 # Исправляем JSON для Google Credentials (убираем лишние кавычки)
 if os.getenv('GOOGLE_CREDENTIALS_JSON'):
     credentials = os.getenv('GOOGLE_CREDENTIALS_JSON')

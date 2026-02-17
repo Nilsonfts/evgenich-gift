@@ -45,21 +45,6 @@ class IntentDetector:
             ],
             "weight": 1.0
         },
-        "menu": {
-            "keywords": [
-                r"\bменю",
-                r"\bчто\s+есть",
-                r"\bчто\s+у\s+вас",
-                r"\bблюд",
-                r"\bнастойк",
-                r"\bцен",
-                r"\bсколько\s+стоит",
-                r"\bпрайс",
-                r"\bеда",
-                r"\bнапитк",
-            ],
-            "weight": 0.9
-        },
         "address": {
             "keywords": [
                 r"\bадрес",
@@ -266,15 +251,7 @@ class IntentDetector:
             if "рубинштейн" in text or "рубин" in text:
                 entities["bar_location"] = "rubinstein"
         
-        # Извлечение пожелания по блюдам
-        if intent == "menu":
-            if "настойк" in text:
-                entities["category"] = "настойки"
-            elif "чебурек" in text:
-                entities["category"] = "чебуреки"
-            elif "закуск" in text:
-                entities["category"] = "закуски"
-        
+
         return entities
     
     def is_question(self, text: str) -> bool:
@@ -311,7 +288,6 @@ class IntentDetector:
             "event": 4,          # События
             "address": 5,        # Адрес
             "work_hours": 6,     # Часы работы
-            "menu": 7,           # Меню
             "price_inquiry": 8,  # Цены
             "karaoke": 9,        # Караоке
             "greeting": 10,      # Приветствие

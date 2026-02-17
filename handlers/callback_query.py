@@ -9,8 +9,6 @@ import pytz # <--- ИЗМЕНЕНИЕ: Добавили библиотеку д�
 # Импортируем конфиги, утилиты, тексты и клавиатуры
 from core.config import CHANNEL_ID, CHANNEL_ID_MSK, THANK_YOU_STICKER_ID, get_channel_id_for_user
 import core.database as database
-from modules.menu_nastoiki import MENU_DATA
-from modules.food_menu import FOOD_MENU_DATA
 import texts
 import keyboards
 
@@ -39,16 +37,6 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             handle_redeem_reward(call)
         elif call.data.startswith("feedback_"):
             handle_feedback_rating(call)
-        elif call.data == "main_menu_choice":
-            callback_main_menu_choice(call)
-        elif call.data == "menu_nastoiki_main":
-            callback_menu_nastoiki_main(call)
-        elif call.data.startswith("menu_category_"):
-            callback_menu_category(call)
-        elif call.data == "menu_food_main":
-            callback_menu_food_main(call)
-        elif call.data.startswith("food_category_"):
-            callback_food_category(call)
         elif call.data.startswith("concept_"):
             callback_concept_choice(call)
         elif call.data.startswith("quiz_answer_"):
@@ -172,90 +160,6 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         # database.log_ai_feedback(user_id, "feedback_after_visit", "N/A", rating)
         logging.info(f"Пользователь {user_id} оставил оценку: {rating}")
 
-    # --- Обработчики для навигации по меню ---
-
-    def callback_main_menu_choice(call: types.CallbackQuery):
-        """Возвращает к главному выбору меню (Настойки/Кухня)."""
-        bot.answer_callback_query(call.id)
-        try:
-            bot.edit_message_text(
-                texts.MENU_PROMPT_TEXT,
-                call.message.chat.id,
-                call.message.message_id,
-                reply_markup=keyboards.get_menu_choice_keyboard()
-            )
-        except ApiTelegramException as e:
-            logging.warning(f"Не удалось вернуться к выбору меню: {e}")
-            
-    def callback_menu_nastoiki_main(call: types.CallbackQuery):
-        """Показывает главное меню с категориями настоек."""
-        bot.answer_callback_query(call.id)
-        try:
-            bot.edit_message_text(
-                texts.NASTOIKI_MENU_HEADER,
-                call.message.chat.id, 
-                call.message.message_id, 
-                reply_markup=keyboards.get_nastoiki_categories_keyboard(), 
-                parse_mode="Markdown"
-            )
-        except ApiTelegramException as e:
-             logging.warning(f"Не удалось отредактировать сообщение меню (возможно, двойное нажатие): {e}")
-
-    def callback_menu_category(call: types.CallbackQuery):
-        """Показывает список настоек в выбранной категории."""
-        bot.answer_callback_query(call.id)
-        category_index = int(call.data.split("_")[2])
-        category = MENU_DATA[category_index]
-        
-        text = f"**{category['title']}**\n_{category.get('category_narrative', '')}_\n\n"
-        for item in category['items']:
-            text += f"• **{item['name']}** — {item['price']}\n_{item['narrative_desc']}_\n\n"
-        
-        try:
-            bot.edit_message_text(
-                text, 
-                call.message.chat.id, 
-                call.message.message_id, 
-                reply_markup=keyboards.get_nastoiki_items_keyboard(), 
-                parse_mode="Markdown"
-            )
-        except ApiTelegramException as e:
-            logging.warning(f"Не удалось отредактировать сообщение категории (возможно, двойное нажатие): {e}")
-
-    def callback_menu_food_main(call: types.CallbackQuery):
-        """Показывает главное меню с категориями кухни."""
-        bot.answer_callback_query(call.id)
-        try:
-            bot.edit_message_text(
-                texts.FOOD_MENU_HEADER,
-                call.message.chat.id, 
-                call.message.message_id, 
-                reply_markup=keyboards.get_food_categories_keyboard(), 
-                parse_mode="Markdown"
-            )
-        except ApiTelegramException as e:
-            logging.warning(f"Не удалось отредактировать сообщение меню еды (возможно, двойное нажатие): {e}")
-
-    def callback_food_category(call: types.CallbackQuery):
-        """Показывает список блюд в выбранной категории."""
-        bot.answer_callback_query(call.id)
-        category_name = call.data.replace("food_category_", "")
-        category_items = FOOD_MENU_DATA.get(category_name, [])
-        
-        text = f"**{category_name}**\n\n"
-        for item in category_items:
-            text += f"• {item['name']} - **{item['price']}₽**\n"
-        
-        try:
-            bot.edit_message_text(
-                text, 
-                call.message.chat.id, 
-                call.message.message_id, 
-                reply_markup=keyboards.get_food_items_keyboard(), 
-                parse_mode="Markdown"
-            )
-        except ApiTelegramException as e:
-            logging.warning(f"Не удалось отредактировать сообщение категории еды (возможно, двойное нажатие): {e}")
 
     # --- Обработчики концепций чата ---
     def callback_concept_choice(call: types.CallbackQuery):
@@ -418,9 +322,6 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             keyboard.row(
                 types.InlineKeyboardButton("📍 Забронировать стол", callback_data="start_booking")
             )
-            keyboard.row(
-                types.InlineKeyboardButton("📖 Посмотреть меню", callback_data="main_menu_choice")
-            )
             
             bot.edit_message_text(
                 response_text,
@@ -506,9 +407,6 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             )
             
             keyboard = types.InlineKeyboardMarkup()
-            keyboard.row(
-                types.InlineKeyboardButton("📖 Меню", callback_data="main_menu_choice")
-            )
             
             bot.edit_message_text(
                 response_text,

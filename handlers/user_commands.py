@@ -526,22 +526,6 @@ def register_user_command_handlers(bot):
             text += "Поделись сейчас! 🎉"
             bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
-    @bot.message_handler(commands=['menu'])
-    @bot.message_handler(func=lambda message: message.text == "📖 Меню")
-    def handle_menu_command(message: types.Message):
-        # В групповых чатах меню только для боссов/админов
-        if message.chat.type != 'private':
-            from core.config import ALL_ADMINS
-            if message.from_user.id not in ALL_ADMINS:
-                bot.reply_to(message, "🔒 Меню доступно только в личных сообщениях! Напиши мне в личку: @evgenichspbbot")
-                return
-        
-        bot.send_message(
-            message.chat.id,
-            texts.MENU_PROMPT_TEXT,
-            reply_markup=keyboards.get_menu_choice_keyboard()
-        )
-
     @bot.message_handler(func=lambda message: message.text == "� Карта лояльности")
     def handle_loyalty_card(message: types.Message):
         """Обрабатывает кнопку карты лояльности — отправляет ссылку на регистрацию и передаёт контакт гостя."""

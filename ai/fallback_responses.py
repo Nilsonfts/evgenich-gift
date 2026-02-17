@@ -2,12 +2,10 @@
 """
 Система запасных ответов (fallback) при сбоях AI
 Простые, быстрые ответы без вызова OpenAI API
-Использует структурированные данные из menu_knowledge.py
 """
 import logging
 import random
 from typing import Optional
-from ai.menu_knowledge import get_nastojki_description, get_food_description, get_menu_summary
 
 logger = logging.getLogger("evgenich_ai")
 
@@ -95,11 +93,6 @@ class FallbackResponses:
         "work_hours": [
             "С 12 до 6 утра, каждый день 🌙",
             "12:00 - 06:00 😊",
-        ],
-        
-        "menu": [
-            "Настойки авторские, чебуреки, драники 🥃",
-            "Настойки, закуски типа чебуреков и драников 😊",
         ],
         
         "price_inquiry": [
@@ -219,18 +212,6 @@ class FallbackResponses:
                         f"Хочешь забронировать {detail}? 😊\n\n"
                         f"Сейчас запущу форму бронирования!\n\n[START_BOOKING_FLOW]"
                     )
-        
-        # Для меню - конкретная категория
-        if intent == "menu" and "category" in entities:
-            category = entities["category"]
-            if category == "настойки":
-                return get_nastojki_description()
-            elif category == "чебуреки":
-                return get_food_description("чебуреки")
-            elif category == "еда":
-                return get_food_description()
-            else:
-                return get_menu_summary()
         
         return response
     

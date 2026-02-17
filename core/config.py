@@ -120,7 +120,6 @@ THANK_YOU_STICKER_ID = os.getenv("THANK_YOU_STICKER_ID")
 FRIEND_BONUS_STICKER_ID = os.getenv("FRIEND_BONUS_STICKER_ID")
 
 # --- Ссылки ---
-MENU_URL = os.getenv("MENU_URL")
 
 # --- База данных ---
 DATABASE_PATH = os.getenv("DATABASE_PATH", "data/evgenich_data.db")
@@ -170,8 +169,6 @@ if not OPENAI_API_KEY:
     print("⚠️  OPENAI_API_KEY не установлен - AI функции отключены")
 if not REPORT_CHAT_ID:
     print("⚠️  REPORT_CHAT_ID не установлен - отчеты не будут отправляться")
-if not MENU_URL:
-    print("⚠️  MENU_URL не установлен - ссылка на меню не будет работать")
 
 # Логирование статуса подключений
 print(f"✅ PostgreSQL: {'Включен (DATABASE_URL установлен)' if USE_POSTGRES and DATABASE_URL else 'Отключен или неполная конфигурация'}")

@@ -106,22 +106,6 @@ class NewsletterButtonsManager:
             else:
                 self.bot.send_message(message.chat.id, "Ошибка добавления кнопки")
                 
-        elif template == 'menu':
-            # Добавляем кнопку "Посмотреть меню"
-            button_id = database.add_newsletter_button(
-                newsletter_id=newsletter_id,
-                text="🍽 Посмотреть меню",
-                url="https://evgenich.ru/menu?utm_source=telegram&utm_medium=newsletter&utm_campaign=menu_button",
-                utm_source="telegram",
-                utm_medium="newsletter",
-                utm_campaign="menu_button"
-            )
-            
-            if button_id:
-                self._update_buttons_display(message, newsletter_id, "Добавлена кнопка 'Посмотреть меню'")
-            else:
-                self.bot.send_message(message.chat.id, "Ошибка добавления кнопки")
-                
         elif template == 'promotion':
             # Добавляем кнопку "Узнать подробности"
             button_id = database.add_newsletter_button(

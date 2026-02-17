@@ -1,9 +1,7 @@
 # keyboards.py
 from telebot import types
-from core.config import ALL_ADMINS, ALL_BOOKING_STAFF, MENU_URL
+from core.config import ALL_ADMINS, ALL_BOOKING_STAFF
 from core.admin_config import get_bars, get_links
-from modules.menu_nastoiki import MENU_DATA
-from modules.food_menu import FOOD_MENU_DATA
 
 # === ОСНОВНЫЕ REPLY-КЛАВИАТУРЫ ===
 
@@ -71,49 +69,6 @@ def get_redeem_keyboard():
     redeem_button = types.InlineKeyboardButton(text="🔒 НАЛИТЬ ПРИ БАРМЕНЕ", callback_data="redeem_reward")
     redeem_keyboard.add(redeem_button)
     return redeem_keyboard
-
-# === INLINE-КЛАВИАТУРЫ ДЛЯ МЕНЮ ===
-
-def get_menu_choice_keyboard():
-    """Возвращает клавиатуру для выбора типа меню (настойки или кухня)."""
-    keyboard = types.InlineKeyboardMarkup(row_width=1)
-    nastoiki_button = types.InlineKeyboardButton(text="🥃 Меню настоек", callback_data="menu_nastoiki_main")
-    food_button = types.InlineKeyboardButton(text="🍔 Меню кухни", callback_data="menu_food_main")
-    full_menu_button = types.InlineKeyboardButton(text="📄 Полное меню (Сайт)", url=MENU_URL)
-    keyboard.add(nastoiki_button, food_button, full_menu_button)
-    return keyboard
-
-def get_nastoiki_categories_keyboard():
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
-    buttons = [
-        types.InlineKeyboardButton(text=category['title'], callback_data=f"menu_category_{index}")
-        for index, category in enumerate(MENU_DATA)
-    ]
-    keyboard.add(*buttons)
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ Назад к выбору меню", callback_data="main_menu_choice"))
-    return keyboard
-
-def get_nastoiki_items_keyboard():
-    keyboard = types.InlineKeyboardMarkup()
-    back_button = types.InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="menu_nastoiki_main")
-    keyboard.add(back_button)
-    return keyboard
-
-def get_food_categories_keyboard():
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
-    buttons = [
-        types.InlineKeyboardButton(text=category, callback_data=f"food_category_{category}")
-        for category in FOOD_MENU_DATA.keys()
-    ]
-    keyboard.add(*buttons)
-    keyboard.add(types.InlineKeyboardButton(text="⬅️ Назад к выбору меню", callback_data="main_menu_choice"))
-    return keyboard
-
-def get_food_items_keyboard():
-    keyboard = types.InlineKeyboardMarkup()
-    back_button = types.InlineKeyboardButton(text="⬅️ Назад к категориям кухни", callback_data="menu_food_main")
-    keyboard.add(back_button)
-    return keyboard
 
 # === INLINE-КЛАВИАТУРЫ ДЛЯ БРОНИРОВАНИЯ ===
 
@@ -402,7 +357,6 @@ def get_button_templates_menu(newsletter_id: int):
     keyboard.add(
         types.InlineKeyboardButton("📍 Забронировать стол", callback_data=f"admin_button_template_{newsletter_id}_booking"),
         types.InlineKeyboardButton("🌐 Перейти на сайт", callback_data=f"admin_button_template_{newsletter_id}_website"),
-        types.InlineKeyboardButton("📖 Меню", callback_data=f"admin_button_template_{newsletter_id}_menu"),
         types.InlineKeyboardButton("🎯 Своя кнопка", callback_data=f"admin_button_template_{newsletter_id}_custom")
     )
     keyboard.add(

@@ -52,9 +52,6 @@ def send_referral_reward_notification(user_id, reward_count, reward_code):
             types.InlineKeyboardButton("🥃 Получить награду", callback_data="claim_reward"),
             types.InlineKeyboardButton("📍 Забронировать стол", callback_data="start_booking")
         )
-        keyboard.row(
-            types.InlineKeyboardButton("📖 Посмотреть меню", callback_data="main_menu_choice")
-        )
         
         # Отправляем уведомление
         notification_bot.send_message(
@@ -161,7 +158,6 @@ def check_new_referral_completions():
                 )
                 keyboard.row(
                     types.InlineKeyboardButton("🤝 Пригласить еще друзей", callback_data="show_referral_link"),
-                    types.InlineKeyboardButton("📖 Меню", callback_data="main_menu_choice")
                 )
                 
                 notification_bot.send_message(
