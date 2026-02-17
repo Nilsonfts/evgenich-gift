@@ -6,7 +6,7 @@ from telebot import types
 from telebot.apihelper import ApiTelegramException
 import pytz
 
-from core.config import ALL_ADMINS
+from core.config import ALL_ADMINS, BOSS_IDS
 import core.database as database
 import texts
 import keyboards
@@ -430,6 +430,10 @@ def register_admin_handlers(bot):
             elif action == 'admin_menu_content':
                 bot.edit_message_text("📝 **Управление контентом**", call.message.chat.id, call.message.message_id, reply_markup=keyboards.get_admin_content_menu())
             elif action == 'admin_menu_broadcasts':
+                # Рассылки — только для BOSS
+                if call.from_user.id not in (BOSS_IDS or []):
+                    bot.answer_callback_query(call.id, "⛔ Рассылки доступны только боссу", show_alert=True)
+                    return
                 # Показываем меню рассылок с базовой статистикой
                 stats = database.get_broadcast_statistics()
                 
