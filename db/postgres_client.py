@@ -33,6 +33,7 @@ class PostgresClient:
         
         self._init_engine()
         self._define_tables()
+        self.create_tables()  # Миграции: создание таблиц + добавление недостающих колонок
     
     def _init_engine(self):
         """Инициализирует SQLAlchemy engine."""
@@ -892,66 +893,50 @@ class PostgresClient:
 
     def get_all_users_for_broadcast(self):
         """
-        Получает список всех пользователей для рассылки
+        Получает список всех пользователей для рассылки (raw SQL для надёжности)
         """
         try:
             with self.engine.connect() as connection:
                 has_blocked = self._has_blocked_column(connection)
 
                 if has_blocked:
-                    stmt = select(
-                        self.users_table.c.user_id,
-                        self.users_table.c.username,
-                        self.users_table.c.first_name,
-                        self.users_table.c.register_date
-                    ).where(
-                        sa.and_(
-                            self.users_table.c.user_id.isnot(None),
-                            sa.or_(
-                                self.users_table.c.blocked.is_(None),
-                                self.users_table.c.blocked == 0
-                            )
-                        )
-                    ).order_by(self.users_table.c.register_date.desc())
+                    sql = sa.text(
+                        "SELECT user_id, username, first_name "
+                        "FROM users WHERE user_id IS NOT NULL "
+                        "AND (blocked IS NULL OR blocked = 0)"
+                    )
                 else:
-                    # Без колонки blocked — берём всех
-                    stmt = select(
-                        self.users_table.c.user_id,
-                        self.users_table.c.username,
-                        self.users_table.c.first_name,
-                        self.users_table.c.register_date
-                    ).where(
-                        self.users_table.c.user_id.isnot(None)
-                    ).order_by(self.users_table.c.register_date.desc())
+                    sql = sa.text(
+                        "SELECT user_id, username, first_name "
+                        "FROM users WHERE user_id IS NOT NULL"
+                    )
 
-                result = connection.execute(stmt).fetchall()
+                result = connection.execute(sql).fetchall()
                 
                 users = []
                 for row in result:
-                    user_id, username, first_name, signup_date = row
                     users.append({
-                        'user_id': user_id,
-                        'username': username,
-                        'first_name': first_name,
-                        'signup_date': signup_date.isoformat() if signup_date else None
+                        'user_id': row[0],
+                        'username': row[1],
+                        'first_name': row[2],
+                        'signup_date': None
                     })
                 
                 logging.info(f"PostgreSQL | Найдено {len(users)} пользователей для рассылки")
                 return users
                 
         except Exception as e:
-            logging.error(f"PostgreSQL | Ошибка получения пользователей для рассылки: {e}")
+            logging.error(f"PostgreSQL | Ошибка получения пользователей для рассылки: {e}", exc_info=True)
             return []
 
     def mark_user_blocked(self, user_id):
         """
-        Отмечает пользователя как заблокировавшего бота
+        Отмечает пользователя как заблокировавшего бота (raw SQL)
         """
         try:
             with self.engine.connect() as connection:
                 has_blocked = self._has_blocked_column(connection)
                 if not has_blocked:
-                    # Создаём колонку на лету
                     try:
                         connection.execute(sa.text("ALTER TABLE users ADD COLUMN blocked INTEGER DEFAULT 0"))
                         connection.execute(sa.text("ALTER TABLE users ADD COLUMN block_date TIMESTAMP"))
@@ -960,14 +945,10 @@ class PostgresClient:
                     except Exception:
                         pass
 
-                stmt = update(self.users_table).where(
-                    self.users_table.c.user_id == user_id
-                ).values(
-                    blocked=1,
-                    block_date=datetime.datetime.now(pytz.utc)
+                result = connection.execute(
+                    sa.text("UPDATE users SET blocked = 1, block_date = NOW() WHERE user_id = :uid"),
+                    {"uid": user_id}
                 )
-                
-                result = connection.execute(stmt)
                 connection.commit()
                 
                 if result.rowcount > 0:
@@ -985,47 +966,58 @@ class PostgresClient:
         """
         try:
             with self.engine.connect() as connection:
+                # Общее количество пользователей — raw SQL для надёжности
+                try:
+                    result = connection.execute(sa.text(
+                        "SELECT COUNT(*) FROM users WHERE user_id IS NOT NULL"
+                    ))
+                    total_users = result.scalar() or 0
+                except Exception as e:
+                    logging.error(f"PostgreSQL | Ошибка подсчёта total users: {e}")
+                    total_users = 0
+
+                # Blocked/Active
                 has_blocked = self._has_blocked_column(connection)
-
-                # Общее количество пользователей
-                stmt = select(sa.func.count()).select_from(self.users_table).where(
-                    self.users_table.c.user_id.isnot(None)
-                )
-                total_users = connection.execute(stmt).scalar() or 0
-
                 if has_blocked:
-                    # Активные пользователи (не заблокировавшие)
-                    stmt = select(sa.func.count()).select_from(self.users_table).where(
-                        sa.and_(
-                            self.users_table.c.user_id.isnot(None),
-                            sa.or_(
-                                self.users_table.c.blocked.is_(None),
-                                self.users_table.c.blocked == 0
-                            )
-                        )
-                    )
-                    active_users = connection.execute(stmt).scalar() or 0
+                    try:
+                        result = connection.execute(sa.text(
+                            "SELECT COUNT(*) FROM users WHERE user_id IS NOT NULL AND (blocked IS NULL OR blocked = 0)"
+                        ))
+                        active_users = result.scalar() or 0
 
-                    # Заблокировавшие бота
-                    stmt = select(sa.func.count()).select_from(self.users_table).where(
-                        self.users_table.c.blocked == 1
-                    )
-                    blocked_users = connection.execute(stmt).scalar() or 0
+                        result = connection.execute(sa.text(
+                            "SELECT COUNT(*) FROM users WHERE blocked = 1"
+                        ))
+                        blocked_users = result.scalar() or 0
+                    except Exception as e:
+                        logging.warning(f"PostgreSQL | Ошибка подсчёта blocked: {e}")
+                        active_users = total_users
+                        blocked_users = 0
                 else:
-                    # Без колонки blocked: все активны
                     active_users = total_users
                     blocked_users = 0
 
                 # Пользователи за последние 30 дней
-                from datetime import timedelta
-                thirty_days_ago = datetime.datetime.now(pytz.utc) - timedelta(days=30)
-                stmt = select(sa.func.count()).select_from(self.users_table).where(
-                    sa.and_(
-                        self.users_table.c.user_id.isnot(None),
-                        self.users_table.c.register_date >= thirty_days_ago
-                    )
-                )
-                recent_users = connection.execute(stmt).scalar() or 0
+                recent_users = 0
+                # Определяем имя колонки даты регистрации
+                for date_col in ['register_date', 'signup_date']:
+                    try:
+                        check = connection.execute(sa.text(
+                            f"SELECT column_name FROM information_schema.columns "
+                            f"WHERE table_name = 'users' AND column_name = '{date_col}'"
+                        ))
+                        if check.fetchone():
+                            result = connection.execute(sa.text(
+                                f"SELECT COUNT(*) FROM users WHERE user_id IS NOT NULL "
+                                f"AND {date_col} >= NOW() - INTERVAL '30 days'"
+                            ))
+                            recent_users = result.scalar() or 0
+                            break
+                    except Exception as e:
+                        logging.warning(f"PostgreSQL | Ошибка recent_30d ({date_col}): {e}")
+                        continue
+
+                logging.info(f"PostgreSQL | Статистика: total={total_users}, active={active_users}, blocked={blocked_users}, recent={recent_users}")
 
                 return {
                     'total': total_users,
@@ -1035,5 +1027,5 @@ class PostgresClient:
                 }
 
         except Exception as e:
-            logging.error(f"PostgreSQL | Ошибка получения статистики рассылки: {e}")
+            logging.error(f"PostgreSQL | Ошибка получения статистики рассылки: {e}", exc_info=True)
             return None
