@@ -526,7 +526,7 @@ def register_user_command_handlers(bot):
             text += "Поделись сейчас! 🎉"
             bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
-    @bot.message_handler(func=lambda message: message.text == "� Карта лояльности")
+    @bot.message_handler(func=lambda message: message.text == "🎁 Карта лояльности")
     def handle_loyalty_card(message: types.Message):
         """Обрабатывает кнопку карты лояльности — отправляет ссылку на регистрацию и передаёт контакт гостя."""
         if message.chat.type != 'private':
@@ -580,7 +580,7 @@ def register_user_command_handlers(bot):
         except Exception as e:
             logging.error(f"Ошибка обработки контакта лояльности: {e}")
 
-    @bot.message_handler(func=lambda message: message.text == "�🎮 Игры и развлечения")
+    @bot.message_handler(func=lambda message: message.text == "🎮 Игры и развлечения")
     def handle_games_button(message: types.Message):
         """Обрабатывает кнопку игр и развлечений."""
         # В групповых чатах игры только для боссов/админов
