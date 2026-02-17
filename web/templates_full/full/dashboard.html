@@ -14,7 +14,7 @@
             <div class="d-flex align-items-center justify-content-between">
                 <div>
                     <small>Всего пользователей</small>
-                    <h3>{{ total_users }}</h3>
+                    <h3 id="total_users">{{ total_users }}</h3>
                 </div>
                 <div class="icon" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)"><i class="fas fa-users"></i></div>
             </div>
@@ -25,7 +25,7 @@
             <div class="d-flex align-items-center justify-content-between">
                 <div>
                     <small>Активных (рассылки)</small>
-                    <h3>{{ active_users }}</h3>
+                    <h3 id="active_users">{{ active_users }}</h3>
                 </div>
                 <div class="icon" style="background:linear-gradient(135deg,#10b981,#059669)"><i class="fas fa-check-circle"></i></div>
             </div>
@@ -36,7 +36,7 @@
             <div class="d-flex align-items-center justify-content-between">
                 <div>
                     <small>Заблокировали бота</small>
-                    <h3>{{ blocked_users }}</h3>
+                    <h3 id="blocked_users">{{ blocked_users }}</h3>
                 </div>
                 <div class="icon" style="background:linear-gradient(135deg,#ef4444,#dc2626)"><i class="fas fa-ban"></i></div>
             </div>
@@ -47,7 +47,7 @@
             <div class="d-flex align-items-center justify-content-between">
                 <div>
                     <small>Новых за 30 дней</small>
-                    <h3>{{ recent_30d }}</h3>
+                    <h3 id="recent_30d">{{ recent_30d }}</h3>
                 </div>
                 <div class="icon" style="background:linear-gradient(135deg,#f59e0b,#d97706)"><i class="fas fa-user-plus"></i></div>
             </div>
@@ -62,7 +62,7 @@
             <div class="d-flex align-items-center justify-content-between">
                 <div>
                     <small>Купонов выдано (смена)</small>
-                    <h3 style="color:#6366f1">{{ issued_today }}</h3>
+                    <h3 id="issued_today" style="color:#6366f1">{{ issued_today }}</h3>
                 </div>
                 <div class="icon" style="background:linear-gradient(135deg,#6366f1,#818cf8)"><i class="fas fa-ticket-alt"></i></div>
             </div>
@@ -73,7 +73,7 @@
             <div class="d-flex align-items-center justify-content-between">
                 <div>
                     <small>Настоек погашено (смена)</small>
-                    <h3 style="color:#10b981">{{ redeemed_today }}</h3>
+                    <h3 id="redeemed_today" style="color:#10b981">{{ redeemed_today }}</h3>
                 </div>
                 <div class="icon" style="background:linear-gradient(135deg,#10b981,#34d399)"><i class="fas fa-glass-cheers"></i></div>
             </div>
@@ -84,7 +84,7 @@
             <div class="d-flex align-items-center justify-content-between">
                 <div>
                     <small>Конверсия</small>
-                    <h3 style="color:#f59e0b">{{ conversion }}%</h3>
+                    <h3 id="conversion" style="color:#f59e0b">{{ conversion }}%</h3>
                 </div>
                 <div class="icon" style="background:linear-gradient(135deg,#f59e0b,#fbbf24)"><i class="fas fa-percentage"></i></div>
             </div>
@@ -134,7 +134,7 @@
                     {% for a in recent_activities[:15] %}
                     <tr>
                         <td>
-                            <a href="/users/{{ a.user_id or a.get('user_id','') }}" class="text-decoration-none">
+                            <a href="/users/{{ a.user_id or '' }}" class="text-decoration-none">
                                 {{ a.first_name or a.username or a.user_id or '—' }}
                             </a>
                         </td>
@@ -162,7 +162,21 @@
 // Auto refresh stats every 60 sec
 setInterval(()=>{
     fetch('/api/stats').then(r=>r.json()).then(d=>{
-        // Could update counters via DOM, skip for simplicity
+        const ids = {
+            'total_users': d.total,
+            'active_users': d.active,
+            'blocked_users': d.blocked,
+            'recent_30d': d.recent_30d,
+            'issued_today': d.shift_issued,
+            'redeemed_today': d.shift_redeemed
+        };
+        for(const [id, val] of Object.entries(ids)){
+            const el = document.getElementById(id);
+            if(el) el.textContent = val;
+        }
+        const conv = d.shift_issued > 0 ? ((d.shift_redeemed / d.shift_issued)*100).toFixed(1) : '0';
+        const ce = document.getElementById('conversion');
+        if(ce) ce.textContent = conv + '%';
     }).catch(()=>{});
 }, 60000);
 </script>

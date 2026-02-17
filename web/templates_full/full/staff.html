@@ -22,18 +22,18 @@
                     <tbody>
                     {% for s in staff %}
                     <tr>
-                        <td><code>{{ s.staff_id or s.telegram_id or s[0] or '—' }}</code></td>
-                        <td>{{ s.full_name or s[2] or '—' }}</td>
-                        <td><span class="badge bg-secondary">{{ s.position or s[4] or '—' }}</span></td>
-                        <td><code>{{ s.unique_code or s[5] or '—' }}</code></td>
+                        <td><code>{{ s.staff_id or s.telegram_id or '—' }}</code></td>
+                        <td>{{ s.full_name or '—' }}</td>
+                        <td><span class="badge bg-secondary">{{ s.position or '—' }}</span></td>
+                        <td><code>{{ s.unique_code or '—' }}</code></td>
                         <td>
-                            {% set st = s.status or s[6] or 'active' %}
+                            {% set st = s.status or 'active' %}
                             {% if st == 'active' %}<span class="badge bg-success">Активен</span>
                             {% else %}<span class="badge bg-danger">Неактивен</span>{% endif %}
                         </td>
                         <td>
-                            <form method="POST" action="/staff/{{ s.staff_id or s[0] or 0 }}/toggle" class="d-inline">
-                                {% if (s.status or s[6] or 'active') == 'active' %}
+                            <form method="POST" action="/staff/{{ s.staff_id or s.telegram_id or 0 }}/toggle" class="d-inline">
+                                {% if (s.status or 'active') == 'active' %}
                                 <input type="hidden" name="status" value="inactive">
                                 <button class="btn btn-sm btn-outline-danger" title="Деактивировать"><i class="fas fa-pause"></i></button>
                                 {% else %}

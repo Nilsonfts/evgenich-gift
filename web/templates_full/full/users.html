@@ -81,7 +81,7 @@
                         {% else %}<span class="badge bg-secondary">{{ u.status or '—' }}</span>{% endif %}
                     </td>
                     <td><span class="text-muted">{{ u.source or '—' }}</span></td>
-                    <td style="font-size:.8rem;color:#64748b">{{ u.signup_date or u.register_date or '—' }}</td>
+                    <td style="font-size:.8rem;color:#64748b">{{ u.register_date or '—' }}</td>
                     <td>
                         <a href="/users/{{ u.user_id }}" class="btn btn-sm btn-outline-primary"><i class="fas fa-eye"></i></a>
                     </td>

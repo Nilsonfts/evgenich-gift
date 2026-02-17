@@ -46,7 +46,7 @@
                     <tr><td class="fw-bold">Источник</td><td><span class="badge bg-secondary">{{ user.source or '—' }}</span></td></tr>
                     <tr><td class="fw-bold">Реферер</td><td>{% if user.referrer_id %}<a href="/users/{{ user.referrer_id }}">{{ user.referrer_id }}</a>{% else %}—{% endif %}</td></tr>
                     <tr><td class="fw-bold">Сотрудник</td><td>{{ user.brought_by_staff_id or '—' }}</td></tr>
-                    <tr><td class="fw-bold">Дата регистрации</td><td>{{ user.signup_date or user.register_date or '—' }}</td></tr>
+                    <tr><td class="fw-bold">Дата регистрации</td><td>{{ user.register_date or '—' }}</td></tr>
                     <tr><td class="fw-bold">Купон выдан</td><td>{{ user.redeem_date or '—' }}</td></tr>
                     <tr><td class="fw-bold">Контакт отправлен</td><td>{{ user.contact_shared_date or '—' }}</td></tr>
                     <tr><td class="fw-bold">Заблокировал бота</td><td>{{ '🚫 Да' if user.blocked else '—' }}</td></tr>
@@ -59,9 +59,9 @@
             <div class="card-header"><i class="fas fa-share-alt me-2"></i>Реферальная статистика</div>
             <div class="p-3">
                 <table class="table table-sm">
-                    <tr><td class="fw-bold">Всего приглашено</td><td>{{ referral_stats.total_referrals or 0 }}</td></tr>
-                    <tr><td class="fw-bold">Погасили настойку</td><td>{{ referral_stats.redeemed_referrals or 0 }}</td></tr>
-                    <tr><td class="fw-bold">Наград получено</td><td>{{ referral_stats.rewards_received or 0 }}</td></tr>
+                    <tr><td class="fw-bold">Всего приглашено</td><td>{{ referral_stats.total or 0 }}</td></tr>
+                    <tr><td class="fw-bold">Погасили настойку</td><td>{{ referral_stats.redeemed or 0 }}</td></tr>
+                    <tr><td class="fw-bold">Наград получено</td><td>{{ referral_stats.rewarded or 0 }}</td></tr>
                 </table>
             </div>
         </div>

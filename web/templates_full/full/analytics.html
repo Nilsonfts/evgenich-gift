@@ -50,10 +50,10 @@
             <div class="card-header d-flex align-items-center justify-content-between">
                 <span><i class="fas fa-file-alt me-2"></i>Отчёт за период</span>
                 <div class="btn-group btn-group-sm">
-                    <button class="btn btn-outline-primary active" onclick="loadReport('shift')">Смена</button>
-                    <button class="btn btn-outline-primary" onclick="loadReport('24h')">24ч</button>
-                    <button class="btn btn-outline-primary" onclick="loadReport('7d')">7 дней</button>
-                    <button class="btn btn-outline-primary" onclick="loadReport('30d')">30 дней</button>
+                    <button class="btn btn-outline-primary active" onclick="loadReport('shift', event)">Смена</button>
+                    <button class="btn btn-outline-primary" onclick="loadReport('24h', event)">24ч</button>
+                    <button class="btn btn-outline-primary" onclick="loadReport('7d', event)">7 дней</button>
+                    <button class="btn btn-outline-primary" onclick="loadReport('30d', event)">30 дней</button>
                 </div>
             </div>
             <div class="p-3" id="reportContent">
@@ -132,11 +132,11 @@
 
 {% block scripts %}
 <script>
-function loadReport(period){
+function loadReport(period, e){
     const el=document.getElementById('reportContent');
     el.innerHTML='<div class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin me-2"></i>Загрузка...</div>';
     document.querySelectorAll('.btn-group .btn').forEach(b=>b.classList.remove('active'));
-    event.target.classList.add('active');
+    if(e && e.target) e.target.classList.add('active');
 
     fetch('/api/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({period})})
     .then(r=>r.json()).then(d=>{

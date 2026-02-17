@@ -14,9 +14,9 @@
 Railway deploy: gunicorn web.app:app --bind 0.0.0.0:$PORT
 """
 
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response
 from werkzeug.security import check_password_hash, generate_password_hash
-import json, os, sys, logging
+import json, os, sys, logging, threading, time
 from functools import wraps
 from datetime import datetime, timedelta
 import pytz
@@ -176,7 +176,7 @@ def _init_defaults():
     if not os.path.exists(STAFF_F):
         _save(STAFF_F, {'bosses': [], 'admins': [], 'smm': []})
     if not os.path.exists(LINKS_F):
-        _save(LINKS_F, {'menu_url': '', 'contact_phone': '', 'telegram': '', 'instagram': '', 'vk': ''})
+        _save(LINKS_F, {'menu_url': '', 'phone': '', 'telegram': '', 'instagram': '', 'vk': ''})
     if not os.path.exists(PROMOS_F):
         _save(PROMOS_F, {
             'group_bonus': {'enabled': False, 'min_guests': 6, 'text': 'Графин настойки в подарок!'},
@@ -284,9 +284,10 @@ def users_list():
     page = min(page, total_pages)
     paginated = all_users[(page-1)*per_page : page*per_page]
 
-    # Status counts
+    # Status counts (из неотфильтрованного списка для корректного подсчёта)
+    all_before_filter = _db_query(db.get_all_users, default=[]) or []
     status_counts = {}
-    for u in (_db_query(db.get_all_users, default=[]) or []):
+    for u in all_before_filter:
         s = u.get('status', 'unknown')
         status_counts[s] = status_counts.get(s, 0) + 1
 
@@ -417,7 +418,7 @@ def staff_role():
     name = request.form.get('name', f'User {uid}')
 
     roles = _load(STAFF_F, {'bosses': [], 'admins': [], 'smm': []})
-    key = role + 's' if role == 'boss' else (role + 's' if role == 'admin' else role)
+    key = 'bosses' if role == 'boss' else ('admins' if role == 'admin' else role)
 
     if action == 'add':
         if not any(u['id'] == uid for u in roles.get(key, [])):
@@ -594,8 +595,16 @@ def links():
 @login_required
 def links_update():
     data = {}
-    for k in request.form:
-        data[k] = request.form[k]
+    # Основные поля
+    for k in ['menu_url', 'phone', 'loyalty_url', 'website', 'telegram', 'instagram', 'vk', 'whatsapp']:
+        if k in request.form:
+            data[k] = request.form[k]
+    # Кастомные пары ключ-значение
+    keys = request.form.getlist('custom_key[]')
+    vals = request.form.getlist('custom_val[]')
+    for ck, cv in zip(keys, vals):
+        if ck.strip():
+            data[ck.strip()] = cv
     _save(LINKS_F, data)
     flash('Ссылки сохранены', 'success')
     return redirect(url_for('links'))
@@ -636,6 +645,252 @@ def api_users_search():
     if user:
         return jsonify([dict(user) if hasattr(user, 'keys') else {'user_id': q}])
     return jsonify([])
+
+
+# ═══════════════════════════════════════════
+#  GOOGLE SHEETS → PostgreSQL SYNC
+# ═══════════════════════════════════════════
+_sync_status = {'running': False, 'progress': '', 'done': False, 'result': None}
+
+
+def _parse_creds_json(s):
+    if not s:
+        return None
+    if isinstance(s, dict):
+        return s
+    try:
+        return json.loads(s)
+    except Exception:
+        try:
+            return json.loads(" ".join(l.strip() for l in s.splitlines() if l.strip()))
+        except Exception:
+            return None
+
+
+def _run_sheets_sync():
+    """Фоновая синхронизация Google Sheets → PostgreSQL."""
+    global _sync_status
+    _sync_status = {'running': True, 'progress': 'Подключение к Google Sheets...', 'done': False, 'result': None}
+
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+
+        creds_raw = os.getenv('GOOGLE_CREDENTIALS_JSON', '')
+        creds_dict = _parse_creds_json(creds_raw)
+        if not creds_dict:
+            _sync_status.update(running=False, done=True, result={'error': 'GOOGLE_CREDENTIALS_JSON не настроен'})
+            return
+
+        sheet_key = os.getenv('GOOGLE_SHEET_KEY', '')
+        if not sheet_key:
+            _sync_status.update(running=False, done=True, result={'error': 'GOOGLE_SHEET_KEY не настроен'})
+            return
+
+        creds = Credentials.from_service_account_info(creds_dict, scopes=['https://www.googleapis.com/auth/spreadsheets'])
+        gc = gspread.authorize(creds)
+        spreadsheet = gc.open_by_key(sheet_key)
+
+        # Находим лист
+        ws = None
+        for sheet in spreadsheet.worksheets():
+            if 'пользовател' in sheet.title.lower() or 'выгрузка' in sheet.title.lower():
+                ws = sheet
+                break
+        if not ws:
+            ws = spreadsheet.sheet1
+
+        _sync_status['progress'] = f'Чтение данных из листа «{ws.title}»...'
+        all_rows = ws.get_all_records()
+        total = len(all_rows)
+        _sync_status['progress'] = f'Найдено {total} строк. Синхронизация с PostgreSQL...'
+
+        if not DB_OK:
+            _sync_status.update(running=False, done=True, result={'error': 'БД не подключена'})
+            return
+
+        synced = 0
+        skipped = 0
+        errors = 0
+
+        for i, row in enumerate(all_rows):
+            try:
+                uid = row.get('user_id') or row.get('Telegram ID') or row.get('ID')
+                if not uid:
+                    skipped += 1
+                    continue
+                uid = int(uid)
+
+                # Проверяем, есть ли уже в PostgreSQL
+                existing = _db_query(db.get_user_by_id, uid, default=None)
+                if existing:
+                    skipped += 1
+                    continue
+
+                # Добавляем
+                username = row.get('username') or row.get('Username') or ''
+                first_name = row.get('first_name') or row.get('Имя') or ''
+                source = row.get('source') or row.get('Источник') or 'google_sheets_sync'
+                status = row.get('status') or row.get('Статус') or 'registered'
+
+                _db_query(db.add_new_user, uid, username, first_name, source)
+                if status and status != 'registered':
+                    _db_query(db.update_status, uid, status)
+                synced += 1
+
+            except Exception as e:
+                errors += 1
+                logging.error(f"Sync error row {i}: {e}")
+
+            if (i + 1) % 50 == 0:
+                _sync_status['progress'] = f'Обработано {i+1}/{total} (добавлено: {synced}, пропущено: {skipped})'
+
+        _sync_status.update(
+            running=False, done=True,
+            result={'total': total, 'synced': synced, 'skipped': skipped, 'errors': errors}
+        )
+
+    except Exception as e:
+        logging.error(f"Sheets sync failed: {e}")
+        _sync_status.update(running=False, done=True, result={'error': str(e)})
+
+
+@app.route('/sync')
+@login_required
+def sync_page():
+    return render_template('full/sync.html', status=_sync_status)
+
+
+@app.route('/sync/start', methods=['POST'])
+@login_required
+def sync_start():
+    if _sync_status.get('running'):
+        flash('Синхронизация уже запущена', 'warning')
+        return redirect(url_for('sync_page'))
+    t = threading.Thread(target=_run_sheets_sync, daemon=True)
+    t.start()
+    flash('Синхронизация запущена!', 'success')
+    return redirect(url_for('sync_page'))
+
+
+@app.route('/api/sync/status')
+@login_required
+def sync_status():
+    return jsonify(_sync_status)
+
+
+# ═══════════════════════════════════════════
+#  WEB BROADCAST (отправка рассылки через веб)
+# ═══════════════════════════════════════════
+_broadcast_status = {'running': False, 'progress': '', 'done': False, 'result': None}
+
+
+def _run_web_broadcast(text, btn_text=None, btn_url=None):
+    """Фоновая отправка рассылки через Telegram Bot API."""
+    global _broadcast_status
+    import requests as req
+
+    bot_token = os.getenv('BOT_TOKEN', '')
+    if not bot_token:
+        _broadcast_status.update(running=False, done=True, result={'error': 'BOT_TOKEN не настроен'})
+        return
+
+    _broadcast_status = {'running': True, 'progress': 'Загрузка списка пользователей...', 'done': False, 'result': None}
+
+    users = _db_query(db.get_all_users_for_broadcast, default=[]) or []
+    if not users:
+        _broadcast_status.update(running=False, done=True, result={'error': 'Нет пользователей для рассылки'})
+        return
+
+    total = len(users)
+    sent = 0
+    failed = 0
+    blocked = 0
+
+    # Inline keyboard
+    reply_markup = None
+    if btn_text and btn_url:
+        reply_markup = json.dumps({
+            'inline_keyboard': [[{'text': btn_text, 'url': btn_url}]]
+        })
+
+    api_url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
+
+    for i, user in enumerate(users):
+        uid = user.get('user_id')
+        if not uid:
+            continue
+
+        payload = {
+            'chat_id': uid,
+            'text': text,
+            'parse_mode': 'HTML',
+        }
+        if reply_markup:
+            payload['reply_markup'] = reply_markup
+
+        try:
+            resp = req.post(api_url, json=payload, timeout=10)
+            data = resp.json()
+
+            if data.get('ok'):
+                sent += 1
+            else:
+                err_code = data.get('error_code', 0)
+                if err_code == 403:
+                    blocked += 1
+                    _db_query(db.mark_user_blocked, uid)
+                elif err_code == 429:
+                    retry = data.get('parameters', {}).get('retry_after', 1)
+                    time.sleep(retry)
+                    resp2 = req.post(api_url, json=payload, timeout=10)
+                    if resp2.json().get('ok'):
+                        sent += 1
+                    else:
+                        failed += 1
+                else:
+                    failed += 1
+        except Exception as e:
+            failed += 1
+            logging.error(f"Broadcast error {uid}: {e}")
+
+        if (i + 1) % 15 == 0:
+            pct = round((i + 1) / total * 100, 1)
+            _broadcast_status['progress'] = f'{i+1}/{total} ({pct}%) — ✅{sent} ❌{failed} 🚫{blocked}'
+
+        time.sleep(0.05)  # rate limit ~20 msg/sec
+
+    _broadcast_status.update(
+        running=False, done=True,
+        result={'total': total, 'sent': sent, 'failed': failed, 'blocked': blocked}
+    )
+
+
+@app.route('/broadcast/send', methods=['POST'])
+@login_required
+def broadcast_send():
+    if _broadcast_status.get('running'):
+        flash('Рассылка уже идёт, дождитесь завершения', 'warning')
+        return redirect(url_for('broadcast'))
+
+    text = request.form.get('text', '').strip()
+    if not text:
+        flash('Введите текст рассылки', 'error')
+        return redirect(url_for('broadcast'))
+
+    btn_text = request.form.get('btn_text', '').strip() or None
+    btn_url = request.form.get('btn_url', '').strip() or None
+
+    t = threading.Thread(target=_run_web_broadcast, args=(text, btn_text, btn_url), daemon=True)
+    t.start()
+    flash('Рассылка запущена! Следите за прогрессом ниже.', 'success')
+    return redirect(url_for('broadcast'))
+
+
+@app.route('/api/broadcast/status')
+@login_required
+def broadcast_status_api():
+    return jsonify(_broadcast_status)
 
 
 # ═══════════════════════════════════════════

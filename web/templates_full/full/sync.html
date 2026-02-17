@@ -1,0 +1,91 @@
+{% extends "full/base.html" %}
+{% block title %}Синхронизация{% endblock %}
+
+{% block content %}
+<div class="page-h">
+    <h2><i class="fas fa-sync me-2"></i>Google Sheets → PostgreSQL</h2>
+    <p>Импорт пользователей из Google Sheets в базу данных для быстрой работы</p>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-cloud-download-alt me-2"></i>Запуск синхронизации</div>
+            <div class="p-4">
+                <p>Эта функция загрузит пользователей из Google Sheets и добавит <b>новых</b> в PostgreSQL. Уже существующие в БД пользователи будут пропущены.</p>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <b>Требуются переменные:</b> GOOGLE_CREDENTIALS_JSON, GOOGLE_SHEET_KEY
+                </div>
+                <form method="POST" action="/sync/start">
+                    <button type="submit" class="btn btn-primary btn-lg w-100" id="syncBtn"
+                            {% if status.running %}disabled{% endif %}>
+                        <i class="fas fa-play me-2"></i>
+                        {% if status.running %}Синхронизация идёт...{% else %}Запустить синхронизацию{% endif %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-tasks me-2"></i>Статус</div>
+            <div class="p-4">
+                <div id="syncStatus">
+                    {% if status.running %}
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="spinner-border text-primary me-3" role="status"></div>
+                        <div>
+                            <div class="fw-bold">Выполняется...</div>
+                            <div class="text-muted" id="syncProgress">{{ status.progress }}</div>
+                        </div>
+                    </div>
+                    <div class="progress mb-2">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" style="width:100%"></div>
+                    </div>
+                    {% elif status.done and status.result %}
+                        {% if status.result.error %}
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle me-2"></i>{{ status.result.error }}
+                        </div>
+                        {% else %}
+                        <div class="alert alert-success mb-3">
+                            <i class="fas fa-check-circle me-2"></i>Синхронизация завершена!
+                        </div>
+                        <table class="table table-sm">
+                            <tr><td>Всего строк в таблице</td><td class="fw-bold">{{ status.result.total }}</td></tr>
+                            <tr><td>Добавлено в PostgreSQL</td><td class="fw-bold text-success">{{ status.result.synced }}</td></tr>
+                            <tr><td>Уже были в БД (пропущены)</td><td class="text-muted">{{ status.result.skipped }}</td></tr>
+                            <tr><td>Ошибки</td><td class="text-danger">{{ status.result.errors }}</td></tr>
+                        </table>
+                        {% endif %}
+                    {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-database fa-3x mb-3 d-block"></i>
+                        Синхронизация ещё не запускалась.<br>Нажмите кнопку слева.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% if status.running %}
+const poll = setInterval(()=>{
+    fetch('/api/sync/status').then(r=>r.json()).then(d=>{
+        const el = document.getElementById('syncProgress');
+        if(el) el.textContent = d.progress || '...';
+        if(d.done){
+            clearInterval(poll);
+            location.reload();
+        }
+    });
+}, 2000);
+{% endif %}
+</script>
+{% endblock %}

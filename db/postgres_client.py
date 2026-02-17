@@ -332,7 +332,7 @@ class PostgresClient:
                 query = select(self.users_table)
                 result = connection.execute(query).fetchall()
                 
-                return [dict(row) for row in result]
+                return [dict(row._mapping) for row in result]
         except SQLAlchemyError as e:
             logging.error(f"PostgreSQL | Ошибка получения списка пользователей: {e}")
             return []
