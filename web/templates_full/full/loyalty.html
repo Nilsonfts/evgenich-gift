@@ -1,0 +1,349 @@
+{% extends "full/base.html" %}
+{% block title %}Лояльность GMB{% endblock %}
+
+{% block extra_css %}
+<style>
+    .loyalty-card{background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%);border-radius:1rem;color:#fff;padding:1.5rem;position:relative;overflow:hidden}
+    .loyalty-card::after{content:'🎁';position:absolute;right:-20px;bottom:-20px;font-size:8rem;opacity:.12}
+    .loyalty-card h3{font-weight:800;font-size:2rem;margin:.5rem 0 0}
+    .gift-item{background:#fff;border:1px solid var(--border);border-radius:.5rem;padding:.75rem 1rem;margin-bottom:.5rem;display:flex;justify-content:space-between;align-items:center}
+    .gift-item.available{border-left:3px solid var(--ok)}
+    .gift-item.unavailable{opacity:.5;border-left:3px solid #cbd5e1}
+    .search-result{animation:fadeIn .3s ease}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-h">
+    <h2><i class="fas fa-gift me-2"></i>Система лояльности GetMeBack</h2>
+    <p>Поиск клиентов, баланс бонусов, подарки, начисление</p>
+</div>
+
+{% if not configured %}
+<div class="alert alert-warning">
+    <i class="fas fa-exclamation-triangle me-2"></i>
+    <b>GMB API не настроен.</b> Добавьте переменную <code>GMB_API_KEY</code> в Settings → Variables сервиса.
+</div>
+{% endif %}
+
+<!-- Search -->
+<div class="table-card mb-4">
+    <div class="card-header"><i class="fas fa-search me-2"></i>Поиск клиента</div>
+    <div class="p-3">
+        <form id="searchForm" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Телефон</label>
+                <input type="text" id="searchPhone" class="form-control" placeholder="+7 900 123-45-67">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">или ID клиента</label>
+                <input type="text" id="searchId" class="form-control" placeholder="12345">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">или ID устройства</label>
+                <input type="text" id="searchDevice" class="form-control" placeholder="abc123...">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100" {% if not configured %}disabled{% endif %}>
+                    <i class="fas fa-search me-1"></i>Найти
+                </button>
+            </div>
+        </form>
+
+        <!-- Search result -->
+        <div id="searchResult" class="mt-3" style="display:none"></div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <!-- Client card (shown after search) -->
+    <div class="col-lg-7">
+        <div id="clientSection" style="display:none">
+            <!-- Client info card -->
+            <div class="loyalty-card mb-3" id="clientCard">
+                <div class="d-flex align-items-center mb-2">
+                    <i class="fas fa-user-circle fa-2x me-3" style="opacity:.7"></i>
+                    <div>
+                        <div style="opacity:.8;font-size:.85rem">Клиент GMB</div>
+                        <h5 class="mb-0 fw-bold" id="clientName">—</h5>
+                    </div>
+                </div>
+                <h3 id="clientBalance">0</h3>
+                <small style="opacity:.8">бонусных баллов</small>
+                <div class="mt-2 d-flex gap-3" style="font-size:.85rem;opacity:.8">
+                    <span><i class="fas fa-phone me-1"></i><span id="clientPhone">—</span></span>
+                    <span><i class="fas fa-percentage me-1"></i>Кэшбэк: <span id="clientKBonus">0</span>%</span>
+                    <span><i class="fas fa-credit-card me-1"></i>Оплата: до <span id="clientMaxPay">0</span>%</span>
+                </div>
+                <div class="mt-2" style="font-size:.8rem;opacity:.6">
+                    ID: <span id="clientId">—</span> | Device: <span id="clientDevice">—</span>
+                </div>
+            </div>
+
+            <!-- Gifts -->
+            <div class="table-card mb-3">
+                <div class="card-header"><i class="fas fa-gifts me-2"></i>Подарки клиента</div>
+                <div class="p-3" id="giftsContainer">
+                    <p class="text-muted">Найдите клиента для просмотра подарков</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bonus accrual form (shown after client found) -->
+        <div id="bonusSection" style="display:none">
+            <div class="table-card">
+                <div class="card-header"><i class="fas fa-coins me-2"></i>Начислить / Списать бонусы</div>
+                <div class="p-3">
+                    <form id="bonusForm">
+                        <input type="hidden" id="bonusClientId">
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Сумма заказа ₽</label>
+                                <input type="number" id="orderPrice" class="form-control" min="0" required placeholder="0">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Начислить бонусов <small class="text-muted">(пусто = авто)</small></label>
+                                <input type="number" id="bonusValue" class="form-control" min="0" placeholder="авто">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Списать бонусов</label>
+                                <input type="number" id="paidBonus" class="form-control" min="0" placeholder="0">
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Филиал</label>
+                                <select id="branchName" class="form-select">
+                                    <option value="Невский">Невский</option>
+                                    <option value="Рубинштейна">Рубинштейна</option>
+                                    <option value="Пятницкая МСК">Пятницкая МСК</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Сотрудник</label>
+                                <input type="text" id="managerName" class="form-control" value="Админ" placeholder="Имя">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Номер чека</label>
+                                <input type="text" id="invoiceNum" class="form-control" placeholder="необязательно">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success me-2">
+                            <i class="fas fa-plus-circle me-1"></i>Начислить
+                        </button>
+                    </form>
+                    <div id="bonusResult" class="mt-3" style="display:none"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <!-- How it works -->
+        <div class="table-card mb-3">
+            <div class="card-header"><i class="fas fa-info-circle me-2"></i>Как работает</div>
+            <div class="p-3" style="font-size:.9rem">
+                <p><b>Поиск:</b> Введите телефон, ID клиента или ID устройства (QR).</p>
+                <p><b>Баланс:</b> Отображается текущий баланс бонусных баллов.</p>
+                <p><b>Начисление:</b> Укажите сумму заказа — система начислит кэшбэк.</p>
+                <p><b>Списание:</b> Укажите сумму бонусов в поле «Списать» для оплаты части заказа.</p>
+                <p><b>Подарки:</b> Клиент может обменять бонусы на подарки.</p>
+                <hr>
+                <p class="mb-0 text-muted"><small>API: <code>{{ api_url }}</code></small></p>
+            </div>
+        </div>
+
+        <!-- Quick actions -->
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-bolt me-2"></i>Быстрые действия</div>
+            <div class="p-3">
+                <a href="https://evgenich.getmeback.ru" target="_blank" class="btn btn-outline-primary w-100 mb-2">
+                    <i class="fas fa-external-link-alt me-1"></i>Открыть GMB панель
+                </a>
+                <a href="https://evgenich.getmeback.ru/wallet/frontend?code=tg_bot#/auth" target="_blank" class="btn btn-outline-primary w-100">
+                    <i class="fas fa-id-card me-1"></i>Страница регистрации карты
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentClientId = null;
+
+document.getElementById('searchForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    const phone = document.getElementById('searchPhone').value.trim();
+    const clientId = document.getElementById('searchId').value.trim();
+    const device = document.getElementById('searchDevice').value.trim();
+
+    if(!phone && !clientId && !device){
+        showResult('warning', 'Введите телефон, ID клиента или ID устройства');
+        return;
+    }
+
+    const params = new URLSearchParams();
+    if(phone) params.set('phone', phone);
+    if(clientId) params.set('id_client', clientId);
+    if(device) params.set('id_device', device);
+
+    showResult('info', '<div class="spinner-border spinner-border-sm me-2"></div>Поиск...');
+
+    fetch('/api/loyalty/search?' + params.toString())
+        .then(r => r.json())
+        .then(data => {
+            if(data.error){
+                showResult('danger', '<i class="fas fa-times-circle me-2"></i>' + data.error);
+                hideClient();
+                return;
+            }
+            if(!data.client){
+                showResult('warning', '<i class="fas fa-user-slash me-2"></i>Клиент не найден. Возможно, он ещё не зарегистрировал карту.');
+                hideClient();
+                return;
+            }
+            showResult('success', '<i class="fas fa-check-circle me-2"></i>Клиент найден!');
+            showClient(data.client);
+        })
+        .catch(err => {
+            showResult('danger', 'Ошибка запроса: ' + err.message);
+            hideClient();
+        });
+});
+
+function showResult(type, html){
+    const el = document.getElementById('searchResult');
+    el.style.display = 'block';
+    el.innerHTML = `<div class="alert alert-${type} search-result mb-0">${html}</div>`;
+}
+
+function showClient(c){
+    // c might have {client: {...}} or be the client directly
+    const client = c.client || c;
+
+    currentClientId = client.id_client || client.id || null;
+    document.getElementById('clientName').textContent = client.name || '—';
+    document.getElementById('clientBalance').textContent = client.balance || 0;
+    document.getElementById('clientPhone').textContent = client.phone || '—';
+    document.getElementById('clientKBonus').textContent = client.k_bonus || 0;
+    document.getElementById('clientMaxPay').textContent = client.maxPayBonusK || 0;
+    document.getElementById('clientId').textContent = client.id_client || '—';
+    document.getElementById('clientDevice').textContent = client.id_device || '—';
+    document.getElementById('bonusClientId').value = currentClientId;
+
+    // Gifts
+    const gc = document.getElementById('giftsContainer');
+    const gifts = client.gifts || [];
+    if(gifts.length === 0){
+        gc.innerHTML = '<p class="text-muted mb-0">Нет доступных подарков</p>';
+    } else {
+        let html = '';
+        gifts.forEach(g => {
+            const cls = g.can_use ? 'available' : 'unavailable';
+            const icon = g.can_use ? '✅' : '⛔';
+            html += `<div class="gift-item ${cls}">
+                <div>
+                    <b>${g.name || 'Подарок'}</b>
+                    ${g.description ? '<br><small class="text-muted">' + g.description + '</small>' : ''}
+                </div>
+                <div class="text-end">
+                    <span class="fw-bold">${g.price || '?'}</span> бонусов
+                    <br><small>${icon} ${g.can_use ? 'Доступен' : 'Недоступен'}</small>
+                    ${g.can_use ? `<br><button class="btn btn-sm btn-outline-success mt-1" onclick="redeemGift(${g.id_gift || g.id_ext})">🎁 Выдать</button>` : ''}
+                </div>
+            </div>`;
+        });
+        gc.innerHTML = html;
+    }
+
+    document.getElementById('clientSection').style.display = 'block';
+    document.getElementById('bonusSection').style.display = 'block';
+}
+
+function hideClient(){
+    document.getElementById('clientSection').style.display = 'none';
+    document.getElementById('bonusSection').style.display = 'none';
+    currentClientId = null;
+}
+
+// Bonus form
+document.getElementById('bonusForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    if(!currentClientId){
+        alert('Сначала найдите клиента');
+        return;
+    }
+    const data = {
+        id_client: currentClientId,
+        order_price: parseInt(document.getElementById('orderPrice').value) || 0,
+        bonus_value: document.getElementById('bonusValue').value ? parseInt(document.getElementById('bonusValue').value) : null,
+        paid_bonus: parseInt(document.getElementById('paidBonus').value) || null,
+        branch_name: document.getElementById('branchName').value,
+        manager_name: document.getElementById('managerName').value,
+        invoice_num: document.getElementById('invoiceNum').value,
+    };
+
+    if(!data.order_price && !data.bonus_value && !data.paid_bonus){
+        alert('Укажите сумму заказа или количество бонусов');
+        return;
+    }
+
+    if(!confirm(`Начислить бонусы клиенту #${currentClientId}?`)) return;
+
+    const res = document.getElementById('bonusResult');
+    res.style.display = 'block';
+    res.innerHTML = '<div class="alert alert-info"><div class="spinner-border spinner-border-sm me-2"></div>Отправка...</div>';
+
+    fetch('/api/loyalty/accrue', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(d => {
+        if(d.result === 'ok'){
+            res.innerHTML = `<div class="alert alert-success">
+                <i class="fas fa-check-circle me-2"></i>
+                <b>Успешно!</b> Начислено ${d.bonus_value || '?'} бонусов.
+                ${d.bonus_id ? 'Транзакция #' + d.bonus_id : ''}
+                ${d.client ? '<br>Новый баланс: <b>' + d.client.balance + '</b> бонусов' : ''}
+            </div>`;
+            // Update displayed balance
+            if(d.client){
+                document.getElementById('clientBalance').textContent = d.client.balance || 0;
+            }
+        } else {
+            res.innerHTML = `<div class="alert alert-danger"><i class="fas fa-times-circle me-2"></i>${d.message || d.error || 'Ошибка GMB'}</div>`;
+        }
+    })
+    .catch(err => {
+        res.innerHTML = `<div class="alert alert-danger">Ошибка: ${err.message}</div>`;
+    });
+});
+
+function redeemGift(giftId){
+    if(!currentClientId || !confirm('Выдать подарок?')) return;
+
+    fetch('/api/loyalty/gift', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id_client: currentClientId, id_gift: giftId})
+    })
+    .then(r => r.json())
+    .then(d => {
+        if(d.result === 'ok'){
+            alert('✅ Подарок выдан! Новый баланс: ' + (d.client ? d.client.balance : '?') + ' бонусов');
+            if(d.client){
+                document.getElementById('clientBalance').textContent = d.client.balance || 0;
+            }
+        } else {
+            alert('❌ Ошибка: ' + (d.message || d.error || 'Неизвестная ошибка'));
+        }
+    })
+    .catch(err => alert('Ошибка: ' + err.message));
+}
+</script>
+{% endblock %}

@@ -119,6 +119,11 @@ NASTOYKA_STICKER_ID = os.getenv("NASTOYKA_STICKER_ID")
 THANK_YOU_STICKER_ID = os.getenv("THANK_YOU_STICKER_ID")
 FRIEND_BONUS_STICKER_ID = os.getenv("FRIEND_BONUS_STICKER_ID")
 
+# --- GetMeBack (GMB) система лояльности ---
+GMB_API_KEY = os.getenv("GMB_API_KEY", "")
+GMB_API_URL = os.getenv("GMB_API_URL", "https://evgenich.getmeback.ru/rest/base/v33/validator/")
+GMB_SPASIBO_BOT_TOKEN = os.getenv("GMB_SPASIBO_BOT_TOKEN", "")  # Токен @spasibo_EVGENICH_bot
+
 # --- Ссылки ---
 
 # --- База данных ---
@@ -169,6 +174,10 @@ if not OPENAI_API_KEY:
     print("⚠️  OPENAI_API_KEY не установлен - AI функции отключены")
 if not REPORT_CHAT_ID:
     print("⚠️  REPORT_CHAT_ID не установлен - отчеты не будут отправляться")
+if GMB_API_KEY:
+    print(f"✅ GetMeBack: API подключён ({GMB_API_URL[:40]}...)")
+else:
+    print("⚠️  GMB_API_KEY не установлен — система лояльности GetMeBack отключена")
 
 # Логирование статуса подключений
 print(f"✅ PostgreSQL: {'Включен (DATABASE_URL установлен)' if USE_POSTGRES and DATABASE_URL else 'Отключен или неполная конфигурация'}")

@@ -648,6 +648,144 @@ def api_users_search():
 
 
 # ═══════════════════════════════════════════
+#  LOYALTY — GetMeBack Integration
+# ═══════════════════════════════════════════
+_GMB_API_KEY = os.getenv('GMB_API_KEY', '')
+_GMB_API_URL = os.getenv('GMB_API_URL', 'https://evgenich.getmeback.ru/rest/base/v33/validator/')
+
+
+def _gmb_call(data: dict):
+    """POST к GetMeBack API. Возвращает parsed JSON или None."""
+    import requests as req
+    if not _GMB_API_KEY:
+        return None
+    payload = {'api_key': _GMB_API_KEY}
+    payload.update(data)
+    try:
+        r = req.post(_GMB_API_URL, json=payload, timeout=10)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        logging.error(f"GMB API error: {e}")
+        return None
+
+
+def _gmb_parse_client(result):
+    """Извлекает данные клиента из ответа GMB."""
+    if result is None:
+        return None
+    if isinstance(result, list):
+        return result[0] if result and isinstance(result[0], dict) else None
+    if isinstance(result, dict):
+        return result
+    return None
+
+
+@app.route('/loyalty')
+@login_required
+def loyalty():
+    return render_template(
+        'full/loyalty.html',
+        configured=bool(_GMB_API_KEY),
+        api_url=_GMB_API_URL
+    )
+
+
+@app.route('/api/loyalty/search')
+@login_required
+def loyalty_search():
+    """Поиск клиента в GMB по телефону / id_client / id_device."""
+    if not _GMB_API_KEY:
+        return jsonify({'error': 'GMB_API_KEY не настроен'}), 400
+
+    phone = request.args.get('phone', '').strip()
+    id_client = request.args.get('id_client', '').strip()
+    id_device = request.args.get('id_device', '').strip()
+
+    data = {}
+    if phone:
+        # Нормализуем телефон
+        clean = ''.join(c for c in phone if c.isdigit())
+        if len(clean) == 11 and clean.startswith('8'):
+            clean = '7' + clean[1:]
+        data['phone'] = clean
+    elif id_client:
+        data['id_client'] = int(id_client)
+    elif id_device:
+        data['id_device'] = id_device
+    else:
+        return jsonify({'error': 'Укажите телефон, id_client или id_device'}), 400
+
+    result = _gmb_call(data)
+    client = _gmb_parse_client(result)
+
+    if client:
+        return jsonify({'client': client})
+    return jsonify({'client': None, 'message': 'Клиент не найден'})
+
+
+@app.route('/api/loyalty/accrue', methods=['POST'])
+@login_required
+def loyalty_accrue():
+    """Начисление бонусов через GMB API."""
+    if not _GMB_API_KEY:
+        return jsonify({'result': 'error', 'message': 'GMB_API_KEY не настроен'}), 400
+
+    body = request.get_json(force=True)
+    id_client = body.get('id_client')
+    if not id_client:
+        return jsonify({'result': 'error', 'message': 'id_client обязателен'}), 400
+
+    data = {
+        'type': 'bonus',
+        'id_client': int(id_client),
+        'order_price': int(body.get('order_price', 0)),
+        'branch_name': body.get('branch_name', 'Евгенич'),
+        'manager_name': body.get('manager_name', 'Web Panel'),
+        'id_branch': 1,
+        'id_manager': 1,
+    }
+    if body.get('invoice_num'):
+        data['invoice_num'] = body['invoice_num']
+    if body.get('bonus_value') is not None:
+        data['bonus_value'] = int(body['bonus_value'])
+    if body.get('paid_bonus'):
+        data['paid_bonus'] = int(body['paid_bonus'])
+
+    result = _gmb_call(data)
+    if result and isinstance(result, dict):
+        return jsonify(result)
+    return jsonify({'result': 'error', 'message': 'Пустой ответ от GMB API'})
+
+
+@app.route('/api/loyalty/gift', methods=['POST'])
+@login_required
+def loyalty_gift():
+    """Выдача подарка через GMB API."""
+    if not _GMB_API_KEY:
+        return jsonify({'result': 'error', 'message': 'GMB_API_KEY не настроен'}), 400
+
+    body = request.get_json(force=True)
+    id_client = body.get('id_client')
+    id_gift = body.get('id_gift')
+    if not id_client or not id_gift:
+        return jsonify({'result': 'error', 'message': 'id_client и id_gift обязательны'}), 400
+
+    result = _gmb_call({
+        'type': 'gift',
+        'id_client': int(id_client),
+        'id_gift': int(id_gift),
+        'id_branch': 1,
+        'id_manager': 1,
+        'branch_name': body.get('branch_name', 'Евгенич'),
+        'manager_name': body.get('manager_name', 'Web Panel'),
+    })
+    if result and isinstance(result, dict):
+        return jsonify(result)
+    return jsonify({'result': 'error', 'message': 'Пустой ответ от GMB API'})
+
+
+# ═══════════════════════════════════════════
 #  GOOGLE SHEETS → PostgreSQL SYNC
 # ═══════════════════════════════════════════
 _sync_status = {'running': False, 'progress': '', 'done': False, 'result': None}
