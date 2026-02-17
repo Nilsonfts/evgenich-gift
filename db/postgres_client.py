@@ -8,8 +8,16 @@ from sqlalchemy.sql import select, insert, update, delete
 from sqlalchemy.exc import SQLAlchemyError
 import datetime
 import pytz
+import os
 
-from core.config import DATABASE_URL, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+try:
+    from core.config import DATABASE_URL, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+except Exception:
+    # Standalone mode (web panel) — берём из окружения напрямую
+    DATABASE_URL = os.getenv('DATABASE_URL', '')
+    POSTGRES_USER = os.getenv('POSTGRES_USER', 'postgres')
+    POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD', '')
+    POSTGRES_DB = os.getenv('POSTGRES_DB', 'railway')
 
 class PostgresClient:
     def __init__(self, db_url=None):

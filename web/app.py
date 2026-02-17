@@ -25,16 +25,49 @@ import pytz
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT_DIR)
 
-# ── Database ──
-try:
-    from core import database as db
-    from core.config import USE_POSTGRES, DATABASE_URL
-    DB_OK = True
-except Exception as e:
-    logging.warning(f"⚠️ Database unavailable: {e}")
-    db = None
-    DB_OK = False
-    USE_POSTGRES = False
+# ── Database (прямое подключение, без core.config) ──
+DATABASE_URL = os.getenv('DATABASE_URL', '')
+USE_POSTGRES = os.getenv('USE_POSTGRES', 'false').lower() in ('true', '1', 'yes')
+
+DB_OK = False
+db = None
+
+if USE_POSTGRES and DATABASE_URL:
+    try:
+        from db.postgres_client import PostgresClient
+        _pg = PostgresClient()
+
+        # Обёртка: PostgresClient — экземпляр, а app.py ожидает модуль с функциями
+        class _DbBridge:
+            """Превращает методы PostgresClient в функции, с безопасным fallback."""
+            # Методы, отсутствующие в PostgresClient — возвращаем безопасные дефолты
+            _DEFAULTS = {
+                'get_recent_activities': lambda *a, **kw: [],
+                'get_staff_performance_for_period': lambda *a, **kw: {},
+                'get_full_churn_analysis': lambda *a, **kw: None,
+                'get_top_referrers_for_month': lambda *a, **kw: [],
+                'get_all_staff': lambda *a, **kw: [],
+                'update_staff_status': lambda *a, **kw: False,
+                'find_user_by_id_or_username': lambda *a, **kw: None,
+                'find_user_by_id': lambda uid, **kw: _pg.get_user_by_id(uid),
+            }
+
+            def __getattr__(self, name):
+                if hasattr(_pg, name):
+                    return getattr(_pg, name)
+                if name in self._DEFAULTS:
+                    return self._DEFAULTS[name]
+                # Неизвестный метод → безопасная заглушка
+                logging.warning(f"DB method '{name}' not found, returning None")
+                return lambda *a, **kw: None
+
+        db = _DbBridge()
+        DB_OK = True
+        logging.info("✅ Web panel connected to PostgreSQL")
+    except Exception as e:
+        logging.warning(f"⚠️ PostgreSQL unavailable: {e}")
+else:
+    logging.warning("⚠️ Database not configured (set DATABASE_URL + USE_POSTGRES=true)")
 
 # ── App ──
 app = Flask(__name__, template_folder='templates_full')
