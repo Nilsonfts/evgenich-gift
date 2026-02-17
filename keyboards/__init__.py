@@ -10,12 +10,12 @@ from modules.food_menu import FOOD_MENU_DATA
 def get_main_menu_keyboard(user_id):
     """Возвращает главную клавиатуру для основного меню."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    menu_button = types.KeyboardButton("📖 Меню")
+    loyalty_button = types.KeyboardButton("🎁 Карта лояльности")
     friend_button = types.KeyboardButton("🤝 Привести товарища")
     book_button = types.KeyboardButton("📍 Забронировать стол")
     ai_help_button = types.KeyboardButton("🗣 Спроси у Евгенича")
 
-    keyboard.row(ai_help_button, menu_button)
+    keyboard.row(ai_help_button, loyalty_button)
     keyboard.row(book_button, friend_button)
 
     # Кнопка "Отправить БРОНЬ" для всех, кто может создавать брони (BOSS + ADMIN + SMM)

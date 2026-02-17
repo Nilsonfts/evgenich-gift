@@ -566,6 +566,21 @@ def update_user_contact(user_id: int, phone_number: str) -> bool:
         logging.error(f"SQLite | Ошибка обновления контакта для {user_id}: {e}")
         return False
 
+def get_user_phone(user_id: int) -> str:
+    """Получает номер телефона пользователя из базы данных."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT phone_number FROM users WHERE user_id = ?", (user_id,))
+        row = cur.fetchone()
+        conn.close()
+        if row and row[0]:
+            return row[0]
+        return None
+    except Exception as e:
+        logging.error(f"SQLite | Ошибка получения телефона для {user_id}: {e}")
+        return None
+
 def update_user_name(user_id: int, real_name: str) -> bool:
     """Обновляет настоящее имя пользователя."""
     try:

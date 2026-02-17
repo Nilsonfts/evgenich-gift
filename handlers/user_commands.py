@@ -542,7 +542,61 @@ def register_user_command_handlers(bot):
             reply_markup=keyboards.get_menu_choice_keyboard()
         )
 
-    @bot.message_handler(func=lambda message: message.text == "🎮 Игры и развлечения")
+    @bot.message_handler(func=lambda message: message.text == "� Карта лояльности")
+    def handle_loyalty_card(message: types.Message):
+        """Обрабатывает кнопку карты лояльности — отправляет ссылку на регистрацию и передаёт контакт гостя."""
+        if message.chat.type != 'private':
+            bot.reply_to(message, "🔒 Карта лояльности доступна только в личных сообщениях! Напиши мне в личку: @evgenichspbbot")
+            return
+
+        user_id = message.from_user.id
+        first_name = message.from_user.first_name or ""
+        last_name = message.from_user.last_name or ""
+        username = message.from_user.username or ""
+        full_name = f"{first_name} {last_name}".strip()
+
+        # Получаем телефон из базы данных (если пользователь уже делился контактом)
+        phone = database.get_user_phone(user_id) if hasattr(database, 'get_user_phone') else None
+
+        # Логируем запрос карты лояльности
+        logging.info(f"🎁 Карта лояльности запрошена: user_id={user_id}, name={full_name}, username=@{username}, phone={phone}")
+
+        # Формируем текст с информацией
+        loyalty_text = (
+            "🎁 <b>Система Лояльности Евгенича!</b>\n\n"
+            "Евгенич дарит тебе <b>500 рублей</b> 💸 на карту лояльности!\n\n"
+            "Копи бонусы с каждого заказа и трать их на любимые напитки 🥃\n\n"
+            "Жми кнопку ниже 👇 и регистрируй свою карту!"
+        )
+
+        # Отправляем сообщение с кнопкой регистрации
+        bot.send_message(
+            message.chat.id,
+            loyalty_text,
+            parse_mode="HTML",
+            reply_markup=keyboards.get_loyalty_keyboard()
+        )
+
+        # Отправляем данные гостя в чат бота лояльности @spasibo_EVGENICH_bot
+        try:
+            contact_info = f"📋 Новый запрос карты лояльности:\n\n"
+            contact_info += f"👤 Имя: {full_name}\n"
+            contact_info += f"🆔 Telegram ID: {user_id}\n"
+            if username:
+                contact_info += f"📱 Username: @{username}\n"
+            if phone:
+                contact_info += f"📞 Телефон: {phone}\n"
+            contact_info += f"\n🔗 Источник: Кнопка в боте @evgenichspbbot"
+
+            # Отправляем уведомление в REPORT_CHAT_ID чтобы админы видели
+            try:
+                bot.send_message(REPORT_CHAT_ID, contact_info)
+            except Exception as e:
+                logging.error(f"Ошибка отправки контакта лояльности в отчёт: {e}")
+        except Exception as e:
+            logging.error(f"Ошибка обработки контакта лояльности: {e}")
+
+    @bot.message_handler(func=lambda message: message.text == "�🎮 Игры и развлечения")
     def handle_games_button(message: types.Message):
         """Обрабатывает кнопку игр и развлечений."""
         # В групповых чатах игры только для боссов/админов
