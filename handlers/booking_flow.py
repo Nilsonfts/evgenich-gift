@@ -155,7 +155,8 @@ def register_booking_handlers(bot):
             bar_mapping = {
                 'bar_nevsky': 'ЕВГ_СПБ',
                 'bar_rubinstein': 'ЕВГ_СПБ_РУБ',
-                'bar_pyatnitskaya': 'ЕВГ_МСК_ПЯТ'
+                'bar_pyatnitskaya': 'ЕВГ_МСК_ПЯТ',
+                'bar_tsvetnoj': 'ЕВГ_МСК_ЦВЕТ'
             }
             current_data['bar'] = call.data
             current_data['amo_tag'] = bar_mapping.get(call.data, '')
@@ -256,7 +257,7 @@ def register_booking_handlers(bot):
             # Отправляем отчет с поддержкой HTML-разметки
             # Определяем куда отправлять в зависимости от бара
             selected_bar = booking_data.get('bar', '')
-            if selected_bar == 'bar_pyatnitskaya':
+            if selected_bar in ('bar_pyatnitskaya', 'bar_tsvetnoj'):
                 notification_chat_id = BOOKING_NOTIFICATIONS_CHAT_ID_MSK
                 logging.info(f"🇷🇺 Московское бронирование - отправляю в чат МСК {notification_chat_id}")
             else:

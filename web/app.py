@@ -165,6 +165,7 @@ def _init_defaults():
             {'name': 'Невский', 'code': 'ЕВГ_СПБ', 'emoji': '🍷', 'callback_id': 'bar_nevsky'},
             {'name': 'Рубинштейна', 'code': 'ЕВГ_СПБ_РУБ', 'emoji': '💎', 'callback_id': 'bar_rubinstein'},
             {'name': 'Пятницкая МСК', 'code': 'ЕВГ_МСК_ПЯТ', 'emoji': '🏙', 'callback_id': 'bar_pyatnitskaya'},
+            {'name': 'Цветной МСК', 'code': 'ЕВГ_МСК_ЦВЕТ', 'emoji': '🌸', 'callback_id': 'bar_tsvetnoj'},
         ])
     if not os.path.exists(AI_F):
         _save(AI_F, {

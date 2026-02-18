@@ -279,7 +279,8 @@ def get_booking_confirmation_text(data: dict[str, str]) -> str:
     bar_names = {
         'bar_nevsky': 'СПб, Невский 53',
         'bar_rubinstein': 'СПб, Рубинштейна 9',
-        'bar_pyatnitskaya': 'МСК, Пятницкая 30'
+        'bar_pyatnitskaya': 'МСК, Пятницкая 30',
+        'bar_tsvetnoj': 'МСК, Цветной бульвар'
     }
     source_display = source_names.get(data.get('source', ''), data.get('source', 'не указано'))
     bar_display = bar_names.get(data.get('bar', ''), data.get('bar', 'не указано'))
@@ -334,7 +335,8 @@ def get_booking_report_text(data: dict[str, str], creator_id: int = None) -> str
     bar_info = {
         'bar_nevsky': {'name': 'СПб, Невский 53', 'tag': '#ЕВГ_СПБ'},
         'bar_rubinstein': {'name': 'СПб, Рубинштейна 9', 'tag': '#ЕВГ_СПБ_РУБ'},
-        'bar_pyatnitskaya': {'name': 'МСК, Пятницкая 30', 'tag': '#ЕВГ_МСК_ПЯТ'}
+        'bar_pyatnitskaya': {'name': 'МСК, Пятницкая 30', 'tag': '#ЕВГ_МСК_ПЯТ'},
+        'bar_tsvetnoj': {'name': 'МСК, Цветной бульвар', 'tag': '#ЕВГ_МСК_ЦВЕТ'}
     }
     bar_data = bar_info.get(data.get('bar', ''), {'name': data.get('bar', 'не указано'), 'tag': ''})
     bar_display = bar_data['name']

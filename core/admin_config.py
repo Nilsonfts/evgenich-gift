@@ -44,7 +44,8 @@ def get_bars():
     return load_config('bars.json', [
         {'name': 'СПб, Невский 53', 'code': 'ЕВГ_СПБ', 'emoji': '🍷', 'callback_id': 'bar_nevsky', 'tag': '', 'phone': '', 'menu_url': ''},
         {'name': 'СПб, Рубинштейна 9', 'code': 'ЕВГ_СПБ_РУБ', 'emoji': '💎', 'callback_id': 'bar_rubinstein', 'tag': '', 'phone': '', 'menu_url': ''},
-        {'name': 'МСК, Пятницкая 30', 'code': 'ЕВГ_МСК_ПЯТ', 'emoji': '🏛️', 'callback_id': 'bar_pyatnitskaya', 'tag': '', 'phone': '', 'menu_url': ''}
+        {'name': 'МСК, Пятницкая 30', 'code': 'ЕВГ_МСК_ПЯТ', 'emoji': '🏛️', 'callback_id': 'bar_pyatnitskaya', 'tag': '', 'phone': '', 'menu_url': ''},
+        {'name': 'МСК, Цветной бульвар', 'code': 'ЕВГ_МСК_ЦВЕТ', 'emoji': '🌸', 'callback_id': 'bar_tsvetnoj', 'tag': '', 'phone': '', 'menu_url': ''}
     ])
 
 def get_bar_by_callback(callback_id):

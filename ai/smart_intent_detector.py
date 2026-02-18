@@ -307,6 +307,8 @@ class SmartIntentDetector:
             entities["bar"] = "nevsky"
         elif any(word in message for word in ["рубинштейна", "рубина", "на 9", " 9"]):
             entities["bar"] = "rubinshteina"
+        elif any(word in message for word in ["цветной", "цветном", "цветного"]):
+            entities["bar"] = "tsvetnoj"
         
         # === Напитки (для меню) ===
         drinks = ["хуба", "пломбир", "фисташк", "клюкв", "облепих", "лимончелло", "таёжн", "кедров"]
