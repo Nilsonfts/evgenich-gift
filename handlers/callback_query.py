@@ -25,7 +25,76 @@ except ImportError:
 def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_feedback_func):
     """Регистрирует обработчики для всех inline-кнопок."""
 
-    @bot.callback_query_handler(func=lambda call: not (call.data.startswith('admin_') or call.data.startswith('boss_') or call.data.startswith('booking_') or call.data.startswith('source_') or call.data.startswith('bar_') or call.data.startswith('broadcast_') or call.data.startswith('newsletter_click_') or call.data in ['confirm_booking', 'cancel_booking']))
+    # === ВЫБОР ГОРОДА (qr_bar → СПб или Москва) ===
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('city_select_'))
+    def handle_city_select(call: types.CallbackQuery):
+        """Обработка выбора города при сканировании универсального QR qr_bar."""
+        try:
+            bot.answer_callback_query(call.id)
+            user_id = call.from_user.id
+
+            if call.data == 'city_select_msk':
+                # Москва
+                new_payload = 'qr_bar_msk'
+                city_name = 'Москва'
+            else:
+                # Санкт-Петербург (по умолчанию)
+                new_payload = 'qr_bar'
+                city_name = 'Санкт-Петербург'
+
+            # Сохраняем payload для проверки подписки
+            user_current_payload[user_id] = new_payload
+            logging.info(f"🏙 Пользователь {user_id} выбрал город: {city_name} (payload={new_payload})")
+
+            # Удаляем сообщение с выбором города
+            try:
+                bot.delete_message(call.message.chat.id, call.message.message_id)
+            except:
+                pass
+
+            # Регистрируем пользователя с правильным source
+            source = 'QR-код на баре МСК' if new_payload == 'qr_bar_msk' else 'QR-код на баре СПБ'
+            database.add_new_user(user_id, call.from_user.username, call.from_user.first_name, source, None, None)
+            logging.info(f"✅ Зарегистрирован {user_id} с source='{source}'")
+
+            # Определяем канал
+            channel_to_check = get_channel_for_payload(new_payload)
+            if new_payload == 'qr_bar_msk':
+                channel_link = 'https://t.me/evgenichmoscow'
+                channel_name = 'ЕВГЕНИЧ Москва'
+            else:
+                channel_link = 'https://t.me/evgenichbarspb'
+                channel_name = 'ЕВГЕНИЧ СПб'
+
+            # Отправляем стандартный флоу: приветствие → подписка на канал
+            bot.send_message(user_id, f"📍 {city_name}! Отличный выбор! 🔥")
+
+            # Отправляем приветственное сообщение
+            bot.send_message(user_id, texts.WELCOME_TEXT)
+
+            # Предлагаем подписаться на правильный канал
+            subscribe_markup = types.InlineKeyboardMarkup(row_width=1)
+            subscribe_markup.add(
+                types.InlineKeyboardButton(f"➡️ Перейти к каналу", url=channel_link),
+                types.InlineKeyboardButton("✅ Я подписался, проверить!", callback_data="check_subscription")
+            )
+            bot.send_message(
+                user_id,
+                f"Красавчик! 👍\n\n"
+                f"Чтобы забрать настойку, подпишись на наш ламповый канал: "
+                f"там шутки, акции и пластинки. "
+                f"Подписался? Жми «Я подписался» — не тяни резину, как ремень от кассетника.",
+                reply_markup=subscribe_markup
+            )
+
+        except Exception as e:
+            logging.error(f"❌ Ошибка выбора города: {e}", exc_info=True)
+            try:
+                bot.send_message(call.message.chat.id, "Произошла ошибка. Попробуй /start")
+            except:
+                pass
+
+    @bot.callback_query_handler(func=lambda call: not (call.data.startswith('admin_') or call.data.startswith('boss_') or call.data.startswith('booking_') or call.data.startswith('source_') or call.data.startswith('bar_') or call.data.startswith('broadcast_') or call.data.startswith('newsletter_click_') or call.data.startswith('city_select_') or call.data in ['confirm_booking', 'cancel_booking']))
     def handle_all_callbacks(call: types.CallbackQuery):
         """Универсальный обработчик для неадминских callback-запросов."""
         logging.info(f"🔔 Получен callback: {call.data} от пользователя {call.from_user.id}")

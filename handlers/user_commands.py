@@ -18,10 +18,6 @@ user_current_payload = {}
 
 def get_channel_for_payload(payload: str) -> str:
     """Определяет канал напрямую по payload (жёсткая привязка)."""
-    # Специальная проверка для qr_bar - направляем на московский канал
-    if payload == 'qr_bar':
-        logging.info(f"🎯 Payload '{payload}' -> Московский канал @evgenichmoscow")
-        return CHANNEL_ID_MSK
     # Общая проверка для всех _msk источников
     if payload and payload.endswith('_msk'):
         logging.info(f"🎯 Payload '{payload}' -> Московский канал @evgenichmoscow")
@@ -106,6 +102,22 @@ def register_user_command_handlers(bot):
             
             # Детальное логирование для отладки
             logging.info(f"🔍 /start от {user_id}: message.text='{message.text}', status='{status}', payload={user_current_payload.get(user_id, 'нет')}")
+
+            # === ВЫБОР ГОРОДА для qr_bar (один QR на два города) ===
+            if len(args) > 1 and args[1] == 'qr_bar' and status == 'not_found':
+                logging.info(f"🏙 Показываем выбор города для {user_id} (qr_bar)")
+                city_markup = types.InlineKeyboardMarkup(row_width=1)
+                city_markup.add(
+                    types.InlineKeyboardButton("🏛 Санкт-Петербург", callback_data="city_select_spb"),
+                    types.InlineKeyboardButton("🏙 Москва", callback_data="city_select_msk")
+                )
+                bot.send_message(
+                    user_id,
+                    "👋 Привет! Рад тебя видеть!\n\n"
+                    "📍 В каком городе ты хочешь к нам заглянуть?",
+                    reply_markup=city_markup
+                )
+                return
 
             # Проверяем, есть ли параметр booking (для любых пользователей)
             if len(args) > 1 and args[1] == 'booking':
