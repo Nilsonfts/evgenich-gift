@@ -281,10 +281,13 @@ def register_ai_handlers(bot):
                     # Проверяем нужна ли кнопка бронирования в ГРУППЕ
                     booking_button = None
                     
-                    # Если это группа И намерение - бронирование, добавляем кнопку
-                    if is_group_chat and intent.get('intent') == 'booking' and intent.get('confidence', 0) > 0.5:
+                    # Если это группа И (намерение booking ИЛИ есть ключевое слово бронирования)
+                    should_book = getattr(message, 'should_attach_booking_button', False)
+                    intent_is_booking = intent.get('intent') == 'booking' and intent.get('confidence', 0) > 0.5
+                    
+                    if is_group_chat and (intent_is_booking or should_book):
                         booking_button = keyboards.get_quick_booking_button()
-                        logging.info(f"📍 Прикрепляю кнопку бронирования к ответу AI в группе (intent: booking)")
+                        logging.info(f"📍 Прикрепляю кнопку бронирования к ответу AI в группе (intent: {intent.get('intent')}, keyword: {should_book})")
                     
                     # Отправляем ответ AI с кнопкой (если нужно)
                     sent_message = bot.reply_to(message, ai_response, parse_mode="Markdown", reply_markup=booking_button)
@@ -295,7 +298,9 @@ def register_ai_handlers(bot):
                         
                         # Проверяем нужна ли кнопка бронирования в ГРУППЕ (при ошибке парсинга)
                         booking_button = None
-                        if is_group_chat and intent.get('intent') == 'booking' and intent.get('confidence', 0) > 0.5:
+                        should_book = getattr(message, 'should_attach_booking_button', False)
+                        intent_is_booking = intent.get('intent') == 'booking' and intent.get('confidence', 0) > 0.5
+                        if is_group_chat and (intent_is_booking or should_book):
                             booking_button = keyboards.get_quick_booking_button()
                         
                         sent_message = bot.reply_to(message, ai_response, parse_mode=None, reply_markup=booking_button)
