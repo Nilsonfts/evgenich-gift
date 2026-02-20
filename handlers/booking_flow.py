@@ -197,7 +197,7 @@ def register_booking_handlers(bot):
 
         try:
             if call.data == "booking_phone":
-                bot.send_message(call.message.chat.id, texts.BOOKING_PHONE_TEXT, parse_mode="Markdown")
+                bot.send_message(call.message.chat.id, texts.BOOKING_PHONE_TEXT)
             elif call.data == "booking_site":
                 bot.send_message(call.message.chat.id, texts.BOOKING_SITE_TEXT)
             elif call.data == "booking_secret":
