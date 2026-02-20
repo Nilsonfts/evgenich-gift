@@ -28,32 +28,43 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
     @bot.callback_query_handler(func=lambda call: not (call.data.startswith('admin_') or call.data.startswith('boss_') or call.data.startswith('booking_') or call.data.startswith('source_') or call.data.startswith('bar_') or call.data.startswith('broadcast_') or call.data.startswith('newsletter_click_') or call.data in ['confirm_booking', 'cancel_booking']))
     def handle_all_callbacks(call: types.CallbackQuery):
         """Универсальный обработчик для неадминских callback-запросов."""
-        logging.info(f"Получен callback: {call.data} от пользователя {call.from_user.id}")
+        logging.info(f"🔔 Получен callback: {call.data} от пользователя {call.from_user.id}")
         
-        # Передаем управление специфичным обработчикам
-        if call.data == "check_subscription":
-            handle_check_subscription(call)
-        elif call.data == "redeem_reward":
-            handle_redeem_reward(call)
-        elif call.data.startswith("feedback_"):
-            handle_feedback_rating(call)
-        elif call.data.startswith("concept_"):
-            callback_concept_choice(call)
-        elif call.data.startswith("quiz_answer_"):
-            callback_quiz_answer(call)
-        elif call.data == "check_referral_rewards":
-            handle_check_referral_rewards(call)
-        elif call.data == "claim_reward":
-            handle_claim_reward_callback(call)
-        elif call.data == "show_referral_link":
-            handle_show_referral_link(call)
-        elif call.data == "show_referral_stats":
-            handle_show_referral_stats(call)
-        elif call.data == "start_booking":
-            handle_start_booking_callback(call)
-        else:
-            logging.warning(f"Неизвестный callback: {call.data}")
-            bot.answer_callback_query(call.id, "Неизвестная команда")
+        try:
+            bot.answer_callback_query(call.id)
+        except Exception:
+            pass
+        
+        try:
+            # Передаем управление специфичным обработчикам
+            if call.data == "check_subscription":
+                handle_check_subscription(call)
+            elif call.data == "redeem_reward":
+                handle_redeem_reward(call)
+            elif call.data.startswith("feedback_"):
+                handle_feedback_rating(call)
+            elif call.data.startswith("concept_"):
+                callback_concept_choice(call)
+            elif call.data.startswith("quiz_answer_"):
+                callback_quiz_answer(call)
+            elif call.data == "check_referral_rewards":
+                handle_check_referral_rewards(call)
+            elif call.data == "claim_reward":
+                handle_claim_reward_callback(call)
+            elif call.data == "show_referral_link":
+                handle_show_referral_link(call)
+            elif call.data == "show_referral_stats":
+                handle_show_referral_stats(call)
+            elif call.data == "start_booking":
+                handle_start_booking_callback(call)
+            else:
+                logging.warning(f"Неизвестный callback: {call.data}")
+        except Exception as e:
+            logging.error(f"❌ Ошибка обработки callback {call.data}: {e}", exc_info=True)
+            try:
+                bot.send_message(call.message.chat.id, "⚠️ Произошла ошибка. Попробуй ещё раз!")
+            except:
+                pass
 
     def handle_check_subscription(call: types.CallbackQuery):
         """

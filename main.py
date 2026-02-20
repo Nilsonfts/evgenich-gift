@@ -237,7 +237,11 @@ if __name__ == "__main__":
     while True:
         try:
             logging.info("🚀 Запуск бота...")
-            bot.infinity_polling(skip_pending=True)
+            # Удаляем webhook и чистим очередь перед стартом polling
+            bot.remove_webhook()
+            import time
+            time.sleep(1)
+            bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
         except Exception as e:
             logging.error(f"❌ Ошибка в работе бота: {e}")
             logging.error(f"Тип ошибки: {type(e).__name__}")
