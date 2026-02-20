@@ -449,7 +449,7 @@ def generate_full_statistics_report() -> str:
     Генерирует полный отчет по статистике бота с момента запуска (10 июля 2025).
     Включает подписки, отписки, дельту и разбивку по источникам.
     """
-    import database
+    import core.database as database
     from datetime import datetime
     
     try:
