@@ -155,148 +155,156 @@ def register_ai_handlers(bot):
 
         logging.info(f"Пользователь {user_id} отправил текстовый запрос AI: '{user_text}'")
         
-        # Определяем намерение пользователя
-        intent = detect_intent(user_text)
-        emotion = detect_emotion(user_text)
-        
-        logging.info(f"🎯 Намерение: {intent['intent']} (уверенность: {intent['confidence']})")
-        logging.info(f"😊 Эмоция: {emotion['emotion']} (интенсивность: {emotion['intensity']})")
-        
-        # Обработка специальных намерений
-        if intent['confidence'] > 0.5:
-            # Локация
-            if intent['intent'] == 'location':
-                locations = get_location_info()
-                location_text = "📍 **Наши адреса:**\n\n"
-                for bar_id, info in locations.items():
-                    location_text += f"**{info['name']}**\n"
-                    location_text += f"📍 {info['address']}\n"
-                    location_text += f"🚇 Метро: {info['metro']}\n"
-                    location_text += f"📞 {info['phone']}\n\n"
-                bot.send_message(message.chat.id, location_text, parse_mode="Markdown")
-                return
+        try:
+            # Определяем намерение пользователя
+            intent = detect_intent(user_text)
+            emotion = detect_emotion(user_text)
             
-            # Часы работы
-            elif intent['intent'] == 'hours':
-                hours_text = f"🕐 **Режим работы:**\n{get_working_hours()}\n\n"
-                bar_context = get_current_bar_context()
-                if bar_context['is_open']:
-                    hours_text += "✅ Сейчас мы открыты! Приходи!"
-                else:
-                    hours_text += "❌ Сейчас мы закрыты. Приходи после 12:00!"
-                bot.send_message(message.chat.id, hours_text, parse_mode="Markdown")
-                return
+            logging.info(f"🎯 Намерение: {intent['intent']} (уверенность: {intent['confidence']})")
+            logging.info(f"😊 Эмоция: {emotion['emotion']} (интенсивность: {emotion['intensity']})")
             
-            # Бронирование
-            elif intent['intent'] == 'booking':
-                # В группах - генерируем персональный ответ через AI и отправляем кнопку
-                # В личке - открываем форму
-                if is_group_chat:
-                    logging.info(f"📍 Бронирование в группе (детектор намерений) - генерирую персональный ответ через AI")
-                    # Устанавливаем флаг что нужна кнопка
-                    message.should_attach_booking_button = True
-                    # НЕ возвращаемся здесь - пусть AI сгенерирует персональный ответ
-                    # После ответа AI добавим кнопку
-                else:
-                    # В личке открываем форму
-                    bot.send_message(
-                        message.chat.id,
-                        texts.BOOKING_PROMPT_TEXT,
-                        reply_markup=keyboards.get_booking_options_keyboard()
-                    )
+            # Обработка специальных намерений
+            if intent['confidence'] > 0.5:
+                # Локация
+                if intent['intent'] == 'location':
+                    locations = get_location_info()
+                    location_text = "📍 **Наши адреса:**\n\n"
+                    for bar_id, info in locations.items():
+                        location_text += f"**{info['name']}**\n"
+                        location_text += f"📍 {info['address']}\n"
+                        location_text += f"🚇 Метро: {info['metro']}\n"
+                        location_text += f"📞 {info['phone']}\n\n"
+                    bot.send_message(message.chat.id, location_text, parse_mode="Markdown")
                     return
+                
+                # Часы работы
+                elif intent['intent'] == 'hours':
+                    hours_text = f"🕐 **Режим работы:**\n{get_working_hours()}\n\n"
+                    bar_context = get_current_bar_context()
+                    if bar_context['is_open']:
+                        hours_text += "✅ Сейчас мы открыты! Приходи!"
+                    else:
+                        hours_text += "❌ Сейчас мы закрыты. Приходи после 12:00!"
+                    bot.send_message(message.chat.id, hours_text, parse_mode="Markdown")
+                    return
+                
+                # Бронирование
+                elif intent['intent'] == 'booking':
+                    # В группах - генерируем персональный ответ через AI и отправляем кнопку
+                    # В личке - открываем форму
+                    if is_group_chat:
+                        logging.info(f"📍 Бронирование в группе (детектор намерений) - генерирую персональный ответ через AI")
+                        # Устанавливаем флаг что нужна кнопка
+                        message.should_attach_booking_button = True
+                        # НЕ возвращаемся здесь - пусть AI сгенерирует персональный ответ
+                        # После ответа AI добавим кнопку
+                    else:
+                        # В личке открываем форму
+                        bot.send_message(
+                            message.chat.id,
+                            texts.BOOKING_PROMPT_TEXT,
+                            reply_markup=keyboards.get_booking_options_keyboard()
+                        )
+                        return
+                
+                # Жалоба - уведомить администраторов
+                elif intent['intent'] == 'complaint':
+                    complaint_text = f"⚠️ **Жалоба от гостя**\n\n"
+                    complaint_text += f"👤 User ID: {user_id}\n"
+                    complaint_text += f"📝 Сообщение: {user_text}\n"
+                    # Отправляем администраторам
+                    for admin_id in ALL_ADMINS:
+                        try:
+                            bot.send_message(admin_id, complaint_text, parse_mode="Markdown")
+                        except:
+                            pass
+                    logging.warning(f"⚠️ Получена жалоба от пользователя {user_id}: {user_text}")
             
-            # Жалоба - уведомить администраторов
-            elif intent['intent'] == 'complaint':
-                complaint_text = f"⚠️ **Жалоба от гостя**\n\n"
-                complaint_text += f"👤 User ID: {user_id}\n"
-                complaint_text += f"📝 Сообщение: {user_text}\n"
-                # Отправляем администраторам
-                for admin_id in ALL_ADMINS:
-                    try:
-                        bot.send_message(admin_id, complaint_text, parse_mode="Markdown")
-                    except:
-                        pass
-                logging.warning(f"⚠️ Получена жалоба от пользователя {user_id}: {user_text}")
-        
-        # Логируем диалог
-        database.log_conversation_turn(user_id, "user", user_text)
-        
-        # Извлекаем предпочтения из текста
-        extract_preferences_from_text(user_id, user_text)
-        preferences_text = get_preferences_text(user_id)
-
-        # Улучшенная история диалога - 12 сообщений для лучшего контекста
-        history = database.get_conversation_history(user_id, limit=12)
-        daily_updates = database.get_daily_updates()
-        
-        # Получаем выбранную пользователем концепцию
-        user_concept = database.get_user_concept(user_id)
-        
-        # Получаем информацию о пользователе для персонализации
-        user_info = database.find_user_by_id(user_id)
-        visits_count = len(database.get_user_visits(user_id)) if user_info else 0
-        user_type = analyze_user_type(user_info, visits_count)
-        
-        # Получаем контекст бара
-        bar_context = get_current_bar_context()
-        bar_info = get_bar_info_text(bar_context)
-
-        bot.send_chat_action(message.chat.id, 'typing')
-
-        ai_response = get_ai_recommendation(
-            user_query=user_text,
-            conversation_history=history,
-            user_id=user_id,  # НОВОЕ: передаём user_id для контекста и метрик
-            daily_updates=daily_updates,
-            user_concept=user_concept,
-            user_type=user_type,
-            bar_context=bar_info,
-            emotion=emotion,
-            preferences=preferences_text,
-            is_group_chat=is_group_chat
-        )
-
-        database.log_conversation_turn(user_id, "assistant", ai_response)
-
-        if "[START_BOOKING_FLOW]" in ai_response:
-            logging.info(f"AI определил намерение бронирования для пользователя {user_id}.")
+            # Логируем диалог
+            database.log_conversation_turn(user_id, "user", user_text)
             
-            # Убираем маркер из текста, но оставляем остальное сообщение
-            clean_text = ai_response.replace("[START_BOOKING_FLOW]", "").strip()
+            # Извлекаем предпочтения из текста
+            extract_preferences_from_text(user_id, user_text)
+            preferences_text = get_preferences_text(user_id)
+
+            # Улучшенная история диалога - 12 сообщений для лучшего контекста
+            history = database.get_conversation_history(user_id, limit=12)
+            daily_updates = database.get_daily_updates()
             
-            # Если есть текст перед маркером - отправляем его
-            if clean_text:
-                bot.send_message(message.chat.id, clean_text, parse_mode="Markdown")
+            # Получаем выбранную пользователем концепцию
+            user_concept = database.get_user_concept(user_id)
             
-            # Отправляем кнопки бронирования
-            bot.send_message(
-                message.chat.id,
-                texts.BOOKING_PROMPT_TEXT,
-                reply_markup=keyboards.get_booking_options_keyboard()
+            # Получаем информацию о пользователе для персонализации
+            user_info = database.find_user_by_id(user_id)
+            visits_count = 0  # Визиты пока не отслеживаются в БД
+            user_type = analyze_user_type(user_info, visits_count)
+            
+            # Получаем контекст бара
+            bar_context = get_current_bar_context()
+            bar_info = get_bar_info_text(bar_context)
+
+            bot.send_chat_action(message.chat.id, 'typing')
+
+            ai_response = get_ai_recommendation(
+                user_query=user_text,
+                conversation_history=history,
+                user_id=user_id,  # НОВОЕ: передаём user_id для контекста и метрик
+                daily_updates=daily_updates,
+                user_concept=user_concept,
+                user_type=user_type,
+                bar_context=bar_info,
+                emotion=emotion,
+                preferences=preferences_text,
+                is_group_chat=is_group_chat
             )
-        else:
-            try:
-                # Проверяем нужна ли кнопка бронирования в ГРУППЕ
-                booking_button = None
+
+            database.log_conversation_turn(user_id, "assistant", ai_response)
+
+            if "[START_BOOKING_FLOW]" in ai_response:
+                logging.info(f"AI определил намерение бронирования для пользователя {user_id}.")
                 
-                # Если это группа И намерение - бронирование, добавляем кнопку
-                if is_group_chat and intent.get('intent') == 'booking' and intent.get('confidence', 0) > 0.5:
-                    booking_button = keyboards.get_quick_booking_button()
-                    logging.info(f"📍 Прикрепляю кнопку бронирования к ответу AI в группе (intent: booking)")
+                # Убираем маркер из текста, но оставляем остальное сообщение
+                clean_text = ai_response.replace("[START_BOOKING_FLOW]", "").strip()
                 
-                # Отправляем ответ AI с кнопкой (если нужно)
-                sent_message = bot.reply_to(message, ai_response, parse_mode="Markdown", reply_markup=booking_button)
+                # Если есть текст перед маркером - отправляем его
+                if clean_text:
+                    bot.send_message(message.chat.id, clean_text, parse_mode="Markdown")
                 
-            except ApiTelegramException as e:
-                if "can't parse entities" in e.description:
-                    logging.warning(f"Ошибка парсинга Markdown. Отправляю без форматирования. Текст: {ai_response}")
-                    
-                    # Проверяем нужна ли кнопка бронирования в ГРУППЕ (при ошибке парсинга)
+                # Отправляем кнопки бронирования
+                bot.send_message(
+                    message.chat.id,
+                    texts.BOOKING_PROMPT_TEXT,
+                    reply_markup=keyboards.get_booking_options_keyboard()
+                )
+            else:
+                try:
+                    # Проверяем нужна ли кнопка бронирования в ГРУППЕ
                     booking_button = None
+                    
+                    # Если это группа И намерение - бронирование, добавляем кнопку
                     if is_group_chat and intent.get('intent') == 'booking' and intent.get('confidence', 0) > 0.5:
                         booking_button = keyboards.get_quick_booking_button()
+                        logging.info(f"📍 Прикрепляю кнопку бронирования к ответу AI в группе (intent: booking)")
                     
-                    sent_message = bot.reply_to(message, ai_response, parse_mode=None, reply_markup=booking_button)
-                else:
-                    logging.error(f"Неизвестная ошибка Telegram API при отправке ответа AI: {e}")
+                    # Отправляем ответ AI с кнопкой (если нужно)
+                    sent_message = bot.reply_to(message, ai_response, parse_mode="Markdown", reply_markup=booking_button)
+                    
+                except ApiTelegramException as e:
+                    if "can't parse entities" in e.description:
+                        logging.warning(f"Ошибка парсинга Markdown. Отправляю без форматирования. Текст: {ai_response}")
+                        
+                        # Проверяем нужна ли кнопка бронирования в ГРУППЕ (при ошибке парсинга)
+                        booking_button = None
+                        if is_group_chat and intent.get('intent') == 'booking' and intent.get('confidence', 0) > 0.5:
+                            booking_button = keyboards.get_quick_booking_button()
+                        
+                        sent_message = bot.reply_to(message, ai_response, parse_mode=None, reply_markup=booking_button)
+                    else:
+                        logging.error(f"Неизвестная ошибка Telegram API при отправке ответа AI: {e}")
+        
+        except Exception as e:
+            logging.error(f"❌ Критическая ошибка в AI обработчике для пользователя {user_id}: {e}", exc_info=True)
+            try:
+                bot.reply_to(message, "Товарищ, произошла техническая заминка 🔧 Попробуй ещё раз через пару секунд!")
+            except:
+                pass
