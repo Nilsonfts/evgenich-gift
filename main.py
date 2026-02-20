@@ -233,18 +233,37 @@ if __name__ == "__main__":
     
     logging.info("✅ Все обработчики, планировщик и сервисы успешно запущены.")
 
+    # === КРИТИЧНО: Удаляем webhook ПЕРЕД стартом polling ===
+    # Если webhook установлен (например от веб-панели), Telegram НЕ отдаёт
+    # updates через polling — все кнопки перестают работать!
+    import time
+    logging.info("🔄 Удаляю webhook и очищаю очередь обновлений...")
+    try:
+        bot.delete_webhook(drop_pending_updates=True)
+        logging.info("✅ Webhook удалён, pending updates сброшены")
+    except Exception as e:
+        logging.warning(f"⚠️ Ошибка удаления webhook: {e}")
+    time.sleep(2)  # Даём Telegram время обработать удаление
+
+    # Проверяем что webhook точно удалён
+    try:
+        webhook_info = bot.get_webhook_info()
+        if webhook_info.url:
+            logging.error(f"❌ Webhook ВСЁ ЕЩЁ активен: {webhook_info.url}")
+            bot.delete_webhook(drop_pending_updates=True)
+            time.sleep(2)
+        else:
+            logging.info("✅ Webhook не установлен — polling будет работать")
+    except Exception as e:
+        logging.warning(f"⚠️ Не удалось проверить webhook: {e}")
+
     # Запуск бота с обработкой ошибок
     while True:
         try:
-            logging.info("🚀 Запуск бота...")
-            # Удаляем webhook и чистим очередь перед стартом polling
-            bot.remove_webhook()
-            import time
-            time.sleep(1)
+            logging.info("🚀 Запуск бота (long polling)...")
             bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
         except Exception as e:
             logging.error(f"❌ Ошибка в работе бота: {e}")
             logging.error(f"Тип ошибки: {type(e).__name__}")
             logging.info("🔄 Перезапуск бота через 5 секунд...")
-            import time
             time.sleep(5)
