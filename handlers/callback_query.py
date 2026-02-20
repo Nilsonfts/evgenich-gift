@@ -28,23 +28,32 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
     # === ВЫБОР ГОРОДА (qr_bar → СПб или Москва) ===
     @bot.callback_query_handler(func=lambda call: call.data.startswith('city_select_'))
     def handle_city_select(call: types.CallbackQuery):
-        """Обработка выбора города при сканировании универсального QR qr_bar."""
+        """Обработка выбора города после заполнения профиля (qr_bar)."""
         try:
             bot.answer_callback_query(call.id)
             user_id = call.from_user.id
 
             if call.data == 'city_select_msk':
-                # Москва
                 new_payload = 'qr_bar_msk'
                 city_name = 'Москва'
+                source = 'QR-код на баре МСК'
+                channel_link = 'https://t.me/evgenichmoscow'
             else:
-                # Санкт-Петербург (по умолчанию)
                 new_payload = 'qr_bar'
                 city_name = 'Санкт-Петербург'
+                source = 'QR-код на баре СПБ'
+                channel_link = 'https://t.me/evgenichbarspb'
 
-            # Сохраняем payload для проверки подписки
+            # Обновляем payload для проверки подписки
             user_current_payload[user_id] = new_payload
             logging.info(f"🏙 Пользователь {user_id} выбрал город: {city_name} (payload={new_payload})")
+
+            # Обновляем source в базе
+            try:
+                database.update_user_source(user_id, source)
+                logging.info(f"✅ Source обновлён для {user_id}: {source}")
+            except Exception as e:
+                logging.warning(f"Не удалось обновить source: {e}")
 
             # Удаляем сообщение с выбором города
             try:
@@ -52,38 +61,17 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             except:
                 pass
 
-            # Регистрируем пользователя с правильным source
-            source = 'QR-код на баре МСК' if new_payload == 'qr_bar_msk' else 'QR-код на баре СПБ'
-            database.add_new_user(user_id, call.from_user.username, call.from_user.first_name, source, None, None)
-            logging.info(f"✅ Зарегистрирован {user_id} с source='{source}'")
-
-            # Определяем канал
-            channel_to_check = get_channel_for_payload(new_payload)
-            if new_payload == 'qr_bar_msk':
-                channel_link = 'https://t.me/evgenichmoscow'
-                channel_name = 'ЕВГЕНИЧ Москва'
-            else:
-                channel_link = 'https://t.me/evgenichbarspb'
-                channel_name = 'ЕВГЕНИЧ СПб'
-
-            # Отправляем стандартный флоу: приветствие → подписка на канал
+            # Подтверждаем выбор и показываем подписку на правильный канал
             bot.send_message(user_id, f"📍 {city_name}! Отличный выбор! 🔥")
 
-            # Отправляем приветственное сообщение
-            bot.send_message(user_id, texts.WELCOME_TEXT)
-
-            # Предлагаем подписаться на правильный канал
             subscribe_markup = types.InlineKeyboardMarkup(row_width=1)
             subscribe_markup.add(
-                types.InlineKeyboardButton(f"➡️ Перейти к каналу", url=channel_link),
+                types.InlineKeyboardButton("➡️ Перейти к каналу", url=channel_link),
                 types.InlineKeyboardButton("✅ Я подписался, проверить!", callback_data="check_subscription")
             )
             bot.send_message(
                 user_id,
-                f"Красавчик! 👍\n\n"
-                f"Чтобы забрать настойку, подпишись на наш ламповый канал: "
-                f"там шутки, акции и пластинки. "
-                f"Подписался? Жми «Я подписался» — не тяни резину, как ремень от кассетника.",
+                texts.SUBSCRIBE_PROMPT_TEXT,
                 reply_markup=subscribe_markup
             )
 

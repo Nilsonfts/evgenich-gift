@@ -103,22 +103,6 @@ def register_user_command_handlers(bot):
             # Детальное логирование для отладки
             logging.info(f"🔍 /start от {user_id}: message.text='{message.text}', status='{status}', payload={user_current_payload.get(user_id, 'нет')}")
 
-            # === ВЫБОР ГОРОДА для qr_bar (один QR на два города) ===
-            if len(args) > 1 and args[1] == 'qr_bar' and status == 'not_found':
-                logging.info(f"🏙 Показываем выбор города для {user_id} (qr_bar)")
-                city_markup = types.InlineKeyboardMarkup(row_width=1)
-                city_markup.add(
-                    types.InlineKeyboardButton("🏛 Санкт-Петербург", callback_data="city_select_spb"),
-                    types.InlineKeyboardButton("🏙 Москва", callback_data="city_select_msk")
-                )
-                bot.send_message(
-                    user_id,
-                    "👋 Привет! Рад тебя видеть!\n\n"
-                    "📍 В каком городе ты хочешь к нам заглянуть?",
-                    reply_markup=city_markup
-                )
-                return
-
             # Проверяем, есть ли параметр booking (для любых пользователей)
             if len(args) > 1 and args[1] == 'booking':
                 logging.info(f"✅ Пользователь {user_id} запускает быстрое бронирование через deep link")
@@ -963,20 +947,35 @@ def register_user_command_handlers(bot):
                     
                     # ЖЁСТКАЯ ПРИВЯЗКА: определяем канал по сохранённому payload
                     saved_payload = user_current_payload.get(user_id, '')
-                    channel_to_show = get_channel_for_payload(saved_payload)
-                    channel_url = f"https://t.me/{channel_to_show.lstrip('@')}"
                     
-                    logging.info(f"🎯 ПОКАЗ КНОПКИ ПОДПИСКИ для {user_id}:")
-                    logging.info(f"   - Сохранённый payload: '{saved_payload}'")
-                    logging.info(f"   - Выбранный канал: {channel_to_show}")
-                    logging.info(f"   - URL кнопки: {channel_url}")
-                    
-                    # ВСЕГДА показываем кнопку подписки - проверка будет при нажатии "Я подписался"
-                    bot.send_message(
-                        message.chat.id,
-                        texts.SUBSCRIBE_PROMPT_TEXT,
-                        reply_markup=keyboards.get_subscription_keyboard(channel_url)
-                    )
+                    # === ВЫБОР ГОРОДА для qr_bar (один QR на два города) ===
+                    if saved_payload == 'qr_bar':
+                        logging.info(f"🏙 Показываем выбор города для {user_id} после заполнения профиля")
+                        city_markup = types.InlineKeyboardMarkup(row_width=1)
+                        city_markup.add(
+                            types.InlineKeyboardButton("🏛 Санкт-Петербург", callback_data="city_select_spb"),
+                            types.InlineKeyboardButton("🏙 Москва", callback_data="city_select_msk")
+                        )
+                        bot.send_message(
+                            message.chat.id,
+                            "📍 В каком городе ты хочешь к нам заглянуть?",
+                            reply_markup=city_markup
+                        )
+                    else:
+                        # Обычный флоу — сразу показываем подписку
+                        channel_to_show = get_channel_for_payload(saved_payload)
+                        channel_url = f"https://t.me/{channel_to_show.lstrip('@')}"
+                        
+                        logging.info(f"🎯 ПОКАЗ КНОПКИ ПОДПИСКИ для {user_id}:")
+                        logging.info(f"   - Сохранённый payload: '{saved_payload}'")
+                        logging.info(f"   - Выбранный канал: {channel_to_show}")
+                        logging.info(f"   - URL кнопки: {channel_url}")
+                        
+                        bot.send_message(
+                            message.chat.id,
+                            texts.SUBSCRIBE_PROMPT_TEXT,
+                            reply_markup=keyboards.get_subscription_keyboard(channel_url)
+                        )
                 else:
                     bot.send_message(
                         message.chat.id,
