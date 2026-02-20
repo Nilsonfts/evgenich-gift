@@ -258,10 +258,19 @@ if __name__ == "__main__":
         logging.warning(f"⚠️ Не удалось проверить webhook: {e}")
 
     # Запуск бота с обработкой ошибок
+    # КРИТИЧНО: указываем allowed_updates с callback_query, иначе кнопки не работают!
+    ALLOWED_UPDATES = ['message', 'callback_query', 'inline_query', 'chosen_inline_result',
+                       'edited_message', 'channel_post', 'edited_channel_post',
+                       'my_chat_member', 'chat_member', 'chat_join_request']
     while True:
         try:
             logging.info("🚀 Запуск бота (long polling)...")
-            bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
+            bot.infinity_polling(
+                skip_pending=True,
+                timeout=30,
+                long_polling_timeout=30,
+                allowed_updates=ALLOWED_UPDATES
+            )
         except Exception as e:
             logging.error(f"❌ Ошибка в работе бота: {e}")
             logging.error(f"Тип ошибки: {type(e).__name__}")
