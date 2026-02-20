@@ -25,6 +25,13 @@ from utils.social_bookings_export import (
 db = TinyDB('booking_data.json')
 User = Query()
 
+# --- Экспортируемая функция для запуска бронирования извне ---
+
+def start_booking_flow(bot, message, user_id):
+    """Запускает процесс бронирования. Может вызываться из других модулей."""
+    db.upsert({'user_id': user_id, 'step': 'name', 'data': {}}, User.user_id == user_id)
+    bot.send_message(message.chat.id, texts.BOOKING_START_PROMPT, parse_mode="Markdown")
+
 # --- Регистрация обработчиков ---
 
 def register_booking_handlers(bot):

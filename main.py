@@ -193,15 +193,14 @@ if __name__ == "__main__":
     register_user_command_handlers(bot)
     register_callback_handlers(bot, scheduler, send_friend_bonus, request_feedback)
     register_booking_handlers(bot)
+    # Инициализируем систему рассылок с планировщиком (ПЕРЕД admin catch-all)
+    init_admin_handlers(bot, scheduler)
     register_admin_handlers(bot)
     register_content_handlers(bot)  # AI System v3.0 - управление контентом
     register_proactive_commands(bot)  # Проактивные команды для админа
     register_broadcast_handlers(bot)  # ПЕРЕД AI — чтобы broadcast_states ловили текст раньше
     register_ai_handlers(bot)  # AI catch-all — ПОСЛЕДНИМ среди message handlers
     register_iiko_data_handlers(bot)
-    
-    # Инициализируем систему рассылок с планировщиком
-    init_admin_handlers(bot, scheduler)
 
     # Ежедневный отчет в 07:00
     scheduler.add_job(

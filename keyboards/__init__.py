@@ -167,8 +167,8 @@ def get_admin_main_menu():
         types.InlineKeyboardButton("⚙️ Управление акциями", callback_data="admin_menu_promotions"),
         types.InlineKeyboardButton("📊 Отчеты и аналитика", callback_data="admin_menu_reports"),
         types.InlineKeyboardButton("📝 Управление контентом", callback_data="admin_menu_content"),
-        types.InlineKeyboardButton("� Система рассылок", callback_data="admin_menu_broadcasts"),
-        types.InlineKeyboardButton("�👥 Управление персоналом", callback_data="admin_menu_staff"),
+        types.InlineKeyboardButton("📢 Система рассылок", callback_data="admin_menu_broadcasts"),
+        types.InlineKeyboardButton("👥 Управление персоналом", callback_data="admin_menu_staff"),
         types.InlineKeyboardButton("👤 Управление пользователями", callback_data="admin_menu_users"),
         types.InlineKeyboardButton("💾 Управление данными", callback_data="admin_menu_data")
     )
@@ -209,8 +209,8 @@ def get_admin_reports_menu():
     keyboard.add(
         types.InlineKeyboardButton("📊 Текущая смена (реальное время)", callback_data="admin_report_current_shift"),
         types.InlineKeyboardButton("📊 Завершенная смена", callback_data="admin_report_manual_daily"),
-        types.InlineKeyboardButton("� Полный отчет за все время", callback_data="admin_report_full_statistics"),
-        types.InlineKeyboardButton("�👷 Статистика сотрудников", callback_data="admin_report_staff_realtime"),
+        types.InlineKeyboardButton("📊 Полный отчет за все время", callback_data="admin_report_full_statistics"),
+        types.InlineKeyboardButton("👷 Статистика сотрудников", callback_data="admin_report_staff_realtime"),
         types.InlineKeyboardButton("🔍 Диагностика QR-кодов", callback_data="admin_staff_qr_diagnostics"),
         types.InlineKeyboardButton("🏆 Ударники труда", callback_data="admin_report_leaderboard"),
         types.InlineKeyboardButton("💔 Анализ оттока", callback_data="admin_churn_analysis"),
@@ -297,35 +297,6 @@ def get_content_management_menu():
     )
     keyboard.add(
         types.InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")
-    )
-    return keyboard
-
-def get_newsletter_creation_choice_menu():
-    """Меню выбора способа создания рассылки."""
-    keyboard = types.InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        types.InlineKeyboardButton("🎯 Использовать шаблон", callback_data="admin_newsletter_template_choice"),
-        types.InlineKeyboardButton("✏️ Создать свой", callback_data="admin_newsletter_custom_choice")
-    )
-    keyboard.add(
-        types.InlineKeyboardButton("🔙 Назад", callback_data="admin_newsletter_main")
-    )
-    return keyboard
-
-def get_newsletter_template_categories():
-    """Меню выбора категории шаблона."""
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        types.InlineKeyboardButton("� Акции и скидки", callback_data="admin_template_promo"),
-        types.InlineKeyboardButton("🍽 Новое меню", callback_data="admin_template_menu")
-    )
-    keyboard.add(
-        types.InlineKeyboardButton("🎵 Мероприятия", callback_data="admin_template_event"),
-        types.InlineKeyboardButton("📅 Бронирование", callback_data="admin_template_booking")
-    )
-    keyboard.add(
-        types.InlineKeyboardButton("👋 Приветствие", callback_data="admin_template_welcome"),
-        types.InlineKeyboardButton("🔙 Назад", callback_data="admin_content_create")
     )
     return keyboard
 
@@ -465,7 +436,7 @@ def get_admin_broadcasts_menu():
     keyboard.add(
         types.InlineKeyboardButton("📝 Создать рассылку", callback_data="broadcast_create"),
         types.InlineKeyboardButton("📊 Статистика рассылок", callback_data="broadcast_stats"),
-        types.InlineKeyboardButton("🔙 Назад в админку", callback_data="admin_menu_main")
+        types.InlineKeyboardButton("🔙 Назад в админку", callback_data="admin_main_menu")
     )
     return keyboard
 
