@@ -184,27 +184,40 @@ def register_booking_handlers(bot):
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("booking_"))
     def handle_booking_option_callback(call: types.CallbackQuery):
-        bot.answer_callback_query(call.id)
+        logging.info(f"📍 Получен booking callback: {call.data} от пользователя {call.from_user.id}")
+        try:
+            bot.answer_callback_query(call.id)
+        except Exception as e:
+            logging.error(f"Ошибка answer_callback_query: {e}")
+        
         try:
             bot.delete_message(call.message.chat.id, call.message.message_id)
-        except ApiTelegramException:
+        except Exception:
             pass
 
-        if call.data == "booking_phone":
-            bot.send_message(call.message.chat.id, texts.BOOKING_PHONE_TEXT, parse_mode="Markdown")
-        elif call.data == "booking_site":
-            bot.send_message(call.message.chat.id, texts.BOOKING_SITE_TEXT)
-        elif call.data == "booking_secret":
-            bot.send_message(call.message.chat.id, texts.BOOKING_SECRET_CHAT_TEXT, reply_markup=keyboards.get_secret_chat_keyboard())
-        elif call.data == "booking_bot":
-            # Начинаем бронирование для гостя
-            db.upsert({'user_id': call.from_user.id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == call.from_user.id)
-            bot.send_message(
-                call.message.chat.id, 
-                "🌟 Отлично! Давайте забронируем для вас столик.\n\n"
-                "Как вас зовут?",
-                reply_markup=keyboards.get_cancel_booking_keyboard()
-            )
+        try:
+            if call.data == "booking_phone":
+                bot.send_message(call.message.chat.id, texts.BOOKING_PHONE_TEXT, parse_mode="Markdown")
+            elif call.data == "booking_site":
+                bot.send_message(call.message.chat.id, texts.BOOKING_SITE_TEXT)
+            elif call.data == "booking_secret":
+                bot.send_message(call.message.chat.id, texts.BOOKING_SECRET_CHAT_TEXT, reply_markup=keyboards.get_secret_chat_keyboard())
+            elif call.data == "booking_bot":
+                # Начинаем бронирование для гостя
+                db.upsert({'user_id': call.from_user.id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == call.from_user.id)
+                bot.send_message(
+                    call.message.chat.id, 
+                    "🌟 Отлично! Давайте забронируем для вас столик.\n\n"
+                    "Как вас зовут?",
+                    reply_markup=keyboards.get_cancel_booking_keyboard()
+                )
+            logging.info(f"✅ Booking callback {call.data} обработан успешно")
+        except Exception as e:
+            logging.error(f"❌ Ошибка обработки booking callback {call.data}: {e}", exc_info=True)
+            try:
+                bot.send_message(call.message.chat.id, "⚠️ Произошла ошибка. Попробуйте ещё раз нажать 📍 Забронировать стол")
+            except:
+                pass
 
     @bot.callback_query_handler(func=lambda call: call.data in ["confirm_booking", "cancel_booking"])
     def handle_booking_confirmation_callback(call: types.CallbackQuery):
