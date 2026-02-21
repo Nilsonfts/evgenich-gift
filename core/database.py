@@ -496,10 +496,9 @@ def update_status(user_id: int, new_status: str) -> bool:
             updated = pg_client.update_status(user_id, new_status)
             
             if updated and new_status == 'redeemed':
-                # Дополнительно сохраняем дату погашения и планируем сообщение
-                # Эти данные должны быть реализованы в PostgreSQL клиенте
-                # ToDo: Реализовать сохранение даты погашения в PostgreSQL
-                schedule_delayed_message(user_id, 'engagement_after_redeem', 10)
+                # Дата погашения сохранена, сообщение о лояльности
+                # отправляется через threading.Timer в callback_query.py
+                pass
         except Exception as e:
             logging.error(f"PostgreSQL | Ошибка обновления статуса для {user_id}: {e}")
             return False
@@ -518,9 +517,6 @@ def update_status(user_id: int, new_status: str) -> bool:
             conn.close()
             if updated:
                 logging.info(f"SQLite | Статус пользователя {user_id} обновлен на {new_status}.")
-                # Планируем отложенное сообщение при погашении купона
-                if new_status == 'redeemed':
-                    schedule_delayed_message(user_id, 'engagement_after_redeem', 10)
         except Exception as e:
             logging.error(f"SQLite | Ошибка обновления статуса для {user_id}: {e}")
             return False
