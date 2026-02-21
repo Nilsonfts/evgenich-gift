@@ -192,6 +192,30 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
                 parse_mode="Markdown"
             )
 
+            # --- Через 10 сек — предложение карты лояльности ---
+            def send_loyalty_offer(uid):
+                try:
+                    loyalty_text = (
+                        "🎁 Погоди, это ещё не всё!\n\n"
+                        "Евгенич — щедрая душа. Ловишь *500 рублей на карту лояльности* 💰\n\n"
+                        "Копи бонусы с каждого визита, трать на напитки и еду — "
+                        "как свои, только приятнее 🥃\n\n"
+                        "Жми 👇 и забирай!"
+                    )
+                    bot.send_message(
+                        uid,
+                        loyalty_text,
+                        reply_markup=keyboards.get_loyalty_keyboard(),
+                        parse_mode="Markdown"
+                    )
+                    logging.info(f"💳 Отправлено предложение карты лояльности пользователю {uid}")
+                except Exception as e:
+                    logging.error(f"Ошибка отправки предложения лояльности для {uid}: {e}")
+
+            run_date_loyalty = datetime.now() + timedelta(seconds=10)
+            scheduler.add_job(send_loyalty_offer, 'date', run_date=run_date_loyalty, args=[user_id])
+            logging.info(f"💳 Запланировано предложение карты лояльности для {user_id} через 10 сек.")
+
             # --- Уведомления о рефералах ---
             referrer_id = database.get_referrer_id_from_user(user_id)
             if referrer_id:
