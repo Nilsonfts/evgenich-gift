@@ -159,11 +159,17 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         user_id = call.from_user.id
         # --- НАЧАЛО ИЗМЕНЕНИЙ ---
         if database.update_status(user_id, 'redeemed'):
-            # 1. Удаляем кнопку
+            # 1. Удаляем сообщение с кнопкой (текст купона)
             try:
                 bot.delete_message(call.message.chat.id, call.message.message_id)
             except ApiTelegramException as e:
                 logging.warning(f"Не удалось удалить сообщение при погашении купона (возможно, двойное нажатие): {e}")
+
+            # 2. Удаляем стикер-купон (отправлен прямо перед текстом купона)
+            try:
+                bot.delete_message(call.message.chat.id, call.message.message_id - 1)
+            except Exception as e:
+                logging.warning(f"Не удалось удалить стикер-купон: {e}")
 
             # 2. Получаем и форматируем текущее время
             tz_moscow = pytz.timezone('Europe/Moscow')
@@ -193,7 +199,8 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             )
 
             # --- Через 10 сек — предложение карты лояльности ---
-            def send_loyalty_offer(uid):
+            import threading
+            def send_loyalty_offer():
                 try:
                     loyalty_text = (
                         "🎁 Погоди, это ещё не всё!\n\n"
@@ -203,17 +210,18 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
                         "Жми 👇 и забирай!"
                     )
                     bot.send_message(
-                        uid,
+                        user_id,
                         loyalty_text,
                         reply_markup=keyboards.get_loyalty_keyboard(),
                         parse_mode="Markdown"
                     )
-                    logging.info(f"💳 Отправлено предложение карты лояльности пользователю {uid}")
+                    logging.info(f"💳 Отправлено предложение карты лояльности пользователю {user_id}")
                 except Exception as e:
-                    logging.error(f"Ошибка отправки предложения лояльности для {uid}: {e}")
+                    logging.error(f"Ошибка отправки предложения лояльности для {user_id}: {e}")
 
-            run_date_loyalty = datetime.now() + timedelta(seconds=10)
-            scheduler.add_job(send_loyalty_offer, 'date', run_date=run_date_loyalty, args=[user_id])
+            timer = threading.Timer(10.0, send_loyalty_offer)
+            timer.daemon = True
+            timer.start()
             logging.info(f"💳 Запланировано предложение карты лояльности для {user_id} через 10 сек.")
 
             # --- Уведомления о рефералах ---
