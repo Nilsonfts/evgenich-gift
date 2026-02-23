@@ -436,8 +436,14 @@ def _run_broadcast(bot, boss_id: int, state: dict, status_chat: int, status_msg:
     moscow = pytz.timezone("Europe/Moscow")
     start_time = datetime.now(moscow)
 
+    # Создаём запись о рассылке для логирования
+    text_preview = state.get("content", "")[:500] if state.get("content") else "[media]"
+    broadcast_id = database.create_broadcast_run(total, text_preview, source='bot')
+
     for i, user in enumerate(users):
         uid = user.get("user_id")
+        uname = user.get("username", "")
+        fname = user.get("first_name", "")
         if not uid:
             continue
 
@@ -445,11 +451,19 @@ def _run_broadcast(bot, boss_id: int, state: dict, status_chat: int, status_msg:
             ok = _send_to_user(bot, uid, state)
             if ok:
                 sent += 1
+                if broadcast_id:
+                    database.log_broadcast_delivery(broadcast_id, uid, uname, fname, 'sent')
             else:
                 failed += 1
+                if broadcast_id:
+                    database.log_broadcast_delivery(broadcast_id, uid, uname, fname, 'failed',
+                                                    error_message='Неизвестная ошибка отправки')
         except ApiTelegramException as e:
             if e.error_code == 403:
                 blocked += 1
+                if broadcast_id:
+                    database.log_broadcast_delivery(broadcast_id, uid, uname, fname, 'blocked',
+                                                    error_code=403, error_message='Бот заблокирован пользователем')
                 try:
                     database.mark_user_blocked(uid)
                 except Exception:
@@ -467,13 +481,25 @@ def _run_broadcast(bot, boss_id: int, state: dict, status_chat: int, status_msg:
                 try:
                     _send_to_user(bot, uid, state)
                     sent += 1
-                except Exception:
+                    if broadcast_id:
+                        database.log_broadcast_delivery(broadcast_id, uid, uname, fname, 'sent')
+                except Exception as e2:
                     failed += 1
+                    if broadcast_id:
+                        database.log_broadcast_delivery(broadcast_id, uid, uname, fname, 'failed',
+                                                        error_code=429, error_message=f'Retry failed: {str(e2)[:200]}')
             else:
                 failed += 1
+                if broadcast_id:
+                    err_msg = str(e)[:300]
+                    database.log_broadcast_delivery(broadcast_id, uid, uname, fname, 'failed',
+                                                    error_code=e.error_code, error_message=err_msg)
                 logger.error(f"Telegram ошибка {e.error_code} для {uid}: {e}")
         except Exception as e:
             failed += 1
+            if broadcast_id:
+                database.log_broadcast_delivery(broadcast_id, uid, uname, fname, 'failed',
+                                                error_message=str(e)[:300])
             logger.error(f"Ошибка отправки {uid}: {e}")
 
         # Обновление статуса каждые 15 сообщений
@@ -513,6 +539,10 @@ def _run_broadcast(bot, boss_id: int, state: dict, status_chat: int, status_msg:
         bot.edit_message_text(report, status_chat, status_msg, parse_mode="HTML")
     except Exception:
         bot.send_message(boss_id, report, parse_mode="HTML")
+
+    # Сохраняем финальную статистику
+    if broadcast_id:
+        database.finish_broadcast_run(broadcast_id, sent, failed, blocked)
 
     logger.info(
         f"Рассылка завершена: sent={sent}/{total}, failed={failed}, blocked={blocked}, "

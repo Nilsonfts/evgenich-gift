@@ -1037,3 +1037,177 @@ class PostgresClient:
         except Exception as e:
             logging.error(f"PostgreSQL | Ошибка получения статистики рассылки: {e}", exc_info=True)
             return None
+
+    # ═══════════════════════════════════════════
+    #  Логирование рассылок (broadcast_runs + broadcast_delivery_log)
+    # ═══════════════════════════════════════════
+
+    def _ensure_broadcast_log_tables(self):
+        """Создаёт таблицы broadcast_runs и broadcast_delivery_log если их нет."""
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(sa.text("""
+                    CREATE TABLE IF NOT EXISTS broadcast_runs (
+                        id SERIAL PRIMARY KEY,
+                        started_at TIMESTAMP DEFAULT NOW(),
+                        finished_at TIMESTAMP,
+                        total_users INTEGER DEFAULT 0,
+                        sent_count INTEGER DEFAULT 0,
+                        failed_count INTEGER DEFAULT 0,
+                        blocked_count INTEGER DEFAULT 0,
+                        text_preview TEXT,
+                        source TEXT DEFAULT 'bot',
+                        status TEXT DEFAULT 'running'
+                    )
+                """))
+                conn.execute(sa.text("""
+                    CREATE TABLE IF NOT EXISTS broadcast_delivery_log (
+                        id SERIAL PRIMARY KEY,
+                        broadcast_id INTEGER REFERENCES broadcast_runs(id),
+                        user_id BIGINT,
+                        username TEXT,
+                        first_name TEXT,
+                        status TEXT DEFAULT 'pending',
+                        error_code INTEGER,
+                        error_message TEXT,
+                        delivered_at TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                conn.commit()
+        except Exception as e:
+            logging.warning(f"PostgreSQL | Ошибка создания таблиц broadcast_logs: {e}")
+
+    def create_broadcast_run(self, total_users: int, text_preview: str, source: str = 'bot'):
+        """Создаёт запись о запуске рассылки. Возвращает broadcast_id."""
+        try:
+            self._ensure_broadcast_log_tables()
+            with self.engine.connect() as conn:
+                result = conn.execute(sa.text(
+                    "INSERT INTO broadcast_runs (total_users, text_preview, source, status) "
+                    "VALUES (:total, :preview, :src, 'running') RETURNING id"
+                ), {'total': total_users, 'preview': (text_preview or '')[:500], 'src': source})
+                conn.commit()
+                row = result.fetchone()
+                return row[0] if row else None
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка создания broadcast_run: {e}")
+            return None
+
+    def log_broadcast_delivery(self, broadcast_id: int, user_id: int, username: str,
+                               first_name: str, status: str, error_code: int = None,
+                               error_message: str = None):
+        """Записывает результат доставки одному пользователю."""
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(sa.text(
+                    "INSERT INTO broadcast_delivery_log "
+                    "(broadcast_id, user_id, username, first_name, status, error_code, error_message) "
+                    "VALUES (:bid, :uid, :uname, :fname, :status, :ecode, :emsg)"
+                ), {
+                    'bid': broadcast_id, 'uid': user_id, 'uname': username or '',
+                    'fname': first_name or '', 'status': status,
+                    'ecode': error_code, 'emsg': (error_message or '')[:500]
+                })
+                conn.commit()
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка логирования broadcast delivery: {e}")
+
+    def finish_broadcast_run(self, broadcast_id: int, sent: int, failed: int, blocked: int):
+        """Завершает запись о рассылке."""
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(sa.text(
+                    "UPDATE broadcast_runs SET finished_at = NOW(), sent_count = :sent, "
+                    "failed_count = :failed, blocked_count = :blocked, status = 'done' "
+                    "WHERE id = :bid"
+                ), {'sent': sent, 'failed': failed, 'blocked': blocked, 'bid': broadcast_id})
+                conn.commit()
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка завершения broadcast_run: {e}")
+
+    def get_broadcast_history(self, limit: int = 20):
+        """Возвращает историю рассылок."""
+        try:
+            self._ensure_broadcast_log_tables()
+            with self.engine.connect() as conn:
+                result = conn.execute(sa.text(
+                    "SELECT id, started_at, finished_at, total_users, sent_count, failed_count, "
+                    "blocked_count, text_preview, source, status "
+                    "FROM broadcast_runs ORDER BY id DESC LIMIT :lim"
+                ), {'lim': limit})
+                rows = result.fetchall()
+
+                history = []
+                for r in rows:
+                    total = r[3] or 1
+                    rate = round((r[4] or 0) / total * 100, 1) if total else 0
+                    history.append({
+                        'id': r[0], 'started_at': str(r[1]) if r[1] else None,
+                        'finished_at': str(r[2]) if r[2] else None,
+                        'total_users': r[3], 'sent_count': r[4], 'failed_count': r[5],
+                        'blocked_count': r[6], 'text_preview': r[7], 'source': r[8],
+                        'status': r[9], 'delivery_rate': rate
+                    })
+                return history
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка получения истории рассылок: {e}")
+            return []
+
+    def get_broadcast_details(self, broadcast_id: int):
+        """Возвращает детализацию конкретной рассылки."""
+        try:
+            self._ensure_broadcast_log_tables()
+            with self.engine.connect() as conn:
+                # Основная запись
+                result = conn.execute(sa.text(
+                    "SELECT id, started_at, finished_at, total_users, sent_count, failed_count, "
+                    "blocked_count, text_preview, source, status "
+                    "FROM broadcast_runs WHERE id = :bid"
+                ), {'bid': broadcast_id})
+                run = result.fetchone()
+                if not run:
+                    return {}
+
+                # Статистика по типам ошибок
+                result = conn.execute(sa.text(
+                    "SELECT status, error_code, error_message, COUNT(*) as cnt "
+                    "FROM broadcast_delivery_log WHERE broadcast_id = :bid "
+                    "GROUP BY status, error_code, error_message ORDER BY cnt DESC"
+                ), {'bid': broadcast_id})
+                error_summary = [{'status': r[0], 'error_code': r[1], 'error_message': r[2], 'count': r[3]}
+                                 for r in result.fetchall()]
+
+                # Список не-доставленных
+                result = conn.execute(sa.text(
+                    "SELECT user_id, username, first_name, status, error_code, error_message, delivered_at "
+                    "FROM broadcast_delivery_log WHERE broadcast_id = :bid AND status != 'sent' "
+                    "ORDER BY delivered_at DESC LIMIT 200"
+                ), {'bid': broadcast_id})
+                failed_users = [{'user_id': r[0], 'username': r[1], 'first_name': r[2],
+                                 'status': r[3], 'error_code': r[4], 'error_message': r[5],
+                                 'delivered_at': str(r[6]) if r[6] else None} for r in result.fetchall()]
+
+                # Список доставленных
+                result = conn.execute(sa.text(
+                    "SELECT user_id, username, first_name, delivered_at "
+                    "FROM broadcast_delivery_log WHERE broadcast_id = :bid AND status = 'sent' "
+                    "ORDER BY delivered_at DESC LIMIT 500"
+                ), {'bid': broadcast_id})
+                sent_users = [{'user_id': r[0], 'username': r[1], 'first_name': r[2],
+                               'delivered_at': str(r[3]) if r[3] else None} for r in result.fetchall()]
+
+                total = run[3] or 1
+                rate = round((run[4] or 0) / total * 100, 1) if total else 0
+                return {
+                    'id': run[0], 'started_at': str(run[1]) if run[1] else None,
+                    'finished_at': str(run[2]) if run[2] else None,
+                    'total_users': run[3], 'sent_count': run[4], 'failed_count': run[5],
+                    'blocked_count': run[6], 'text_preview': run[7], 'source': run[8],
+                    'status': run[9], 'delivery_rate': rate,
+                    'error_summary': error_summary,
+                    'failed_users': failed_users,
+                    'sent_users': sent_users
+                }
+        except Exception as e:
+            logging.error(f"PostgreSQL | Ошибка получения деталей рассылки {broadcast_id}: {e}")
+            return {}

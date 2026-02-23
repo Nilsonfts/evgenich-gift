@@ -425,6 +425,35 @@ def init_db():
                 FOREIGN KEY (newsletter_id) REFERENCES newsletters (id),
                 FOREIGN KEY (button_id) REFERENCES newsletter_buttons (id)
             )""")
+
+        # === Таблицы логирования рассылок ===
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS broadcast_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                finished_at TIMESTAMP,
+                total_users INTEGER DEFAULT 0,
+                sent_count INTEGER DEFAULT 0,
+                failed_count INTEGER DEFAULT 0,
+                blocked_count INTEGER DEFAULT 0,
+                text_preview TEXT,
+                source TEXT DEFAULT 'bot',
+                status TEXT DEFAULT 'running'
+            )""")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS broadcast_delivery_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                broadcast_id INTEGER,
+                user_id INTEGER,
+                username TEXT,
+                first_name TEXT,
+                status TEXT DEFAULT 'pending',
+                error_code INTEGER,
+                error_message TEXT,
+                delivered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (broadcast_id) REFERENCES broadcast_runs (id)
+            )""")
             
         conn.commit()
         conn.close()
@@ -2078,3 +2107,172 @@ def get_broadcast_statistics():
     except Exception as e:
         logging.error(f"Ошибка получения статистики рассылки: {e}")
         return None
+
+
+# ═══════════════════════════════════════════
+#  Функции логирования рассылок (broadcast_runs + broadcast_delivery_log)
+# ═══════════════════════════════════════════
+
+def create_broadcast_run(total_users: int, text_preview: str, source: str = 'bot') -> Optional[int]:
+    """Создаёт запись о запуске рассылки. Возвращает broadcast_id."""
+    try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.create_broadcast_run(total_users, text_preview, source)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO broadcast_runs (total_users, text_preview, source, status)
+            VALUES (?, ?, ?, 'running')
+        """, (total_users, (text_preview or '')[:500], source))
+        conn.commit()
+        bid = cur.lastrowid
+        conn.close()
+        return bid
+    except Exception as e:
+        logging.error(f"Ошибка создания broadcast_run: {e}")
+        return None
+
+
+def log_broadcast_delivery(broadcast_id: int, user_id: int, username: str,
+                           first_name: str, status: str, error_code: int = None,
+                           error_message: str = None):
+    """Записывает результат доставки одному пользователю."""
+    try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.log_broadcast_delivery(
+                broadcast_id, user_id, username, first_name, status, error_code, error_message
+            )
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO broadcast_delivery_log
+                (broadcast_id, user_id, username, first_name, status, error_code, error_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (broadcast_id, user_id, username or '', first_name or '',
+              status, error_code, (error_message or '')[:500]))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logging.error(f"Ошибка логирования broadcast delivery: {e}")
+
+
+def finish_broadcast_run(broadcast_id: int, sent: int, failed: int, blocked: int):
+    """Завершает запись о рассылке."""
+    try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.finish_broadcast_run(broadcast_id, sent, failed, blocked)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE broadcast_runs
+            SET finished_at = CURRENT_TIMESTAMP, sent_count = ?, failed_count = ?,
+                blocked_count = ?, status = 'done'
+            WHERE id = ?
+        """, (sent, failed, blocked, broadcast_id))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logging.error(f"Ошибка завершения broadcast_run: {e}")
+
+
+def get_broadcast_history(limit: int = 20) -> list:
+    """Возвращает историю рассылок."""
+    try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.get_broadcast_history(limit)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, started_at, finished_at, total_users, sent_count, failed_count,
+                   blocked_count, text_preview, source, status
+            FROM broadcast_runs
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,))
+        rows = cur.fetchall()
+        conn.close()
+
+        result = []
+        for r in rows:
+            rate = round(r[4] / r[3] * 100, 1) if r[3] else 0
+            result.append({
+                'id': r[0], 'started_at': r[1], 'finished_at': r[2],
+                'total_users': r[3], 'sent_count': r[4], 'failed_count': r[5],
+                'blocked_count': r[6], 'text_preview': r[7], 'source': r[8],
+                'status': r[9], 'delivery_rate': rate
+            })
+        return result
+    except Exception as e:
+        logging.error(f"Ошибка получения истории рассылок: {e}")
+        return []
+
+
+def get_broadcast_details(broadcast_id: int) -> dict:
+    """Возвращает детализацию конкретной рассылки (спис. пользователей + статусы)."""
+    try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.get_broadcast_details(broadcast_id)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Основная запись
+        cur.execute("SELECT * FROM broadcast_runs WHERE id = ?", (broadcast_id,))
+        run = cur.fetchone()
+        if not run:
+            conn.close()
+            return {}
+
+        # Статистика по типам ошибок
+        cur.execute("""
+            SELECT status, error_code, error_message, COUNT(*) as cnt
+            FROM broadcast_delivery_log
+            WHERE broadcast_id = ?
+            GROUP BY status, error_code, error_message
+            ORDER BY cnt DESC
+        """, (broadcast_id,))
+        error_summary = [{'status': r[0], 'error_code': r[1], 'error_message': r[2], 'count': r[3]}
+                         for r in cur.fetchall()]
+
+        # Список не-доставленных
+        cur.execute("""
+            SELECT user_id, username, first_name, status, error_code, error_message, delivered_at
+            FROM broadcast_delivery_log
+            WHERE broadcast_id = ? AND status != 'sent'
+            ORDER BY delivered_at DESC
+            LIMIT 200
+        """, (broadcast_id,))
+        failed_users = [{'user_id': r[0], 'username': r[1], 'first_name': r[2],
+                         'status': r[3], 'error_code': r[4], 'error_message': r[5],
+                         'delivered_at': r[6]} for r in cur.fetchall()]
+
+        # Список доставленных
+        cur.execute("""
+            SELECT user_id, username, first_name, delivered_at
+            FROM broadcast_delivery_log
+            WHERE broadcast_id = ? AND status = 'sent'
+            ORDER BY delivered_at DESC
+            LIMIT 500
+        """, (broadcast_id,))
+        sent_users = [{'user_id': r[0], 'username': r[1], 'first_name': r[2],
+                       'delivered_at': r[3]} for r in cur.fetchall()]
+
+        conn.close()
+
+        rate = round(run[4] / run[3] * 100, 1) if run[3] else 0
+        return {
+            'id': run[0], 'started_at': run[1], 'finished_at': run[2],
+            'total_users': run[3], 'sent_count': run[4], 'failed_count': run[5],
+            'blocked_count': run[6], 'text_preview': run[7], 'source': run[8],
+            'status': run[9], 'delivery_rate': rate,
+            'error_summary': error_summary,
+            'failed_users': failed_users,
+            'sent_users': sent_users
+        }
+    except Exception as e:
+        logging.error(f"Ошибка получения деталей рассылки {broadcast_id}: {e}")
+        return {}

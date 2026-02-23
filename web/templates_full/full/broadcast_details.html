@@ -1,0 +1,359 @@
+{% extends "full/base.html" %}
+{% block title %}Рассылка #{{ d.id }}{% endblock %}
+
+{% block content %}
+<div class="page-h">
+    <h2><i class="fas fa-envelope-open-text me-2"></i>Рассылка #{{ d.id }}</h2>
+    <p>Подробная детализация доставки и ошибок</p>
+</div>
+
+<div class="mb-3">
+    <a href="/broadcast/history" class="btn btn-outline-primary"><i class="fas fa-arrow-left me-1"></i>К истории</a>
+    <a href="/broadcast" class="btn btn-outline-secondary ms-2"><i class="fas fa-bullhorn me-1"></i>К рассылкам</a>
+</div>
+
+<!-- Общая информация -->
+<div class="row g-3 mb-4">
+    <div class="col-xl-2 col-sm-4">
+        <div class="stat-card">
+            <div class="text-center">
+                <small>Всего</small>
+                <h3>{{ d.total_users or 0 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-sm-4">
+        <div class="stat-card">
+            <div class="text-center">
+                <small>✅ Доставлено</small>
+                <h3 style="color:#10b981">{{ d.sent_count or 0 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-sm-4">
+        <div class="stat-card">
+            <div class="text-center">
+                <small>❌ Ошибки</small>
+                <h3 style="color:#ef4444">{{ d.failed_count or 0 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-sm-4">
+        <div class="stat-card">
+            <div class="text-center">
+                <small>🚫 Заблокировали</small>
+                <h3 style="color:#f59e0b">{{ d.blocked_count or 0 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-sm-4">
+        <div class="stat-card">
+            <div class="text-center">
+                <small>📊 Доставляемость</small>
+                <h3 class="{% if (d.delivery_rate or 0) >= 90 %}text-success{% elif (d.delivery_rate or 0) >= 70 %}text-warning{% else %}text-danger{% endif %}">
+                    {{ d.delivery_rate or 0 }}%
+                </h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-sm-4">
+        <div class="stat-card">
+            <div class="text-center">
+                <small>Источник</small>
+                <h3>
+                    {% if d.source == 'web' %}
+                        <span class="badge bg-info fs-6">Web</span>
+                    {% else %}
+                        <span class="badge bg-primary fs-6">Bot</span>
+                    {% endif %}
+                </h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Мета информация -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-info-circle me-2"></i>Информация</div>
+            <div class="p-3">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Начало:</strong> {{ d.started_at or '—' }}</p>
+                        <p><strong>Завершение:</strong> {{ d.finished_at or '—' }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Текст рассылки:</strong></p>
+                        <div class="bg-light rounded p-3" style="max-height:200px;overflow-y:auto;white-space:pre-wrap;font-size:.9rem">{{ d.text_preview or '(нет текста)' }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Сводка ошибок -->
+{% if d.error_summary %}
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-exclamation-triangle me-2 text-danger"></i>Сводка по типам ошибок</div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Статус</th>
+                            <th>Код ошибки</th>
+                            <th>Описание</th>
+                            <th>Количество</th>
+                            <th>Доля</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in d.error_summary %}
+                        <tr>
+                            <td>
+                                {% if item.status == 'sent' %}
+                                    <span class="badge bg-success">✅ Доставлено</span>
+                                {% elif item.status == 'blocked' %}
+                                    <span class="badge bg-warning text-dark">🚫 Заблок.</span>
+                                {% elif item.status == 'failed' %}
+                                    <span class="badge bg-danger">❌ Ошибка</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ item.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.error_code %}
+                                    <code>{{ item.error_code }}</code>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <small>
+                                {% if item.error_code == 403 %}
+                                    Бот заблокирован пользователем
+                                {% elif item.error_code == 400 %}
+                                    Неверный запрос (chat not found / пользователь удалён)
+                                {% elif item.error_code == 429 %}
+                                    Слишком много запросов (rate limit)
+                                {% elif item.error_message %}
+                                    {{ item.error_message[:100] }}
+                                {% elif item.status == 'sent' %}
+                                    Успешно доставлено
+                                {% else %}
+                                    Неизвестная ошибка
+                                {% endif %}
+                                </small>
+                            </td>
+                            <td class="fw-bold">{{ item.count }}</td>
+                            <td>
+                                {% set pct = (item.count / (d.total_users or 1) * 100)|round(1) %}
+                                {{ pct }}%
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Диаграмма -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-5">
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-chart-pie me-2"></i>Диаграмма доставки</div>
+            <div class="p-3">
+                <canvas id="deliveryPie" style="height:260px"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- О трекинге -->
+    <div class="col-lg-7">
+        <div class="table-card">
+            <div class="card-header"><i class="fas fa-info-circle me-2"></i>Что означают ошибки?</div>
+            <div class="p-3">
+                <table class="table table-sm mb-0">
+                    <tr>
+                        <td><code>403</code></td>
+                        <td><strong>Бот заблокирован</strong> — пользователь нажал «Заблокировать бота» в Telegram. Они автоматически исключены из будущих рассылок.</td>
+                    </tr>
+                    <tr>
+                        <td><code>400</code></td>
+                        <td><strong>Чат не найден</strong> — пользователь удалил аккаунт Telegram или никогда не запускал бота (некорректный chat_id).</td>
+                    </tr>
+                    <tr>
+                        <td><code>429</code></td>
+                        <td><strong>Rate limit</strong> — Telegram временно ограничил запросы. Система автоматически делает повторную попытку.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="text-muted">Другие</span></td>
+                        <td>Сетевые сбои, таймауты, или ошибки разметки HTML в тексте.</td>
+                    </tr>
+                </table>
+                <hr>
+                <h6 class="mt-3"><i class="fas fa-eye me-2"></i>Можно ли отследить «прочитано»?</h6>
+                <p class="text-muted mb-0">
+                    Telegram Bot API <strong>не предоставляет</strong> информацию о прочтении сообщений. 
+                    Однако вы можете отслеживать <strong>клики по кнопкам</strong> — каждая кнопка в рассылке 
+                    (через систему newsletter_buttons) автоматически трекает переходы. Добавляйте UTM-метки к ссылкам 
+                    чтобы видеть переходы в аналитике сайта.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs: failed / delivered -->
+<ul class="nav nav-tabs mb-3" id="detailTabs">
+    <li class="nav-item">
+        <a class="nav-link active" data-bs-toggle="tab" href="#tabFailed">
+            <i class="fas fa-times-circle text-danger me-1"></i>Не доставлено ({{ d.failed_users|length if d.failed_users else 0 }})
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#tabSent">
+            <i class="fas fa-check-circle text-success me-1"></i>Доставлено ({{ d.sent_users|length if d.sent_users else 0 }})
+        </a>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <!-- Failed users -->
+    <div class="tab-pane fade show active" id="tabFailed">
+        {% if d.failed_users %}
+        <div class="table-card">
+            <div class="table-responsive" style="max-height:500px;overflow-y:auto">
+                <table class="table table-hover table-sm mb-0">
+                    <thead style="position:sticky;top:0;background:#fff">
+                        <tr>
+                            <th>User ID</th>
+                            <th>Username</th>
+                            <th>Имя</th>
+                            <th>Статус</th>
+                            <th>Код</th>
+                            <th>Ошибка</th>
+                            <th>Время</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in d.failed_users %}
+                        <tr>
+                            <td><code>{{ u.user_id }}</code></td>
+                            <td>
+                                {% if u.username %}
+                                    <a href="https://t.me/{{ u.username }}" target="_blank">@{{ u.username }}</a>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ u.first_name or '—' }}</td>
+                            <td>
+                                {% if u.status == 'blocked' %}
+                                    <span class="badge bg-warning text-dark">🚫 Заблокирован</span>
+                                {% else %}
+                                    <span class="badge bg-danger">❌ Ошибка</span>
+                                {% endif %}
+                            </td>
+                            <td><code>{{ u.error_code or '—' }}</code></td>
+                            <td><small>{{ (u.error_message or '—')[:80] }}</small></td>
+                            <td><small>{{ u.delivered_at[:19] if u.delivered_at else '—' }}</small></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle me-2"></i>
+            Отличные новости — все сообщения были доставлены!
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sent users -->
+    <div class="tab-pane fade" id="tabSent">
+        {% if d.sent_users %}
+        <div class="table-card">
+            <div class="table-responsive" style="max-height:500px;overflow-y:auto">
+                <table class="table table-hover table-sm mb-0">
+                    <thead style="position:sticky;top:0;background:#fff">
+                        <tr>
+                            <th>User ID</th>
+                            <th>Username</th>
+                            <th>Имя</th>
+                            <th>Время доставки</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in d.sent_users %}
+                        <tr>
+                            <td><code>{{ u.user_id }}</code></td>
+                            <td>
+                                {% if u.username %}
+                                    <a href="https://t.me/{{ u.username }}" target="_blank">@{{ u.username }}</a>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ u.first_name or '—' }}</td>
+                            <td><small>{{ u.delivered_at[:19] if u.delivered_at else '—' }}</small></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Нет данных о доставленных сообщениях.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Pie chart
+const sentC = {{ d.sent_count or 0 }};
+const failedC = {{ d.failed_count or 0 }};
+const blockedC = {{ d.blocked_count or 0 }};
+const totalC = sentC + failedC + blockedC;
+
+if(totalC > 0) {
+    new Chart(document.getElementById('deliveryPie'), {
+        type: 'doughnut',
+        data: {
+            labels: [`Доставлено (${sentC})`, `Ошибки (${failedC})`, `Заблокированы (${blockedC})`],
+            datasets: [{
+                data: [sentC, failedC, blockedC],
+                backgroundColor: ['#10b981', '#ef4444', '#f59e0b'],
+                borderWidth: 0,
+                cutout: '60%'
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `${ctx.label}: ${ctx.parsed} (${((ctx.parsed/totalC)*100).toFixed(1)}%)`
+                    }
+                }
+            }
+        }
+    });
+}
+</script>
+{% endblock %}

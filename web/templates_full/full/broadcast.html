@@ -5,6 +5,9 @@
 <div class="page-h">
     <h2><i class="fas fa-bullhorn me-2"></i>Рассылки</h2>
     <p>Отправка рассылок + статистика аудитории</p>
+    <a href="/broadcast/history" class="btn btn-outline-primary btn-sm ms-auto">
+        <i class="fas fa-history me-1"></i>История рассылок
+    </a>
 </div>
 
 <!-- Stats cards -->
@@ -170,6 +173,10 @@ function pollBcast(){
                 res.innerHTML=`<div class="alert alert-danger"><i class="fas fa-times-circle me-2"></i>${r.error}</div>`;
             } else {
                 const rate = r.total>0 ? ((r.sent/r.total)*100).toFixed(1) : 0;
+                let detailLink = '';
+                if(r.broadcast_id) {
+                    detailLink = `<a href="/broadcast/details/${r.broadcast_id}" class="btn btn-sm btn-outline-primary mt-2"><i class="fas fa-eye me-1"></i>Подробная детализация ошибок</a>`;
+                }
                 res.innerHTML=`
                     <div class="alert alert-success">
                         <h5><i class="fas fa-check-circle me-2"></i>Рассылка завершена!</h5>
@@ -180,6 +187,7 @@ function pollBcast(){
                             <tr><td>🚫 Заблокировали</td><td class="text-warning">${r.blocked}</td></tr>
                             <tr><td>📊 Доставляемость</td><td class="fw-bold">${rate}%</td></tr>
                         </table>
+                        ${detailLink}
                     </div>`;
             }
         }

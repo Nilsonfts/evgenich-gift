@@ -1,0 +1,89 @@
+{% extends "full/base.html" %}
+{% block title %}История рассылок{% endblock %}
+
+{% block content %}
+<div class="page-h">
+    <h2><i class="fas fa-history me-2"></i>История рассылок</h2>
+    <p>Все отправленные рассылки с детализацией доставки и ошибок</p>
+</div>
+
+<div class="mb-3">
+    <a href="/broadcast" class="btn btn-outline-primary"><i class="fas fa-arrow-left me-1"></i>Назад к рассылкам</a>
+</div>
+
+{% if history %}
+<div class="table-card">
+    <div class="card-header"><i class="fas fa-list me-2"></i>Рассылки ({{ history|length }})</div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Дата</th>
+                    <th>Источник</th>
+                    <th>Текст</th>
+                    <th>Всего</th>
+                    <th>✅ Доставлено</th>
+                    <th>❌ Ошибки</th>
+                    <th>🚫 Блок</th>
+                    <th>📊 Rate</th>
+                    <th>Статус</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in history %}
+                <tr>
+                    <td class="fw-bold">#{{ run.id }}</td>
+                    <td>
+                        <small>{{ run.started_at[:16] if run.started_at else '—' }}</small>
+                    </td>
+                    <td>
+                        {% if run.source == 'web' %}
+                            <span class="badge bg-info">Web</span>
+                        {% else %}
+                            <span class="badge bg-primary">Bot</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span title="{{ run.text_preview }}">
+                            {{ (run.text_preview or '—')[:60] }}{% if run.text_preview and run.text_preview|length > 60 %}…{% endif %}
+                        </span>
+                    </td>
+                    <td class="fw-bold">{{ run.total_users or 0 }}</td>
+                    <td class="text-success fw-bold">{{ run.sent_count or 0 }}</td>
+                    <td class="text-danger fw-bold">{{ run.failed_count or 0 }}</td>
+                    <td class="text-warning fw-bold">{{ run.blocked_count or 0 }}</td>
+                    <td>
+                        {% set rate = run.delivery_rate or 0 %}
+                        <span class="badge {% if rate >= 90 %}bg-success{% elif rate >= 70 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                            {{ rate }}%
+                        </span>
+                    </td>
+                    <td>
+                        {% if run.status == 'done' %}
+                            <span class="badge bg-success">Готово</span>
+                        {% elif run.status == 'running' %}
+                            <span class="badge bg-warning text-dark">В процессе</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ run.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="/broadcast/details/{{ run.id }}" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-eye"></i> Детали
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-2"></i>
+    Пока нет данных об отправленных рассылках. После следующей рассылки здесь появится полная статистика.
+</div>
+{% endif %}
+{% endblock %}

@@ -946,6 +946,9 @@ def _run_web_broadcast(text, btn_text=None, btn_url=None):
     failed = 0
     blocked = 0
 
+    # Создаём запись о рассылке для логирования
+    broadcast_id = _db_query(db.create_broadcast_run, total, text[:500], 'web', default=None)
+
     # Inline keyboard
     reply_markup = None
     if btn_text and btn_url:
@@ -957,6 +960,8 @@ def _run_web_broadcast(text, btn_text=None, btn_url=None):
 
     for i, user in enumerate(users):
         uid = user.get('user_id')
+        uname = user.get('username', '')
+        fname = user.get('first_name', '')
         if not uid:
             continue
 
@@ -974,23 +979,41 @@ def _run_web_broadcast(text, btn_text=None, btn_url=None):
 
             if data.get('ok'):
                 sent += 1
+                if broadcast_id:
+                    _db_query(db.log_broadcast_delivery, broadcast_id, uid, uname, fname, 'sent')
             else:
                 err_code = data.get('error_code', 0)
+                err_desc = data.get('description', 'Unknown error')
                 if err_code == 403:
                     blocked += 1
                     _db_query(db.mark_user_blocked, uid)
+                    if broadcast_id:
+                        _db_query(db.log_broadcast_delivery, broadcast_id, uid, uname, fname, 'blocked',
+                                  403, err_desc[:300])
                 elif err_code == 429:
                     retry = data.get('parameters', {}).get('retry_after', 1)
                     time.sleep(retry)
                     resp2 = req.post(api_url, json=payload, timeout=10)
-                    if resp2.json().get('ok'):
+                    data2 = resp2.json()
+                    if data2.get('ok'):
                         sent += 1
+                        if broadcast_id:
+                            _db_query(db.log_broadcast_delivery, broadcast_id, uid, uname, fname, 'sent')
                     else:
                         failed += 1
+                        if broadcast_id:
+                            _db_query(db.log_broadcast_delivery, broadcast_id, uid, uname, fname, 'failed',
+                                      429, f"Retry failed: {data2.get('description', '')[:200]}")
                 else:
                     failed += 1
+                    if broadcast_id:
+                        _db_query(db.log_broadcast_delivery, broadcast_id, uid, uname, fname, 'failed',
+                                  err_code, err_desc[:300])
         except Exception as e:
             failed += 1
+            if broadcast_id:
+                _db_query(db.log_broadcast_delivery, broadcast_id, uid, uname, fname, 'failed',
+                          0, str(e)[:300])
             logging.error(f"Broadcast error {uid}: {e}")
 
         if (i + 1) % 15 == 0:
@@ -999,9 +1022,14 @@ def _run_web_broadcast(text, btn_text=None, btn_url=None):
 
         time.sleep(0.05)  # rate limit ~20 msg/sec
 
+    # Сохраняем финальную статистику
+    if broadcast_id:
+        _db_query(db.finish_broadcast_run, broadcast_id, sent, failed, blocked)
+
     _broadcast_status.update(
         running=False, done=True,
-        result={'total': total, 'sent': sent, 'failed': failed, 'blocked': blocked}
+        result={'total': total, 'sent': sent, 'failed': failed, 'blocked': blocked,
+                'broadcast_id': broadcast_id}
     )
 
 
@@ -1030,6 +1058,41 @@ def broadcast_send():
 @login_required
 def broadcast_status_api():
     return jsonify(_broadcast_status)
+
+
+# ═══════════════════════════════════════════
+#  BROADCAST HISTORY — история и детали рассылок
+# ═══════════════════════════════════════════
+
+@app.route('/broadcast/history')
+@login_required
+def broadcast_history():
+    history = _db_query(db.get_broadcast_history, 50, default=[]) or []
+    return render_template('full/broadcast_history.html', history=history)
+
+
+@app.route('/broadcast/details/<int:broadcast_id>')
+@login_required
+def broadcast_details(broadcast_id):
+    details = _db_query(db.get_broadcast_details, broadcast_id, default={}) or {}
+    if not details:
+        flash('Рассылка не найдена', 'error')
+        return redirect(url_for('broadcast_history'))
+    return render_template('full/broadcast_details.html', d=details)
+
+
+@app.route('/api/broadcast/history')
+@login_required
+def broadcast_history_api():
+    history = _db_query(db.get_broadcast_history, 50, default=[]) or []
+    return jsonify(history)
+
+
+@app.route('/api/broadcast/details/<int:broadcast_id>')
+@login_required
+def broadcast_details_api(broadcast_id):
+    details = _db_query(db.get_broadcast_details, broadcast_id, default={}) or {}
+    return jsonify(details)
 
 
 # ═══════════════════════════════════════════
