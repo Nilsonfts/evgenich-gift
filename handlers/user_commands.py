@@ -469,7 +469,7 @@ def register_user_command_handlers(bot):
         keyboard = types.InlineKeyboardMarkup(row_width=5)
         keyboard.add(
             *[types.InlineKeyboardButton(
-                "⭐" * i, callback_data=f"review_star_{i}"
+                f"{i} ⭐", callback_data=f"review_star_{i}"
             ) for i in range(1, 6)]
         )
         bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=keyboard)
