@@ -454,7 +454,7 @@ def register_user_command_handlers(bot):
     review_states = {}
 
     @bot.message_handler(commands=['review'])
-    @bot.message_handler(func=lambda message: message.text == "⭐ Оставить отзыв")
+    @bot.message_handler(func=lambda message: message.text in ("⭐ Оставить отзыв", "🤝 Привести товарища"))
     def handle_review_command(message: types.Message):
         """Показывает inline-клавиатуру с выбором звёзд 1-5."""
         if message.chat.type != 'private':
