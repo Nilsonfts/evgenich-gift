@@ -467,9 +467,10 @@ def register_user_command_handlers(bot):
             "Выберите оценку от 1 до 5:"
         )
         keyboard = types.InlineKeyboardMarkup(row_width=5)
+        star_labels = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
         keyboard.add(
             *[types.InlineKeyboardButton(
-                f"{i} ⭐", callback_data=f"review_star_{i}"
+                star_labels[i-1], callback_data=f"review_star_{i}"
             ) for i in range(1, 6)]
         )
         bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=keyboard)
