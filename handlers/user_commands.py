@@ -448,29 +448,151 @@ def register_user_command_handlers(bot):
             bot.send_message(user_id, "Я не нашел тебя в активной базе персонала. Если ты новый сотрудник, используй команду /staff_reg в рабочем чате.")
 
 
-    # --- Остальные команды без изменений ---
+    # --- Система отзывов ---
+
+    # Состояния ожидания текста отзыва
+    review_states = {}
 
     @bot.message_handler(commands=['review'])
     @bot.message_handler(func=lambda message: message.text == "⭐ Оставить отзыв")
     def handle_review_command(message: types.Message):
-        """
-        Обработчик для кнопки 'Оставить отзыв'.
-        Отправляет ссылку на форму отзыва.
-        """
-        review_url = "https://qr.xn--80adjr6afh6b.xn--p1ai/evgenich-spb"
-        text = "⭐ *Оставьте отзыв о нашем баре!*\n\n"
-        text += "Ваше мнение очень важно для нас ❤️\n\n"
-        text += "Нажмите кнопку ниже, чтобы оставить отзыв:"
-        
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton(
-            "⭐ Оставить отзыв",
-            url=review_url
-        ))
+        """Показывает inline-клавиатуру с выбором звёзд 1-5."""
+        if message.chat.type != 'private':
+            bot.reply_to(message, "⭐ Отзыв можно оставить только в личных сообщениях!")
+            return
+
+        text = (
+            "⭐ *Оцените наш бар!*\n\n"
+            "Ваше мнение очень важно для нас ❤️\n"
+            "Выберите оценку от 1 до 5:"
+        )
+        keyboard = types.InlineKeyboardMarkup(row_width=5)
+        keyboard.add(
+            *[types.InlineKeyboardButton(
+                "⭐" * i, callback_data=f"review_star_{i}"
+            ) for i in range(1, 6)]
+        )
         bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=keyboard)
-            text += "4. Через 48 часов ты получаешь БЕСПЛАТНУЮ настойку!\n\n"
-            text += "Поделись сейчас! 🎉"
-            bot.send_message(message.chat.id, text, parse_mode="Markdown")
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('review_star_'))
+    def handle_review_star(call: types.CallbackQuery):
+        """Обрабатывает выбор звёзд в отзыве."""
+        user_id = call.from_user.id
+        rating = int(call.data.split('_')[2])
+        bot.answer_callback_query(call.id)
+
+        logging.info(f"⭐ Пользователь {user_id} (@{call.from_user.username}) оценил: {rating} звёзд")
+
+        if rating >= 4:
+            # Позитив → ссылки на площадки
+            bot.edit_message_text(
+                f"{'⭐' * rating}\n\n"
+                "Нам очень приятно! 🥰\n"
+                "Будем благодарны, если оставите отзыв на одной из площадок:",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=_get_review_links_keyboard()
+            )
+        else:
+            # Негатив → просим написать текст
+            bot.edit_message_text(
+                f"{'⭐' * rating}\n\n"
+                "Мы крайне раздосадованы 😔\n"
+                "Расскажите, что нам исправить?\n\n"
+                "_Напишите ваш отзыв следующим сообщением:_",
+                call.message.chat.id,
+                call.message.message_id,
+                parse_mode="Markdown",
+                reply_markup=None
+            )
+            review_states[user_id] = rating
+            bot.register_next_step_handler(call.message, _process_negative_review, rating)
+
+    def _process_negative_review(message: types.Message, rating: int):
+        """Получает текст негативного отзыва и отправляет в чат лидов."""
+        user_id = message.from_user.id
+        review_states.pop(user_id, None)
+
+        if not message.text:
+            bot.send_message(message.chat.id, "Отзыв не получен. Попробуйте ещё раз через /review")
+            return
+
+        review_text = message.text
+        first_name = message.from_user.first_name or ""
+        last_name = message.from_user.last_name or ""
+        username = message.from_user.username
+
+        # Формируем уведомление для чата лидов
+        lead_msg = (
+            f"📝 <b>НОВЫЙ ОТЗЫВ</b> — {'⭐' * rating}\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"👤 {first_name} {last_name}\n"
+        )
+        if username:
+            lead_msg += f"📱 @{username}\n"
+        lead_msg += (
+            f"🆔 <code>{user_id}</code>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"💬 {review_text}\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🕐 {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
+
+        # Отправляем в чат лидов
+        sent = False
+        if REPORT_CHAT_ID:
+            try:
+                bot.send_message(int(REPORT_CHAT_ID), lead_msg, parse_mode="HTML")
+                sent = True
+                logging.info(f"📝 Отзыв от {user_id} отправлен в REPORT_CHAT_ID")
+            except Exception as e:
+                logging.error(f"Ошибка отправки отзыва в REPORT_CHAT_ID: {e}")
+
+        # Дублируем боссам если не ушло в чат
+        if not sent:
+            from core.config import BOSS_IDS
+            for boss_id in BOSS_IDS:
+                try:
+                    bot.send_message(boss_id, lead_msg, parse_mode="HTML")
+                except Exception as e:
+                    logging.error(f"Не удалось отправить отзыв боссу {boss_id}: {e}")
+
+        # Благодарим пользователя
+        bot.send_message(
+            message.chat.id,
+            "❤️ *Евгенич услышал!*\n\n"
+            "Спасибо, что помогаете нам стать лучше.\n"
+            "Мы обязательно учтём ваше мнение!",
+            parse_mode="Markdown",
+            reply_markup=keyboards.get_main_menu_keyboard(user_id)
+        )
+
+    def _get_review_links_keyboard():
+        """Возвращает inline-клавиатуру со ссылками на площадки отзывов."""
+        kb = types.InlineKeyboardMarkup(row_width=1)
+        kb.add(
+            types.InlineKeyboardButton(
+                "📍 Яндекс Карты",
+                url="https://yandex.ru/maps/org/yevgenich/119499600311/reviews/?add-review=true"
+            ),
+            types.InlineKeyboardButton(
+                "📍 2ГИС",
+                url="https://2gis.ru/spb/firm/70000001100534789/tab/reviews"
+            ),
+            types.InlineKeyboardButton(
+                "📍 Restoclub",
+                url="https://www.restoclub.ru/spb/place/evgenich-1/opinions#newReview"
+            ),
+            types.InlineKeyboardButton(
+                "📍 Google Maps",
+                url="https://www.google.com/maps/place//data=!4m3!3m2!1s0x46962162657b16bf:0x40cc9891e0960b0f!12e1?source=g.page.m.nr._&laa=nmx-review-solicitation-recommendation-card"
+            ),
+            types.InlineKeyboardButton(
+                "📍 Zoon",
+                url="https://zoon.ru/spb/restaurants/bar_evgenich_na_nevskom_prospekte/reviews/"
+            ),
+        )
+        return kb
 
     @bot.message_handler(func=lambda message: message.text == "🎁 Карта лояльности")
     def handle_loyalty_card(message: types.Message):
