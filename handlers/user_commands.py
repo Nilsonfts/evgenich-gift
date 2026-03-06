@@ -539,15 +539,15 @@ def register_user_command_handlers(bot):
             f"🕐 {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}"
         )
 
-        # Отправляем в чат лидов
+        # Отправляем в чат СПБ для отзывов
+        REVIEW_CHAT_ID = -1002655754865
         sent = False
-        if REPORT_CHAT_ID:
-            try:
-                bot.send_message(int(REPORT_CHAT_ID), lead_msg, parse_mode="HTML")
-                sent = True
-                logging.info(f"📝 Отзыв от {user_id} отправлен в REPORT_CHAT_ID")
-            except Exception as e:
-                logging.error(f"Ошибка отправки отзыва в REPORT_CHAT_ID: {e}")
+        try:
+            bot.send_message(REVIEW_CHAT_ID, lead_msg, parse_mode="HTML")
+            sent = True
+            logging.info(f"📝 Отзыв от {user_id} отправлен в чат СПБ {REVIEW_CHAT_ID}")
+        except Exception as e:
+            logging.error(f"Ошибка отправки отзыва в чат СПБ: {e}")
 
         # Дублируем боссам если не ушло в чат
         if not sent:
