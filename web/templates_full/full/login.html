@@ -31,8 +31,7 @@
             {% if error %}
             <div class="alert alert-danger">{{ error }}</div>
             {% endif %}
-            <form method="POST">
-                <div class="mb-3">
+            <form method="POST">\n                <input type=\"hidden\" name=\"csrf_token\" value=\"{{ csrf_token() }}\"/>\n                <div class=\"mb-3\">
                     <label class="form-label fw-bold">Логин</label>
                     <input type="text" name="username" class="form-control" placeholder="admin" required autofocus>
                 </div>

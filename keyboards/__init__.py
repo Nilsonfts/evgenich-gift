@@ -9,7 +9,7 @@ def get_main_menu_keyboard(user_id):
     """Возвращает главную клавиатуру для основного меню."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     loyalty_button = types.KeyboardButton("🎁 Карта лояльности")
-    friend_button = types.KeyboardButton("🤝 Привести товарища")
+    friend_button = types.KeyboardButton("⭐ Оставить отзыв")
     book_button = types.KeyboardButton("📍 Забронировать стол")
     ai_help_button = types.KeyboardButton("🗣 Спроси у Евгенича")
 

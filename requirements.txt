@@ -20,5 +20,6 @@ SQLAlchemy==2.0.25
 
 # Web Admin Panel
 Flask==2.3.3
+Flask-WTF==1.2.1
 Werkzeug==2.3.7
 gunicorn==23.0.0

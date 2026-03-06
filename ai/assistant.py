@@ -308,7 +308,7 @@ def get_ai_recommendation(
             )
             logger.info(f"Возвращён fallback ответ после ошибки API")
             return fallback_response
-        except:
+        except Exception:
             # Если и fallback не сработал - возвращаем дружелюбную ошибку
             return get_user_friendly_error(exc)
 

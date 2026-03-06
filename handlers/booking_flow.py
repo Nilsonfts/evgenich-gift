@@ -216,7 +216,7 @@ def register_booking_handlers(bot):
             logging.error(f"❌ Ошибка обработки booking callback {call.data}: {e}", exc_info=True)
             try:
                 bot.send_message(call.message.chat.id, "⚠️ Произошла ошибка. Попробуйте ещё раз нажать 📍 Забронировать стол")
-            except:
+            except Exception:
                 pass
 
     @bot.callback_query_handler(func=lambda call: call.data in ["confirm_booking", "cancel_booking"])
@@ -330,7 +330,7 @@ def register_booking_handlers(bot):
             return
         
         # Игнорируем команды и кнопки - пусть их обрабатывают другие обработчики
-        if message.text.startswith('/') or message.text in ['🎁 Карта лояльности', '🤝 Привести товарища', '🗣 Спроси у Евгенича', '🥃 Получить настойку по талону', '📍 Забронировать стол', '👑 Админка', '📨 Отправить БРОНЬ']:
+        if message.text.startswith('/') or message.text in ['🎁 Карта лояльности', '⭐ Оставить отзыв', '🗣 Спроси у Евгенича', '🥃 Получить настойку по талону', '📍 Забронировать стол', '👑 Админка', '📨 Отправить БРОНЬ']:
             return
 
         step = user_entry.get('step')

@@ -71,7 +71,7 @@ def get_all_roles():
             'admins': list(set(admins)),
             'smm': list(set(smm))
         }
-    except:
+    except Exception:
         # Фоллбэк на переменные окружения
         return {
             'bosses': BOSS_IDS,

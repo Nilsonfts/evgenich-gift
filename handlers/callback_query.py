@@ -58,7 +58,7 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             # Удаляем сообщение с выбором города
             try:
                 bot.delete_message(call.message.chat.id, call.message.message_id)
-            except:
+            except Exception:
                 pass
 
             # Подтверждаем выбор и показываем подписку на правильный канал
@@ -79,7 +79,7 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             logging.error(f"❌ Ошибка выбора города: {e}", exc_info=True)
             try:
                 bot.send_message(call.message.chat.id, "Произошла ошибка. Попробуй /start")
-            except:
+            except Exception:
                 pass
 
     @bot.callback_query_handler(func=lambda call: not (call.data.startswith('admin_') or call.data.startswith('boss_') or call.data.startswith('booking_') or call.data.startswith('source_') or call.data.startswith('bar_') or call.data.startswith('broadcast_') or call.data.startswith('newsletter_click_') or call.data.startswith('city_select_') or call.data in ['confirm_booking', 'cancel_booking']))
@@ -120,7 +120,7 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             logging.error(f"❌ Ошибка обработки callback {call.data}: {e}", exc_info=True)
             try:
                 bot.send_message(call.message.chat.id, "⚠️ Произошла ошибка. Попробуй ещё раз!")
-            except:
+            except Exception:
                 pass
 
     def handle_check_subscription(call: types.CallbackQuery):

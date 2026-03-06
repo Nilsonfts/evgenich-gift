@@ -16,6 +16,7 @@ Railway deploy: gunicorn web.app:app --bind 0.0.0.0:$PORT
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response
 from werkzeug.security import check_password_hash, generate_password_hash
+from flask_wtf.csrf import CSRFProtect, CSRFError
 import json, os, sys, logging, threading, time
 from functools import wraps
 from datetime import datetime, timedelta
@@ -73,6 +74,17 @@ else:
 app = Flask(__name__, template_folder='templates_full')
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'evgenich-secret-2026-full')
 app.permanent_session_lifetime = timedelta(hours=12)
+
+# CSRF-защита
+csrf = CSRFProtect(app)
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    """CSRF-ошибка → 403 с понятным сообщением."""
+    if request.is_json:
+        return jsonify({'error': 'CSRF token missing or invalid'}), 403
+    flash('Сессия истекла. Пожалуйста, обновите страницу и попробуйте снова.', 'warning')
+    return redirect(request.referrer or url_for('dashboard'))
 
 ADMIN_USER = os.getenv('ADMIN_USER', 'admin')
 ADMIN_PASS_HASH = generate_password_hash(os.getenv('ADMIN_PASSWORD', 'Evgenich83'))

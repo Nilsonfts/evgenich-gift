@@ -70,21 +70,9 @@ class NewsletterManager:
             elif action.startswith('admin_newsletter_ready_'):
                 newsletter_id = int(action.split('_')[-1])
                 self._show_newsletter_sending_menu(call.message, newsletter_id)
-                
-        @self.bot.callback_query_handler(func=lambda call: call.data.startswith('admin_button_'))
-        def handle_button_callbacks(call):
-            if call.from_user.id not in ALL_ADMINS:
-                self.bot.answer_callback_query(call.id, "Доступ запрещен", show_alert=True)
-                return
-                
-            action = call.data
-            self.bot.answer_callback_query(call.id)
-            
-            if action.startswith('admin_button_template_'):
-                parts = action.split('_')
-                newsletter_id = int(parts[3])
-                template = parts[4]
-                self._handle_button_template(call.message, newsletter_id, template)
+
+        # NOTE: admin_button_* обработчик находится в newsletter_buttons.py
+        # Не дублируем его здесь, чтобы избежать конфликта регистрации
         
         logging.info("Обработчики системы рассылок зарегистрированы")
     
