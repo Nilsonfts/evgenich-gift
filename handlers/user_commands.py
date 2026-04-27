@@ -106,28 +106,52 @@ def register_user_command_handlers(bot):
 
             # Проверяем, есть ли параметр booking (для любых пользователей)
             if len(args) > 1 and args[1] == 'booking':
-                logging.info(f"✅ Пользователь {user_id} запускает быстрое бронирование через deep link")
+                logging.info(f"✅ Пользователь {user_id} (статус={status}) запускает бронирование через deep link")
                 try:
-                    from tinydb import TinyDB, Query
-                    
-                    # Инициализируем базу бронирований
-                    db = TinyDB('booking_data.json')
-                    User = Query()
-                    
-                    # Сразу начинаем процесс бронирования
-                    db.upsert({'user_id': user_id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == user_id)
-                    bot.send_message(
-                        message.chat.id, 
-                        "🌟 Отлично! Давайте забронируем столик.\n\n"
-                        "Как вас зовут?",
-                        reply_markup=keyboards.get_cancel_booking_keyboard()
-                    )
+                    from handlers.booking_flow import start_booking_flow, db as booking_db, User as BookingUser
+
+                    # Если пользователь новый — регистрируем его先 в основной БД
+                    if status == 'not_found':
+                        database.add_new_user(
+                            user_id,
+                            message.from_user.username,
+                            message.from_user.first_name,
+                            'Ссылка на бронирование',  # source
+                            None,  # referrer_id
+                            None   # brought_by_staff_id
+                        )
+                        logging.info(f"✅ Новый пользователь {user_id} зарегистрирован через booking deep link")
+
+                        # Показываем приветствие и сразу стартуем бронирование
+                        bot.send_message(
+                            message.chat.id,
+                            f"👋 Привет, {message.from_user.first_name or 'товарищ'}!\n\n"
+                            "Добро пожаловать в *Евгенич*! 🥃\n\n"
+                            "Давай сразу забронируем тебе столик — "
+                            "это займёт меньше минуты.",
+                            parse_mode="Markdown"
+                        )
+                        # Стартуем форму напрямую (у нового нет сохранённого контакта)
+                        booking_db.upsert(
+                            {'user_id': user_id, 'step': 'name', 'data': {'is_guest_booking': True}},
+                            BookingUser.user_id == user_id
+                        )
+                        bot.send_message(
+                            message.chat.id,
+                            "📝 Как вас зовут?",
+                            reply_markup=keyboards.get_cancel_booking_keyboard()
+                        )
+                    else:
+                        # Возвращающийся пользователь — используем умный флоу
+                        # (проверит сохранённый контакт и предложит подтвердить)
+                        start_booking_flow(bot, message, user_id)
                     return
                 except Exception as e:
-                    logging.error(f"Ошибка запуска быстрого бронирования: {e}")
+                    logging.error(f"Ошибка запуска бронирования через deep link: {e}", exc_info=True)
                     bot.send_message(
-                        user_id, 
-                        "Что-то пошло не так 😅\n\nПопробуйте через кнопку в меню или позвоните: +7 (812) 237-59-50"
+                        user_id,
+                        "Что-то пошло не так 😅\n\n"
+                        "Попробуйте через кнопку в меню или позвоните: +7 (812) 237-59-50"
                     )
                     return
 
