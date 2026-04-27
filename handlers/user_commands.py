@@ -233,35 +233,6 @@ def register_user_command_handlers(bot):
                             # При неправильном коде сотрудника считаем переход "прямым"
                             source = 'direct'
                             brought_by_staff_id = None
-                    elif payload == 'booking':
-                        # Пользователь пришел для бронирования - сразу запускаем форму ввода
-                        logging.info(f"Пользователь {user_id} пришел для бронирования через групповую кнопку")
-                        # Если пользователь новый, быстро регистрируем его
-                        if status == 'not_found':
-                            source = 'Группа бронирования'
-                            database.add_new_user(user_id, message.from_user.username, message.from_user.first_name, source, None, None)
-                        
-                        # Импортируем TinyDB и сразу запускаем процесс бронирования
-                        try:
-                            from tinydb import TinyDB, Query
-                            
-                            # Инициализируем базу бронирований (та же что в booking_flow.py)
-                            db = TinyDB('booking_data.json')
-                            User = Query()
-                            
-                            # Сразу начинаем процесс бронирования (как booking_bot callback)
-                            db.upsert({'user_id': user_id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == user_id)
-                            bot.send_message(
-                                message.chat.id, 
-                                "🌟 Отлично! Давайте забронируем для вас столик.\n\n"
-                                "Как вас зовут?",
-                                reply_markup=keyboards.get_cancel_booking_keyboard()
-                            )
-                            return
-                        except Exception as e:
-                            logging.error(f"Ошибка запуска бронирования: {e}")
-                            bot.send_message(user_id, "❌ Ошибка при запуске бронирования. Используйте команду /book")
-                            return
                     elif payload.startswith('ref_'):
                         try:
                             referrer_id = int(payload.replace('ref_', ''))
