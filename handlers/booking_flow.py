@@ -9,6 +9,7 @@ from tinydb import TinyDB, Query
 # Импортируем конфиги, тексты и клавиатуры
 from core.config import BOOKING_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID_MSK, REPORT_CHAT_ID
 from core.admin_config import get_bars, get_bar_by_callback
+import core.database as database
 import texts
 import keyboards
 import core.settings_manager as settings_manager # Наш новый менеджер настроек
@@ -27,10 +28,38 @@ User = Query()
 
 # --- Экспортируемая функция для запуска бронирования извне ---
 
+def _clear_profile_state(user_id: int):
+    """Сбрасывает состояние сбора профиля (user_profile_data) для пользователя."""
+    try:
+        from handlers.user_commands import user_profile_data as _upd
+        _upd.pop(user_id, None)
+    except Exception:
+        pass
+
+
 def start_booking_flow(bot, message, user_id):
     """Запускает процесс бронирования. Может вызываться из других модулей."""
-    db.upsert({'user_id': user_id, 'step': 'name', 'data': {}}, User.user_id == user_id)
-    bot.send_message(message.chat.id, texts.BOOKING_START_PROMPT, parse_mode="Markdown")
+    # Если уже идёт бронирование — не запускаем снова
+    if db.contains(User.user_id == user_id):
+        bot.reply_to(message, texts.BOOKING_IN_PROGRESS_TEXT)
+        return
+
+    # Сбрасываем состояние сбора профиля (настойка), чтобы не было конфликта
+    _clear_profile_state(user_id)
+
+    user_phone = database.get_user_phone(user_id)
+    user_info = database.find_user_by_id(user_id)
+    user_name = user_info.get('real_name') if user_info else None
+
+    if user_phone and user_name:
+        bot.send_message(
+            message.chat.id,
+            f"👋 С возвращением, {user_name}!\n\nЗабронировать на ваш номер?\n\n📱 {user_phone}",
+            reply_markup=keyboards.get_booking_saved_contact_keyboard(user_phone, user_name)
+        )
+    else:
+        db.upsert({'user_id': user_id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == user_id)
+        bot.send_message(message.chat.id, texts.BOOKING_START_PROMPT, parse_mode="Markdown")
 
 # --- Регистрация обработчиков ---
 
@@ -49,6 +78,8 @@ def register_booking_handlers(bot):
         user_id = message.from_user.id
         if db.contains(User.user_id == user_id):
             db.remove(User.user_id == user_id)
+            # На случай если параллельно шёл сбор профиля (настойка) — чистим
+            _clear_profile_state(user_id)
             bot.send_message(
                 user_id,
                 texts.BOOKING_CANCELLED_TEXT,
@@ -184,7 +215,8 @@ def register_booking_handlers(bot):
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("booking_"))
     def handle_booking_option_callback(call: types.CallbackQuery):
-        logging.info(f"📍 Получен booking callback: {call.data} от пользователя {call.from_user.id}")
+        user_id = call.from_user.id
+        logging.info(f"📍 Получен booking callback: {call.data} от пользователя {user_id}")
         try:
             bot.answer_callback_query(call.id)
         except Exception as e:
@@ -203,14 +235,27 @@ def register_booking_handlers(bot):
             elif call.data == "booking_secret":
                 bot.send_message(call.message.chat.id, texts.BOOKING_SECRET_CHAT_TEXT, reply_markup=keyboards.get_secret_chat_keyboard())
             elif call.data == "booking_bot":
-                # Начинаем бронирование для гостя
-                db.upsert({'user_id': call.from_user.id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == call.from_user.id)
-                bot.send_message(
-                    call.message.chat.id, 
-                    "🌟 Отлично! Давайте забронируем для вас столик.\n\n"
-                    "Как вас зовут?",
-                    reply_markup=keyboards.get_cancel_booking_keyboard()
-                )
+                # Сбрасываем состояние сбора профиля (настойка), чтобы не было конфликта
+                _clear_profile_state(user_id)
+                # Проверяем, есть ли у пользователя сохранённые имя и телефон
+                user_phone = database.get_user_phone(user_id)
+                user_info = database.find_user_by_id(user_id)
+                user_name = user_info.get('real_name') if user_info else None
+
+                if user_phone and user_name:
+                    bot.send_message(
+                        call.message.chat.id,
+                        f"👋 С возвращением, {user_name}!\n\nЗабронировать на ваш номер?\n\n📱 {user_phone}",
+                        reply_markup=keyboards.get_booking_saved_contact_keyboard(user_phone, user_name)
+                    )
+                else:
+                    db.upsert({'user_id': user_id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == user_id)
+                    bot.send_message(
+                        call.message.chat.id,
+                        "🌟 Отлично! Давайте забронируем для вас столик.\n\n"
+                        "Как вас зовут?",
+                        reply_markup=keyboards.get_cancel_booking_keyboard()
+                    )
             logging.info(f"✅ Booking callback {call.data} обработан успешно")
         except Exception as e:
             logging.error(f"❌ Ошибка обработки booking callback {call.data}: {e}", exc_info=True)
@@ -218,6 +263,42 @@ def register_booking_handlers(bot):
                 bot.send_message(call.message.chat.id, "⚠️ Произошла ошибка. Попробуйте ещё раз нажать 📍 Забронировать стол")
             except Exception:
                 pass
+
+    @bot.callback_query_handler(func=lambda call: call.data in ["confirm_saved_contact", "change_contact"])
+    def handle_saved_contact_callback(call: types.CallbackQuery):
+        """Обрабатывает подтверждение или смену сохранённого контакта при бронировании."""
+        user_id = call.from_user.id
+        bot.answer_callback_query(call.id)
+        try:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+        except ApiTelegramException:
+            pass
+
+        if call.data == "confirm_saved_contact":
+            user_phone = database.get_user_phone(user_id)
+            user_info = database.find_user_by_id(user_id)
+            user_name = user_info.get('real_name') if user_info else None
+
+            if user_phone and user_name:
+                db.upsert({
+                    'user_id': user_id,
+                    'step': 'date',
+                    'data': {'is_guest_booking': True, 'name': user_name, 'phone': user_phone}
+                }, User.user_id == user_id)
+                bot.send_message(call.message.chat.id, texts.BOOKING_ASK_DATE, reply_markup=keyboards.get_cancel_booking_keyboard())
+            else:
+                # Данные пропали — запускаем с нуля
+                db.upsert({'user_id': user_id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == user_id)
+                bot.send_message(call.message.chat.id,
+                    "🌟 Давайте забронируем столик.\n\nКак вас зовут?",
+                    reply_markup=keyboards.get_cancel_booking_keyboard())
+
+        elif call.data == "change_contact":
+            _clear_profile_state(user_id)
+            db.upsert({'user_id': user_id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == user_id)
+            bot.send_message(call.message.chat.id,
+                "🌟 Давайте забронируем столик.\n\nКак вас зовут?",
+                reply_markup=keyboards.get_cancel_booking_keyboard())
 
     @bot.callback_query_handler(func=lambda call: call.data in ["confirm_booking", "cancel_booking"])
     def handle_booking_confirmation_callback(call: types.CallbackQuery):
@@ -235,6 +316,16 @@ def register_booking_handlers(bot):
         if call.data == "confirm_booking":
             booking_data = user_entry.get('data', {})
             is_admin_booking = booking_data.get('is_admin_booking', False)
+
+            # Сохраняем имя и телефон гостя в основную БД пользователей (для памяти бота)
+            if not is_admin_booking:
+                guest_name = booking_data.get('name', '').strip()
+                guest_phone = booking_data.get('phone', '').strip()
+                if guest_phone:
+                    database.update_user_contact(user_id, guest_phone)
+                if guest_name:
+                    database.update_user_name(user_id, guest_name)
+                logging.info(f"💾 Сохранены данные гостя {user_id}: имя='{guest_name}', телефон='{guest_phone}'")
             
             # Если это админская бронировка, экспортируем в таблицу соцсетей
             if is_admin_booking:

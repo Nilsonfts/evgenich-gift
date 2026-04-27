@@ -190,9 +190,9 @@ if __name__ == "__main__":
 
     logging.info("🤖 Начинаю регистрацию обработчиков...")
     register_chat_booking_handlers(bot)  # ПЕРВЫМ - для групповых команд
+    register_booking_handlers(bot)       # ВТОРЫМ - process_booking_step должен перехватывать текст раньше handle_profile_data_collection
     register_user_command_handlers(bot)
     register_callback_handlers(bot, scheduler, send_friend_bonus, request_feedback)
-    register_booking_handlers(bot)
     # Инициализируем систему рассылок с планировщиком (ПЕРЕД admin catch-all)
     init_admin_handlers(bot, scheduler)
     register_admin_handlers(bot)

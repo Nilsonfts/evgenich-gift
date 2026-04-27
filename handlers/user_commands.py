@@ -14,6 +14,9 @@ from utils.qr_generator import create_qr_code
 # Словарь для хранения текущего payload пользователя (для определения канала)
 user_current_payload = {}
 
+# Словарь состояний сбора профиля (module-level, доступен из других модулей)
+user_profile_data = {}
+
 # --- Вспомогательные функции ---
 
 def get_channel_for_payload(payload: str) -> str:
@@ -47,10 +50,8 @@ def register_user_command_handlers(bot):
     """Регистрирует обработчики для основных команд пользователя и персонала."""
     
     # Словарь для хранения состояний регистрации персонала (имя, должность)
-    staff_reg_data = {} 
-    
-    # Словарь для хранения состояний сбора данных профиля пользователя
-    user_profile_data = {} 
+    staff_reg_data = {}
+    # user_profile_data — объявлен на уровне модуля (выше), используем глобальный
 
     @bot.message_handler(commands=['concept'])
     def handle_concept_choice(message: types.Message):
@@ -757,6 +758,18 @@ def register_user_command_handlers(bot):
                 return
         
         user_id = message.from_user.id
+
+        # Если пользователь в активном бронировании — не запускаем сценарий настойки
+        try:
+            from tinydb import TinyDB, Query as TdbQuery
+            _bdb = TinyDB('booking_data.json')
+            _bq = TdbQuery()
+            if _bdb.contains(_bq.user_id == user_id):
+                bot.reply_to(message, "⚠️ Сначала заверши или отмени бронирование (/cancel), потом получай настойку!")
+                return
+        except Exception:
+            pass
+
         user_status = database.get_reward_status(user_id)
         
         if user_status in ['redeemed', 'redeemed_and_left']:

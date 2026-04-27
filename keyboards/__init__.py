@@ -97,6 +97,15 @@ def get_booking_options_keyboard():
     )
     return markup
 
+def get_booking_saved_contact_keyboard(phone: str, name: str):
+    """Клавиатура подтверждения сохранённых контактных данных при бронировании."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton(f"✅ Да, на номер {phone}", callback_data="confirm_saved_contact"),
+        types.InlineKeyboardButton("✏️ Указать другой номер", callback_data="change_contact")
+    )
+    return markup
+
 def get_booking_confirmation_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
