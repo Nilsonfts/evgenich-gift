@@ -33,8 +33,8 @@ def _clear_profile_state(user_id: int):
     try:
         from handlers.user_commands import user_profile_data as _upd
         _upd.pop(user_id, None)
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning(f"Не удалось очистить profile state для {user_id}: {e}")
 
 
 def start_booking_flow(bot, message, user_id):

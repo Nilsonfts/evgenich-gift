@@ -120,11 +120,14 @@ def register_ai_handlers(bot):
                 if message.entities:
                     for entity in message.entities:
                         if entity.type == 'mention':
-                            mention_text = message.text[entity.offset:entity.offset + entity.length]
-                            if 'evgenichspbbot' in mention_text.lower():
-                                bot_mentioned = True
-                                logging.info(f"✅ Группа '{chat_title}': УПОМИНАНИЕ через entity")
-                                break
+                            try:
+                                mention_text = message.text[entity.offset:entity.offset + entity.length]
+                                if 'evgenichspbbot' in mention_text.lower():
+                                    bot_mentioned = True
+                                    logging.info(f"✅ Группа '{chat_title}': УПОМИНАНИЕ через entity")
+                                    break
+                            except (IndexError, TypeError) as e:
+                                logging.warning(f"Ошибка парсинга mention entity в группе '{chat_title}': {e}")
                 
                 # Если бот не упомянут, не отвечаем (для всех, включая админов)
                 if not bot_mentioned:

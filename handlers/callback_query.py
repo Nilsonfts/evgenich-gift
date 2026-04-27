@@ -256,8 +256,11 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         bot.answer_callback_query(call.id, text="Спасибо за ваш отзыв!")
         bot.edit_message_text(f"Спасибо, товарищ! Ваша оценка: {'⭐'*int(rating)}", call.message.chat.id, call.message.message_id, reply_markup=None)
 
-        # Предполагаем, что у вас есть функция для логирования
-        # database.log_ai_feedback(user_id, "feedback_after_visit", "N/A", rating)
+        # Сохраняем оценку в БД для мониторинга качества
+        try:
+            database.log_ai_feedback(user_id, "feedback_after_visit", "N/A", rating)
+        except Exception as e:
+            logging.error(f"Не удалось сохранить feedback {user_id}: {e}")
         logging.info(f"Пользователь {user_id} оставил оценку: {rating}")
 
 
