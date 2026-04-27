@@ -96,9 +96,6 @@ def register_ai_handlers(bot):
             # Если есть любое ключевое слово - отвечаем
             has_keyword = has_booking_keyword or has_navigation_keyword
             
-            # Если есть любое ключевое слово - отвечаем
-            has_keyword = has_booking_keyword or has_navigation_keyword
-            
             if has_keyword:
                 logging.info(f"✅ Группа '{chat_title}' ({message.chat.id}): КЛЮЧЕВОЕ СЛОВО найдено в '{message.text[:50]}'")
                 # Установим флаг что нужна кнопка бронирования только если это про бронь

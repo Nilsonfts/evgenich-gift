@@ -70,7 +70,8 @@ def register_booking_handlers(bot):
 
     def _start_booking_process(chat_id, user_id):
         """Начинает или перезапускает процесс бронирования для пользователя."""
-        db.upsert({'user_id': user_id, 'step': 'name', 'data': {}}, User.user_id == user_id)
+        _clear_profile_state(user_id)
+        db.upsert({'user_id': user_id, 'step': 'name', 'data': {'is_guest_booking': True}}, User.user_id == user_id)
         bot.send_message(chat_id, texts.BOOKING_START_PROMPT, parse_mode="Markdown")
 
     def _cancel_booking(message):
@@ -474,8 +475,14 @@ def register_booking_handlers(bot):
         
         # Проверяем если пользователь на шаге 'bar' - ему нужно нажать на кнопку!
         if step == 'bar':
-            bot.send_message(message.chat.id, "Пожалуйста, выбери бар кнопкой выше 👆", 
+            bot.send_message(message.chat.id, "Пожалуйста, выбери бар кнопкой выше 👆",
                            reply_markup=keyboards.get_bar_selection_keyboard())
+            return
+
+        # На шаге подтверждения — напоминаем нажать кнопку
+        if step == 'confirmation':
+            bot.send_message(message.chat.id, "Нажми кнопку выше 👆 — подтверди или начни заново.",
+                           reply_markup=keyboards.get_booking_confirmation_keyboard())
             return
 
         # Обрабатываем дату - парсим и проверяем

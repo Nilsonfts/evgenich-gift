@@ -276,14 +276,10 @@ def get_booking_confirmation_text(data: dict[str, str]) -> str:
         'source_bot_tg': 'Бот в ТГ',
         'source_tg': 'Забронируй Евгенича'
     }
-    bar_names = {
-        'bar_nevsky': 'СПб, Невский 53',
-        'bar_rubinstein': 'СПб, Рубинштейна 9',
-        'bar_pyatnitskaya': 'МСК, Пятницкая 30',
-        'bar_tsvetnoj': 'МСК, Цветной бульвар'
-    }
+    from core.admin_config import get_bar_by_callback as _get_bar
     source_display = source_names.get(data.get('source', ''), data.get('source', 'не указано'))
-    bar_display = bar_names.get(data.get('bar', ''), data.get('bar', 'не указано'))
+    _bar_obj = _get_bar(data.get('bar', ''))
+    bar_display = _bar_obj['name'] if _bar_obj else data.get('bar', 'не указано')
     
     # Если это гостевое бронирование (без источника), не показываем источник
     if data.get('is_guest_booking'):
@@ -331,16 +327,14 @@ def get_booking_report_text(data: dict[str, str], creator_id: int = None) -> str
         source_display = ALL_SOURCE_DISPLAY_NAMES.get(source, data.get('source', 'не указано'))
         utm_data = ALL_SOURCE_UTM_DATA.get(source, {})
     
-    # Маппинг баров с тегами
-    bar_info = {
-        'bar_nevsky': {'name': 'СПб, Невский 53', 'tag': '#ЕВГ_СПБ'},
-        'bar_rubinstein': {'name': 'СПб, Рубинштейна 9', 'tag': '#ЕВГ_СПБ_РУБ'},
-        'bar_pyatnitskaya': {'name': 'МСК, Пятницкая 30', 'tag': '#ЕВГ_МСК_ПЯТ'},
-        'bar_tsvetnoj': {'name': 'МСК, Цветной бульвар', 'tag': '#ЕВГ_МСК_ЦВЕТ'}
-    }
-    bar_data = bar_info.get(data.get('bar', ''), {'name': data.get('bar', 'не указано'), 'tag': ''})
-    bar_display = bar_data['name']
-    bar_tag = bar_data['tag']
+    from core.admin_config import get_bar_by_callback as _get_bar_r
+    _bar_obj_r = _get_bar_r(data.get('bar', ''))
+    if _bar_obj_r:
+        bar_display = _bar_obj_r['name']
+        bar_tag = f"#{_bar_obj_r.get('code', '')}" if _bar_obj_r.get('code') else ''
+    else:
+        bar_display = data.get('bar', 'не указано')
+        bar_tag = ''
     
     # Определяем создателя
     creator_name = "👤 Посетитель (через бота)"

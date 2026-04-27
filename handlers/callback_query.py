@@ -395,9 +395,15 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             
             bot.answer_callback_query(call.id, f"Проверено! {rewards_given} наград получено." if rewards_given > 0 else "Наград пока нет.")
             
-            # Обновляем сообщение с текущей статистикой
+            # Обновляем сообщение с текущей статистикой (через псевдо-сообщение с правильным user_id)
             from .user_commands import handle_friend_command
-            handle_friend_command(call.message)
+
+            class _PseudoMsg:
+                def __init__(self, chat_id, uid):
+                    self.chat = type('obj', (object,), {'id': chat_id})
+                    self.from_user = type('obj', (object,), {'id': uid})
+
+            handle_friend_command(_PseudoMsg(call.message.chat.id, user_id))
             
         except Exception as e:
             logging.error(f"Ошибка при проверке реферальных наград для {user_id}: {e}")

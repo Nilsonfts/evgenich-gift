@@ -110,7 +110,7 @@ def register_user_command_handlers(bot):
                 try:
                     from handlers.booking_flow import start_booking_flow, db as booking_db, User as BookingUser
 
-                    # Если пользователь новый — регистрируем его先 в основной БД
+                    # Если пользователь новый — регистрируем его в основной БД
                     if status == 'not_found':
                         database.add_new_user(
                             user_id,
