@@ -1218,7 +1218,121 @@ def register_user_command_handlers(bot):
             except Exception:
                 bot.send_message(message.chat.id, text[i:i+3500])
 
+    @bot.message_handler(commands=['loyalty_debug3'])
+    def handle_loyalty_debug3(message: types.Message):
+        """[ADMIN] Хитрые попытки: GET, type=BONUS с order_price=0, разные id_branch."""
+        user_id = message.from_user.id
+        if user_id not in ALL_ADMINS:
+            return
+        import requests as _req
+        from utils.gmb_client import gmb
 
+        if not gmb.is_configured():
+            bot.reply_to(message, "❌ GMB_API_KEY не настроен")
+            return
+
+        parts = message.text.split(maxsplit=1)
+        phone_arg = parts[1].strip() if len(parts) >= 2 else (database.get_user_phone(user_id) or "")
+        if not phone_arg:
+            bot.reply_to(message, "Использование: /loyalty_debug3 <телефон>")
+            return
+        clean = gmb._normalize_phone(phone_arg)
+
+        url = gmb.api_url
+        api_key = gmb.api_key
+        out = [f"🧪 <b>GMB debug3:</b> <code>{clean}</code>", ""]
+
+        # 1. GET вместо POST
+        out.append("━━━ <b>GET вместо POST</b> ━━━")
+        try:
+            r = _req.get(url, params={'api_key': api_key, 'login': clean}, timeout=8)
+            out.append(f"[{r.status_code}] <code>{r.text[:300]}</code>")
+        except Exception as e:
+            out.append(f"❌ {str(e)[:100]}")
+        out.append("")
+
+        # 2. type=BONUS с order_price=0 — может вернёт клиента в ответе
+        out.append("━━━ <b>type=BONUS order_price=0</b> ━━━")
+        try:
+            payload = {
+                'api_key': api_key,
+                'type': 'BONUS',
+                'login': clean,
+                'order_price': 0,
+                'id_branch': 1,
+                'id_manager': 1,
+                'manager_name': 'debug',
+                'branch_name': 'Евгенич',
+                'return_true_if_operation_exists': True,
+            }
+            r = _req.post(url, json=payload, timeout=8)
+            out.append(f"[{r.status_code}] <code>{r.text[:400]}</code>")
+        except Exception as e:
+            out.append(f"❌ {str(e)[:100]}")
+        out.append("")
+
+        # 3. type=CALCULATE-LIMITS
+        out.append("━━━ <b>type=CALCULATE-LIMITS</b> ━━━")
+        try:
+            payload = {
+                'api_key': api_key,
+                'type': 'CALCULATE-LIMITS',
+                'login': clean,
+                'order_price': 1000,
+                'id_branch': 1,
+                'id_manager': 1,
+            }
+            r = _req.post(url, json=payload, timeout=8)
+            out.append(f"[{r.status_code}] <code>{r.text[:400]}</code>")
+        except Exception as e:
+            out.append(f"❌ {str(e)[:100]}")
+        out.append("")
+
+        # 4. type=CALCULATE-BONUS
+        out.append("━━━ <b>type=CALCULATE-BONUS</b> ━━━")
+        try:
+            payload = {
+                'api_key': api_key,
+                'type': 'CALCULATE-BONUS',
+                'login': clean,
+                'order_price': 1000,
+                'id_branch': 1,
+                'id_manager': 1,
+            }
+            r = _req.post(url, json=payload, timeout=8)
+            out.append(f"[{r.status_code}] <code>{r.text[:400]}</code>")
+        except Exception as e:
+            out.append(f"❌ {str(e)[:100]}")
+        out.append("")
+
+        # 5. Перебор id_branch 0..5
+        out.append("━━━ <b>id_branch 0..5</b> (login + id_branch=N) ━━━")
+        for branch_id in range(6):
+            try:
+                r = _req.post(url, json={'api_key': api_key, 'login': clean, 'id_branch': branch_id}, timeout=6)
+                body = r.text[:120].replace('\n', ' ')
+                marker = "⚠️" if body == '[]' else "✅"
+                out.append(f"  {marker} branch={branch_id} [{r.status_code}] <code>{body}</code>")
+            except Exception as e:
+                out.append(f"  ❌ branch={branch_id} {str(e)[:80]}")
+        out.append("")
+
+        # 6. form-data вместо JSON
+        out.append("━━━ <b>form-data (data= вместо json=)</b> ━━━")
+        try:
+            r = _req.post(url, data={'api_key': api_key, 'login': clean}, timeout=8)
+            out.append(f"[{r.status_code}] <code>{r.text[:300]}</code>")
+        except Exception as e:
+            out.append(f"❌ {str(e)[:100]}")
+
+        text = "\n".join(out)
+        for i in range(0, len(text), 3500):
+            try:
+                bot.send_message(message.chat.id, text[i:i+3500], parse_mode="HTML")
+            except Exception:
+                bot.send_message(message.chat.id, text[i:i+3500])
+
+    @bot.message_handler(commands=['restart'])
     def handle_restart_command(message: types.Message):
         """Команда для админов для сброса состояния пользователя (для тестирования)."""
         user_id = message.from_user.id
