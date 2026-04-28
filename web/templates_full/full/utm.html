@@ -1,0 +1,102 @@
+{% extends "full/base.html" %}
+{% block title %}UTM-источники{% endblock %}
+
+{% block content %}
+<div class="page-h">
+    <h2><i class="fas fa-bullseye me-2"></i>Конверсия по источникам</h2>
+    <p>Какие QR-коды и каналы реально приводят гостей до настойки</p>
+</div>
+
+<!-- Period selector -->
+<div class="mb-3">
+    <div class="btn-group btn-group-sm">
+        <a href="?days=7"   class="btn btn-outline-primary {{ 'active' if days == 7 }}">7 дней</a>
+        <a href="?days=30"  class="btn btn-outline-primary {{ 'active' if days == 30 }}">30 дней</a>
+        <a href="?days=90"  class="btn btn-outline-primary {{ 'active' if days == 90 }}">90 дней</a>
+        <a href="?days=365" class="btn btn-outline-primary {{ 'active' if days == 365 }}">365 дней</a>
+    </div>
+    <span class="text-muted ms-3"><small>Период: последние {{ days }} дн., обновлено {{ now.strftime('%H:%M') }}</small></span>
+</div>
+
+<!-- Totals -->
+<div class="row g-3 mb-4">
+    <div class="col-xl-3 col-sm-6">
+        <div class="stat-card">
+            <div class="d-flex align-items-center justify-content-between">
+                <div><small>Всего /start</small><h3>{{ totals.starts }}</h3></div>
+                <div class="icon" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)"><i class="fas fa-play"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-sm-6">
+        <div class="stat-card">
+            <div class="d-flex align-items-center justify-content-between">
+                <div><small>Кликов «Настойка»</small><h3 style="color:#3b82f6">{{ totals.gift_clicks }}</h3></div>
+                <div class="icon" style="background:linear-gradient(135deg,#3b82f6,#2563eb)"><i class="fas fa-glass-whiskey"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-sm-6">
+        <div class="stat-card">
+            <div class="d-flex align-items-center justify-content-between">
+                <div><small>Погашено купонов</small><h3 style="color:#10b981">{{ totals.redeemed }}</h3></div>
+                <div class="icon" style="background:linear-gradient(135deg,#10b981,#059669)"><i class="fas fa-check-circle"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-sm-6">
+        <div class="stat-card">
+            <div class="d-flex align-items-center justify-content-between">
+                <div><small>Кликов «Лояльность»</small><h3 style="color:#f59e0b">{{ totals.loyalty_clicks }}</h3></div>
+                <div class="icon" style="background:linear-gradient(135deg,#f59e0b,#d97706)"><i class="fas fa-gift"></i></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Per-source table -->
+<div class="table-card">
+    <div class="card-header"><i class="fas fa-table me-2"></i>Разбивка по источникам</div>
+    {% if rows %}
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Источник (payload)</th>
+                    <th class="text-end">/start</th>
+                    <th class="text-end">Клик «Настойка»</th>
+                    <th class="text-end">CR клик</th>
+                    <th class="text-end">Погашено</th>
+                    <th class="text-end">CR погашение</th>
+                    <th class="text-end">Лояльность</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr>
+                    <td><code>{{ r.source }}</code></td>
+                    <td class="text-end"><strong>{{ r.starts }}</strong></td>
+                    <td class="text-end">{{ r.gift_clicks }}</td>
+                    <td class="text-end">
+                        <span class="badge" style="background: {% if r.cr_click >= 50 %}#10b981{% elif r.cr_click >= 25 %}#f59e0b{% else %}#94a3b8{% endif %}">{{ r.cr_click }}%</span>
+                    </td>
+                    <td class="text-end">{{ r.redeemed }}</td>
+                    <td class="text-end">
+                        <span class="badge" style="background: {% if r.cr_redeem >= 30 %}#10b981{% elif r.cr_redeem >= 15 %}#f59e0b{% else %}#94a3b8{% endif %}">{{ r.cr_redeem }}%</span>
+                    </td>
+                    <td class="text-end">{{ r.loyalty_clicks }} <small class="text-muted">({{ r.cr_loyalty }}%)</small></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="p-4 text-center text-muted">
+        <i class="fas fa-info-circle fa-2x mb-2"></i>
+        <div>Пока нет данных за выбранный период.</div>
+        <small>События начали трекаться с момента деплоя обновления.<br>
+        Источники определяются по payload в ссылке <code>?start=qr_tv</code>, <code>?start=vk_msk</code> и т. д.</small>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

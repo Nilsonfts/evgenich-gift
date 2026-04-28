@@ -365,6 +365,106 @@ def analytics():
 
 
 # ═══════════════════════════════════════════
+#  FUNNEL + A/B
+# ═══════════════════════════════════════════
+def _get_local_db():
+    """Прямой доступ к SQLite-функциям аналитики (events пишутся в SQLite-файл бота).
+
+    Web-панель в проде может смотреть в PostgreSQL для пользователей, но events
+    хранятся в SQLite (см. core.database.log_event). Возвращаем модуль или None.
+    """
+    try:
+        from core import database as _local_db
+        return _local_db
+    except Exception as e:
+        logging.warning(f"local SQLite db unavailable for funnel: {e}")
+        return None
+
+
+@app.route('/funnel')
+@login_required
+def funnel():
+    days = request.args.get('days', 7, type=int)
+    days = max(1, min(days, 90))
+
+    local_db = _get_local_db()
+    counts = {}
+    variants = []
+    if local_db:
+        try:
+            counts = local_db.get_funnel_counts(days=days) or {}
+        except Exception as e:
+            logging.error(f"funnel counts: {e}")
+        try:
+            variants = local_db.get_variant_performance(days=days) or []
+        except Exception as e:
+            logging.error(f"variants: {e}")
+
+    starts = counts.get('start', 0)
+    gift_clicks = counts.get('gift_button_clicked', 0)
+    redeemed = counts.get('redeemed', 0)
+    loyalty_clicks = counts.get('loyalty_clicked', 0)
+    welcome_shown = counts.get('welcome_shown', 0)
+    reminders = counts.get('reminder_30min_sent', 0)
+
+    def pct(num, den):
+        return round(num / den * 100, 1) if den else 0.0
+
+    funnel_steps = [
+        {'label': '/start', 'value': starts, 'pct': 100.0 if starts else 0.0},
+        {'label': 'Нажал «🥃 Получить настойку»', 'value': gift_clicks, 'pct': pct(gift_clicks, starts)},
+        {'label': 'Бармен погасил купон', 'value': redeemed, 'pct': pct(redeemed, starts)},
+        {'label': 'Открыл «🎁 Карта лояльности»', 'value': loyalty_clicks, 'pct': pct(loyalty_clicks, starts)},
+    ]
+
+    # A/B — добавляем конверсии
+    for v in variants:
+        v['cr_click'] = pct(v.get('gift_clicks', 0), v.get('starts', 0))
+        v['cr_redeem'] = pct(v.get('redeemed', 0), v.get('starts', 0))
+
+    return render_template('full/funnel.html',
+        days=days, funnel_steps=funnel_steps,
+        variants=variants, reminders=reminders,
+        welcome_shown=welcome_shown, now=_now_msk())
+
+
+# ═══════════════════════════════════════════
+#  UTM SOURCES
+# ═══════════════════════════════════════════
+@app.route('/utm')
+@login_required
+def utm_sources():
+    days = request.args.get('days', 30, type=int)
+    days = max(1, min(days, 365))
+
+    local_db = _get_local_db()
+    rows = []
+    if local_db:
+        try:
+            rows = local_db.get_funnel_by_source(days=days) or []
+        except Exception as e:
+            logging.error(f"utm sources: {e}")
+
+    def pct(num, den):
+        return round(num / den * 100, 1) if den else 0.0
+
+    for r in rows:
+        r['cr_click'] = pct(r.get('gift_clicks', 0), r.get('starts', 0))
+        r['cr_redeem'] = pct(r.get('redeemed', 0), r.get('starts', 0))
+        r['cr_loyalty'] = pct(r.get('loyalty_clicks', 0), r.get('starts', 0))
+
+    totals = {
+        'starts': sum(r.get('starts', 0) for r in rows),
+        'gift_clicks': sum(r.get('gift_clicks', 0) for r in rows),
+        'redeemed': sum(r.get('redeemed', 0) for r in rows),
+        'loyalty_clicks': sum(r.get('loyalty_clicks', 0) for r in rows),
+    }
+
+    return render_template('full/utm.html',
+        days=days, rows=rows, totals=totals, now=_now_msk())
+
+
+# ═══════════════════════════════════════════
 #  REPORTS (API endpoint for period-based)
 # ═══════════════════════════════════════════
 @app.route('/api/report', methods=['POST'])

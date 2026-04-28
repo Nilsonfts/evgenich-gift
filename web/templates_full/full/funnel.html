@@ -1,0 +1,101 @@
+{% extends "full/base.html" %}
+{% block title %}Воронка / A-B{% endblock %}
+
+{% block content %}
+<div class="page-h">
+    <h2><i class="fas fa-filter me-2"></i>Воронка конверсии</h2>
+    <p>Сколько гостей идёт по сценарию «/start → настойка → лояльность» и какой WELCOME-вариант лучше</p>
+</div>
+
+<!-- Period selector -->
+<div class="mb-3">
+    <div class="btn-group btn-group-sm">
+        <a href="?days=1"  class="btn btn-outline-primary {{ 'active' if days == 1 }}">Сегодня</a>
+        <a href="?days=7"  class="btn btn-outline-primary {{ 'active' if days == 7 }}">7 дней</a>
+        <a href="?days=30" class="btn btn-outline-primary {{ 'active' if days == 30 }}">30 дней</a>
+        <a href="?days=90" class="btn btn-outline-primary {{ 'active' if days == 90 }}">90 дней</a>
+    </div>
+    <span class="text-muted ms-3"><small>Период: последние {{ days }} дн., обновлено {{ now.strftime('%H:%M') }}</small></span>
+</div>
+
+<!-- Funnel steps -->
+<div class="table-card mb-4">
+    <div class="card-header"><i class="fas fa-stream me-2"></i>Этапы воронки</div>
+    <div class="p-3">
+        {% for step in funnel_steps %}
+        <div class="mb-3">
+            <div class="d-flex justify-content-between mb-1">
+                <span><strong>{{ loop.index }}.</strong> {{ step.label }}</span>
+                <span><strong>{{ step.value }}</strong> чел. <span class="text-muted">({{ step.pct }}%)</span></span>
+            </div>
+            <div class="progress" style="height: 22px; background:#f1f5f9; border-radius:8px;">
+                <div class="progress-bar" role="progressbar"
+                     style="width: {{ step.pct }}%; background: linear-gradient(90deg,#6366f1,#8b5cf6); font-weight:600;"
+                     aria-valuenow="{{ step.pct }}" aria-valuemin="0" aria-valuemax="100">
+                    {{ step.pct }}%
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <div class="row mt-4 pt-3" style="border-top:1px solid #e2e8f0">
+            <div class="col-md-6">
+                <small class="text-muted">Reminder через 30 мин отправлено</small>
+                <h4 style="color:#f59e0b">⏰ {{ reminders }}</h4>
+            </div>
+            <div class="col-md-6">
+                <small class="text-muted">Welcome показано всего</small>
+                <h4 style="color:#3b82f6">{{ welcome_shown }}</h4>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- A/B WELCOME -->
+<div class="table-card">
+    <div class="card-header"><i class="fas fa-flask me-2"></i>A/B-тест приветствия (WELCOME_TEXT)</div>
+    {% if variants %}
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Вариант</th>
+                    <th class="text-end">Показов (/start)</th>
+                    <th class="text-end">Клик «Настойка»</th>
+                    <th class="text-end">CR клик</th>
+                    <th class="text-end">Погашено</th>
+                    <th class="text-end">CR погашение</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for v in variants %}
+                <tr>
+                    <td>
+                        <strong>{{ v.variant }}</strong>
+                        {% if v.variant == 'social_proof' %}<small class="text-muted d-block">«уже N+ продегустировали»</small>{% endif %}
+                        {% if v.variant == 'loyalty_hint' %}<small class="text-muted d-block">«+500 ₽ на карту лояльности»</small>{% endif %}
+                        {% if v.variant == 'control' %}<small class="text-muted d-block">базовый текст</small>{% endif %}
+                    </td>
+                    <td class="text-end">{{ v.starts }}</td>
+                    <td class="text-end">{{ v.gift_clicks }}</td>
+                    <td class="text-end">
+                        <span class="badge" style="background:#6366f1">{{ v.cr_click }}%</span>
+                    </td>
+                    <td class="text-end">{{ v.redeemed }}</td>
+                    <td class="text-end">
+                        <span class="badge" style="background:#10b981">{{ v.cr_redeem }}%</span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="p-4 text-center text-muted">
+        <i class="fas fa-info-circle fa-2x mb-2"></i>
+        <div>Пока нет данных за выбранный период.</div>
+        <small>События начали трекаться с момента деплоя обновления.</small>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
