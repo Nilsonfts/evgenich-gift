@@ -1108,11 +1108,14 @@ def register_user_command_handlers(bot):
 
         clean = gmb._normalize_phone(phone_arg)
 
-        # Пробуем 4 варианта запроса
+        # Пробуем разные поля и разные форматы телефона
         variants = [
+            ("login (норм)", {'login': clean}),
+            ("phone (норм)", {'phone': clean}),
+            ("id_device (норм)", {'id_device': clean}),
+            ("login (как есть)", {'login': phone_arg}),
             ("phone (как есть)", {'phone': phone_arg}),
-            ("phone (нормализованный 7XXX)", {'phone': clean}),
-            ("phone с +", {'phone': '+' + clean if not clean.startswith('+') else clean}),
+            ("phone (+7XXX)", {'phone': '+' + clean if not clean.startswith('+') else clean}),
             ("phone (8XXX)", {'phone': '8' + clean[1:]} if clean.startswith('7') and len(clean) == 11 else None),
         ]
 

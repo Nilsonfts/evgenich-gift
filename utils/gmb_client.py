@@ -87,12 +87,33 @@ class GMBClient:
     def find_client_by_phone(self, phone: str) -> Optional[Dict]:
         """
         Ищет клиента по номеру телефона.
-        Телефон нормализуется: убираем +, пробелы, скобки.
-        Возвращает dict с полями client или None если не найден.
+
+        В GMB телефон хранится как `login` (79991234567 без +).
+        Пробуем несколько вариантов полей (в порядке вероятности):
+          1. login=79XX     — основной, так хранится в GMB
+          2. phone=79XX     — fallback, если API всё же ждёт phone
+          3. id_device=79XX — fallback, если API ждёт id_device
         """
         clean_phone = self._normalize_phone(phone)
-        result = self._call({'phone': clean_phone})
-        return self._parse_client_response(result)
+        if not clean_phone:
+            return None
+
+        # Порядок попыток (первый удачный — выходим)
+        attempts = [
+            {'login': clean_phone},
+            {'phone': clean_phone},
+            {'id_device': clean_phone},
+        ]
+
+        for payload in attempts:
+            result = self._call(payload)
+            parsed = self._parse_client_response(result)
+            if parsed:
+                logger.info(f"GMB клиент найден через {list(payload.keys())[0]}={clean_phone}")
+                return parsed
+
+        logger.warning(f"GMB клиент не найден ни по одному полю для {clean_phone}")
+        return None
 
     def find_client_by_id(self, id_client: int) -> Optional[Dict]:
         """Ищет клиента по ID в системе GMB."""
