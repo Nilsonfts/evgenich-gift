@@ -154,6 +154,13 @@ def register_user_command_handlers(bot):
             # Детальное логирование для отладки
             logging.info(f"🔍 /start от {user_id}: message.text='{message.text}', status='{status}', payload={user_current_payload.get(user_id, 'нет')}")
 
+            # Логируем событие /start (для funnel + UTM аналитики)
+            try:
+                _start_payload = args[1] if len(args) > 1 else None
+                database.log_event(user_id, 'start', source=_start_payload)
+            except Exception:
+                pass
+
             # Проверяем, есть ли параметр booking (для любых пользователей)
             if len(args) > 1 and args[1] == 'booking':
                 logging.info(f"✅ Пользователь {user_id} (статус={status}) запускает бронирование через deep link")
@@ -375,11 +382,24 @@ def register_user_command_handlers(bot):
             # Приветствие: новым — кнопка настойки, существующим — главное меню
             # (чтобы не предлагать заново сценарий получения настойки тем, кто уже её брал)
             if status == 'not_found':
+                welcome_text, welcome_variant = texts.get_welcome_text(user_id)
                 bot.send_message(
                     message.chat.id,
-                    texts.WELCOME_TEXT,
-                    reply_markup=keyboards.get_gift_keyboard()
+                    welcome_text,
+                    reply_markup=keyboards.get_gift_keyboard(),
+                    parse_mode="Markdown"
                 )
+                # Логируем вариант — для A/B аналитики
+                try:
+                    database.log_event(user_id, 'welcome_shown', variant=welcome_variant)
+                except Exception:
+                    pass
+                # Планируем напоминание через 30 минут, если ещё не нажмёт кнопку
+                try:
+                    if not database.has_pending_delayed_task(user_id, 'reminder_30min'):
+                        database.schedule_delayed_message(user_id, 'reminder_30min', delay_minutes=30)
+                except Exception as e:
+                    logging.warning(f"Не удалось запланировать reminder_30min для {user_id}: {e}")
             else:
                 bot.send_message(
                     message.chat.id,
@@ -656,6 +676,10 @@ def register_user_command_handlers(bot):
             return
 
         user_id = message.from_user.id
+        try:
+            database.log_event(user_id, 'loyalty_clicked')
+        except Exception:
+            pass
         first_name = message.from_user.first_name or ""
         last_name = message.from_user.last_name or ""
         username = message.from_user.username or ""
@@ -781,6 +805,13 @@ def register_user_command_handlers(bot):
                 return
         
         user_id = message.from_user.id
+
+        # Funnel: гость нажал «Получить настойку» — гасим 30-минутный reminder
+        try:
+            database.log_event(user_id, 'gift_button_clicked')
+            database.cancel_pending_delayed_tasks(user_id, 'reminder_30min')
+        except Exception:
+            pass
 
         # Если пользователь в активном бронировании — не запускаем сценарий настойки
         try:

@@ -8,7 +8,7 @@ import threading
 import logging
 from typing import TYPE_CHECKING
 from .database import get_pending_delayed_tasks, mark_delayed_task_completed, cleanup_old_delayed_tasks
-from texts import DELAYED_ENGAGEMENT_TEXT
+from texts import DELAYED_ENGAGEMENT_TEXT, REMINDER_30MIN_TEXT
 
 if TYPE_CHECKING:
     import telebot
@@ -71,6 +71,8 @@ class DelayedTasksProcessor:
             self._send_engagement_message(user_id)
         elif task_type == 'send_newsletter':
             self._send_newsletter_message(user_id, task)
+        elif task_type == 'reminder_30min':
+            self._send_reminder_30min(user_id)
         else:
             logging.warning(f"Неизвестный тип задачи: {task_type}")
             
@@ -87,6 +89,30 @@ class DelayedTasksProcessor:
             logging.info(f"Отправлено вовлекающее сообщение с картой лояльности пользователю {user_id}")
         except Exception as e:
             logging.error(f"Ошибка отправки вовлекающего сообщения пользователю {user_id}: {e}")
+
+    def _send_reminder_30min(self, user_id: int):
+        """Напоминание через 30 минут после /start, если гость не нажал кнопку."""
+        try:
+            from . import database
+            import keyboards
+
+            # Не дёргаем тех, кто уже забрал настойку или уже на кнопку нажал.
+            status = database.get_reward_status(user_id)
+            if status in ('issued', 'redeemed', 'redeemed_and_left'):
+                logging.info(f"Reminder 30min: гость {user_id} уже двинулся дальше (status={status}), пропускаем.")
+                return
+
+            user = database.find_user_by_id(user_id) or {}
+            name = user.get('first_name') or 'товарищ'
+            self.bot.send_message(
+                user_id,
+                REMINDER_30MIN_TEXT.format(name=name),
+                reply_markup=keyboards.get_gift_keyboard()
+            )
+            database.log_event(user_id, 'reminder_30min_sent')
+            logging.info(f"⏰ Reminder 30min отправлен пользователю {user_id}")
+        except Exception as e:
+            logging.error(f"Ошибка reminder 30min для {user_id}: {e}")
     
     def _send_newsletter_message(self, user_id: int, task):
         """Отправляет рассылку пользователю."""

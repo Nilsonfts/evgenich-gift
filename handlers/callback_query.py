@@ -159,6 +159,11 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
         user_id = call.from_user.id
         # --- НАЧАЛО ИЗМЕНЕНИЙ ---
         if database.update_status(user_id, 'redeemed'):
+            # Funnel-аналитика: бармен погасил купон
+            try:
+                database.log_event(user_id, 'redeemed')
+            except Exception:
+                pass
             # 1. Удаляем сообщение с кнопкой (текст купона)
             try:
                 bot.delete_message(call.message.chat.id, call.message.message_id)

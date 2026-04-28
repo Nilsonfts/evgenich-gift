@@ -461,7 +461,21 @@ def init_db():
                 delivered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (broadcast_id) REFERENCES broadcast_runs (id)
             )""")
-            
+
+        # === Воронка / события для аналитики (funnel events) ===
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS bot_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                event_type TEXT NOT NULL,
+                source TEXT,
+                variant TEXT,
+                meta TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_bot_events_type_time ON bot_events(event_type, created_at)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_bot_events_user ON bot_events(user_id, event_type)")
+
         conn.commit()
         conn.close()
         logging.info("База данных SQLite успешно инициализирована/обновлена.")
@@ -1396,6 +1410,227 @@ def cleanup_old_delayed_tasks(days_old: int = 7):
             logging.info(f"Удалено {deleted_count} старых отложенных задач")
     except Exception as e:
         logging.error(f"Ошибка очистки старых задач: {e}")
+
+
+def cancel_pending_delayed_tasks(user_id: int, task_type: str) -> int:
+    """Отменяет все pending задачи указанного типа для пользователя.
+
+    Используется, например, чтобы отменить 30-минутный reminder, если
+    пользователь уже нажал на нужную кнопку.
+    """
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE delayed_tasks SET status = 'cancelled' WHERE user_id = ? AND task_type = ? AND status = 'pending'",
+            (user_id, task_type)
+        )
+        cancelled = cur.rowcount
+        conn.commit()
+        conn.close()
+        if cancelled:
+            logging.info(f"Отменено {cancelled} задач '{task_type}' для пользователя {user_id}")
+        return cancelled
+    except Exception as e:
+        logging.error(f"Ошибка отмены задач для {user_id}: {e}")
+        return 0
+
+
+def has_pending_delayed_task(user_id: int, task_type: str) -> bool:
+    """Проверяет, есть ли pending задача указанного типа для пользователя."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM delayed_tasks WHERE user_id = ? AND task_type = ? AND status = 'pending' LIMIT 1",
+            (user_id, task_type)
+        )
+        row = cur.fetchone()
+        conn.close()
+        return row is not None
+    except Exception as e:
+        logging.error(f"Ошибка проверки задачи для {user_id}: {e}")
+        return False
+
+
+# --- Воронка / события (bot_events) ---
+
+def log_event(user_id: Optional[int], event_type: str,
+              source: Optional[str] = None,
+              variant: Optional[str] = None,
+              meta: Optional[str] = None) -> None:
+    """Логирует событие воронки. Никогда не бросает исключения наружу."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO bot_events (user_id, event_type, source, variant, meta) VALUES (?, ?, ?, ?, ?)",
+            (user_id, event_type, source, variant, meta)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logging.warning(f"log_event({event_type}) failed: {e}")
+
+
+def get_funnel_counts(days: int = 7) -> Dict[str, int]:
+    """Возвращает счётчики событий за последние N дней по уникальным user_id."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cutoff = datetime.datetime.now(pytz.utc) - datetime.timedelta(days=days)
+        cur.execute(
+            """SELECT event_type, COUNT(DISTINCT user_id) AS users
+               FROM bot_events
+               WHERE created_at >= ?
+               GROUP BY event_type""",
+            (cutoff,)
+        )
+        result = {row['event_type']: row['users'] for row in cur.fetchall()}
+        conn.close()
+        return result
+    except Exception as e:
+        logging.error(f"get_funnel_counts: {e}")
+        return {}
+
+
+def get_funnel_by_source(days: int = 30) -> List[Dict]:
+    """Возвращает воронку с разбивкой по источнику (UTM)."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cutoff = datetime.datetime.now(pytz.utc) - datetime.timedelta(days=days)
+        cur.execute(
+            """SELECT
+                 COALESCE(source, 'unknown') AS source,
+                 event_type,
+                 COUNT(DISTINCT user_id) AS users
+               FROM bot_events
+               WHERE created_at >= ? AND event_type = 'start'
+               GROUP BY source""",
+            (cutoff,)
+        )
+        starts = {row['source']: row['users'] for row in cur.fetchall()}
+
+        # Кнопка настойки / погашение / лояльность — по source из 'start'
+        # Считаем через JOIN: берём пользователей из starts и смотрим их события
+        cur.execute(
+            """SELECT
+                 COALESCE(s.source, 'unknown') AS source,
+                 e.event_type,
+                 COUNT(DISTINCT e.user_id) AS users
+               FROM bot_events e
+               JOIN (
+                   SELECT user_id, MAX(source) AS source
+                   FROM bot_events
+                   WHERE event_type = 'start' AND created_at >= ?
+                   GROUP BY user_id
+               ) s ON e.user_id = s.user_id
+               WHERE e.event_type IN ('gift_button_clicked','redeemed','loyalty_clicked')
+                 AND e.created_at >= ?
+               GROUP BY s.source, e.event_type""",
+            (cutoff, cutoff)
+        )
+        breakdown: Dict[str, Dict[str, int]] = {}
+        for row in cur.fetchall():
+            src = row['source']
+            breakdown.setdefault(src, {})[row['event_type']] = row['users']
+        conn.close()
+
+        result = []
+        for src, starts_count in starts.items():
+            b = breakdown.get(src, {})
+            result.append({
+                'source': src,
+                'starts': starts_count,
+                'gift_clicks': b.get('gift_button_clicked', 0),
+                'redeemed': b.get('redeemed', 0),
+                'loyalty_clicks': b.get('loyalty_clicked', 0),
+            })
+        result.sort(key=lambda r: r['starts'], reverse=True)
+        return result
+    except Exception as e:
+        logging.error(f"get_funnel_by_source: {e}")
+        return []
+
+
+def get_variant_performance(days: int = 30) -> List[Dict]:
+    """A/B-сравнение вариантов WELCOME_TEXT: сколько /start и сколько кликов на настойку."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cutoff = datetime.datetime.now(pytz.utc) - datetime.timedelta(days=days)
+        cur.execute(
+            """SELECT COALESCE(variant,'unknown') AS variant,
+                      COUNT(DISTINCT user_id) AS starts
+               FROM bot_events
+               WHERE event_type='start' AND created_at >= ?
+               GROUP BY variant""",
+            (cutoff,)
+        )
+        starts = {r['variant']: r['starts'] for r in cur.fetchall()}
+
+        cur.execute(
+            """SELECT COALESCE(s.variant,'unknown') AS variant,
+                      COUNT(DISTINCT e.user_id) AS clicks
+               FROM bot_events e
+               JOIN (
+                   SELECT user_id, MAX(variant) AS variant
+                   FROM bot_events
+                   WHERE event_type='start' AND created_at >= ?
+                   GROUP BY user_id
+               ) s ON e.user_id = s.user_id
+               WHERE e.event_type='gift_button_clicked' AND e.created_at >= ?
+               GROUP BY s.variant""",
+            (cutoff, cutoff)
+        )
+        clicks = {r['variant']: r['clicks'] for r in cur.fetchall()}
+
+        cur.execute(
+            """SELECT COALESCE(s.variant,'unknown') AS variant,
+                      COUNT(DISTINCT e.user_id) AS redeems
+               FROM bot_events e
+               JOIN (
+                   SELECT user_id, MAX(variant) AS variant
+                   FROM bot_events
+                   WHERE event_type='start' AND created_at >= ?
+                   GROUP BY user_id
+               ) s ON e.user_id = s.user_id
+               WHERE e.event_type='redeemed' AND e.created_at >= ?
+               GROUP BY s.variant""",
+            (cutoff, cutoff)
+        )
+        redeems = {r['variant']: r['redeems'] for r in cur.fetchall()}
+        conn.close()
+
+        result = []
+        for v, s in starts.items():
+            result.append({
+                'variant': v,
+                'starts': s,
+                'gift_clicks': clicks.get(v, 0),
+                'redeemed': redeems.get(v, 0),
+            })
+        result.sort(key=lambda r: r['starts'], reverse=True)
+        return result
+    except Exception as e:
+        logging.error(f"get_variant_performance: {e}")
+        return []
+
+
+def get_total_redeemed_count() -> int:
+    """Общее число погашенных купонов — для соц-доказательства."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM users WHERE status IN ('redeemed','redeemed_and_left')")
+        n = cur.fetchone()[0]
+        conn.close()
+        return int(n or 0)
+    except Exception as e:
+        logging.error(f"get_total_redeemed_count: {e}")
+        return 0
+
 
 # --- Функции для работы с данными iiko ---
 
