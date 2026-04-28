@@ -2,6 +2,9 @@
 
 import logging
 import datetime
+import os
+import threading
+from collections import OrderedDict
 from telebot import types
 from tinydb import TinyDB, Query as _TdbQuery
 
@@ -12,43 +15,89 @@ import texts
 import keyboards
 from utils.qr_generator import create_qr_code
 
+# Корень проекта — нужен для якорения путей к файлам состояния
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Lock для всех модульных shared-словарей (pyTelebot может вызывать хендлеры из разных тредов)
+_state_lock = threading.RLock()
+
+
+class _BoundedDict(OrderedDict):
+    """OrderedDict с лимитом размера — самые старые записи вытесняются.
+
+    Нужен, чтобы кэш payload'ов и т. п. не рос бесконечно.
+    """
+    def __init__(self, maxsize: int = 5000):
+        super().__init__()
+        self._maxsize = maxsize
+
+    def __setitem__(self, key, value):
+        if key in self:
+            self.move_to_end(key)
+        super().__setitem__(key, value)
+        if len(self) > self._maxsize:
+            self.popitem(last=False)
+
+
 # Словарь для хранения текущего payload пользователя (для определения канала)
-user_current_payload = {}
+user_current_payload = _BoundedDict(maxsize=10000)
 
 # --- Persistent state для сбора профиля (настойка) ---
 # RAM-кэш + TinyDB-зеркало. RAM нужен для быстрых проверок в lambda message_handler,
 # TinyDB — чтобы state переживал рестарт бота (Railway redeploy и т.п.).
-_profile_state_db = TinyDB('profile_state.json')
+_PROFILE_STATE_PATH = os.path.join(_PROJECT_ROOT, 'profile_state.json')
+try:
+    _profile_state_db = TinyDB(_PROFILE_STATE_PATH)
+except Exception as _e:
+    # Битый JSON — ротируем и создаём заново, иначе упадёт импорт всего бота.
+    logging.error(f"profile_state.json corrupt ({_e}), rotating and recreating.")
+    try:
+        if os.path.exists(_PROFILE_STATE_PATH):
+            os.rename(_PROFILE_STATE_PATH, _PROFILE_STATE_PATH + '.broken')
+    except Exception:
+        pass
+    _profile_state_db = TinyDB(_PROFILE_STATE_PATH)
 _ProfileQ = _TdbQuery()
 
 
 class _ProfileStateStore(dict):
-    """Словарь-обёртка: read из RAM (как и раньше), write — в RAM + TinyDB."""
+    """Словарь-обёртка: read из RAM (как и раньше), write — в RAM + TinyDB.
+
+    Все операции защищены общим _state_lock — TinyDB сам по себе НЕ потокобезопасен.
+    """
 
     def __setitem__(self, user_id, state):
-        super().__setitem__(user_id, state)
-        try:
-            _profile_state_db.upsert(
-                {'user_id': user_id, 'state': state},
-                _ProfileQ.user_id == user_id
-            )
-        except Exception as e:
-            logging.warning(f"Не удалось сохранить profile state в TinyDB для {user_id}: {e}")
+        with _state_lock:
+            super().__setitem__(user_id, state)
+            try:
+                _profile_state_db.upsert(
+                    {'user_id': user_id, 'state': state},
+                    _ProfileQ.user_id == user_id
+                )
+            except Exception as e:
+                logging.warning(f"Не удалось сохранить profile state в TinyDB для {user_id}: {e}")
 
     def __delitem__(self, user_id):
-        super().__delitem__(user_id)
-        try:
-            _profile_state_db.remove(_ProfileQ.user_id == user_id)
-        except Exception as e:
-            logging.warning(f"Не удалось удалить profile state из TinyDB для {user_id}: {e}")
+        with _state_lock:
+            super().__delitem__(user_id)
+            try:
+                _profile_state_db.remove(_ProfileQ.user_id == user_id)
+            except Exception as e:
+                logging.warning(f"Не удалось удалить profile state из TinyDB для {user_id}: {e}")
 
     def pop(self, user_id, *args):
-        result = super().pop(user_id, *args)
-        try:
-            _profile_state_db.remove(_ProfileQ.user_id == user_id)
-        except Exception as e:
-            logging.warning(f"Не удалось удалить profile state из TinyDB для {user_id}: {e}")
-        return result
+        with _state_lock:
+            result = super().pop(user_id, *args)
+            try:
+                _profile_state_db.remove(_ProfileQ.user_id == user_id)
+            except Exception as e:
+                logging.warning(f"Не удалось удалить profile state из TinyDB для {user_id}: {e}")
+            return result
+
+
+def clear_profile_state(user_id: int) -> None:
+    """Безопасный публичный API для сброса state профиля из других модулей."""
+    user_profile_data.pop(user_id, None)
 
 
 # Восстанавливаем state из TinyDB при старте модуля (после рестарта бота)
@@ -79,20 +128,31 @@ def get_channel_for_payload(payload: str) -> str:
     return CHANNEL_ID
 
 def issue_coupon(bot, user_id, chat_id):
-    """Выдает пользователю купон на настойку."""
-    database.update_status(user_id, 'issued')
+    """Выдает пользователю купон на настойку.
 
+    Атомарность: сначала отправляем сообщения, и только при успехе помечаем
+    статус 'issued'. Иначе при сбое отправки гость остался бы со статусом
+    'issued', но без купона — и больше не смог бы его получить.
+    """
     try:
         bot.send_sticker(chat_id, NASTOYKA_STICKER_ID)
     except Exception as e:
-        logging.error(f"Не удалось отправить стикер-купон: {e}")
+        logging.error(f"Не удалось отправить стикер-купон для {user_id}: {e}")
 
-    bot.send_message(
-        chat_id,
-        texts.COUPON_TEXT,
-        parse_mode="Markdown",
-        reply_markup=keyboards.get_redeem_keyboard()
-    )
+    try:
+        bot.send_message(
+            chat_id,
+            texts.COUPON_TEXT,
+            parse_mode="Markdown",
+            reply_markup=keyboards.get_redeem_keyboard()
+        )
+    except Exception as e:
+        logging.error(f"Не удалось отправить купон пользователю {user_id}: {e}")
+        # Купон не отправлен — статус не меняем, гость сможет повторить попытку.
+        return False
+
+    database.update_status(user_id, 'issued')
+    return True
 
 # --- Основные обработчики команд ---
 
@@ -143,23 +203,30 @@ def register_user_command_handlers(bot):
             
             user_id = message.from_user.id
             status = database.get_reward_status(user_id)
-            
-            # Сохраняем payload для определения канала (ЖЁСТКАЯ ПРИВЯЗКА)
-            args = message.text.split(' ', 1)
+
+            # \u0421\u0431\u0440\u0430\u0441\u044b\u0432\u0430\u0435\u043c \u043b\u044e\u0431\u043e\u0439 \u0432\u0438\u0441\u044f\u0447\u0438\u0439 next_step_handler \u2014 /start \u0434\u043e\u043b\u0436\u0435\u043d \u043e\u0431\u043d\u0443\u043b\u044f\u0442\u044c \u0441\u0446\u0435\u043d\u0430\u0440\u0438\u0438
+            try:
+                bot.clear_step_handler_by_chat_id(message.chat.id)
+            except Exception:
+                pass
+
+            # \u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0435\u043c payload \u0434\u043b\u044f \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u0438\u044f \u043a\u0430\u043d\u0430\u043b\u0430 (\u0416\u0401\u0421\u0422\u041a\u0410\u042f \u041f\u0420\u0418\u0412\u042f\u0417\u041a\u0410)
+            text = message.text or ''
+            args = text.split(' ', 1)
             if len(args) > 1:
                 current_payload = args[1]
                 user_current_payload[user_id] = current_payload
-                logging.info(f"🎯 СОХРАНЁН PAYLOAD для {user_id}: '{current_payload}'")
-            
-            # Детальное логирование для отладки
-            logging.info(f"🔍 /start от {user_id}: message.text='{message.text}', status='{status}', payload={user_current_payload.get(user_id, 'нет')}")
+                logging.info(f"\U0001f3af \u0421\u041e\u0425\u0420\u0410\u041d\u0401\u041d PAYLOAD \u0434\u043b\u044f {user_id}: '{current_payload}'")
 
-            # Логируем событие /start (для funnel + UTM аналитики)
+            # \u0414\u0435\u0442\u0430\u043b\u044c\u043d\u043e\u0435 \u043b\u043e\u0433\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435 \u0434\u043b\u044f \u043e\u0442\u043b\u0430\u0434\u043a\u0438
+            logging.info(f"\U0001f50d /start \u043e\u0442 {user_id}: status='{status}', payload={user_current_payload.get(user_id, '\u043d\u0435\u0442')}")
+
+            # \u041b\u043e\u0433\u0438\u0440\u0443\u0435\u043c \u0441\u043e\u0431\u044b\u0442\u0438\u0435 /start (\u0434\u043b\u044f funnel + UTM \u0430\u043d\u0430\u043b\u0438\u0442\u0438\u043a\u0438)
             try:
                 _start_payload = args[1] if len(args) > 1 else None
                 database.log_event(user_id, 'start', source=_start_payload)
-            except Exception:
-                pass
+            except Exception as _ev_err:
+                logging.debug(f"log_event start failed for {user_id}: {_ev_err}")
 
             # Проверяем, есть ли параметр booking (для любых пользователей)
             if len(args) > 1 and args[1] == 'booking':
@@ -214,7 +281,7 @@ def register_user_command_handlers(bot):
 
             if status in ['redeemed', 'redeemed_and_left']:
                 # Проверяем, пришел ли пользователь по новой ссылке - обновляем source
-                args = message.text.split(' ', 1)
+                args = (message.text or "").split(' ', 1)
                 if len(args) > 1:
                     payload = args[1]
                     allowed_sources = {
@@ -265,7 +332,7 @@ def register_user_command_handlers(bot):
                 brought_by_staff_id = None
                 source = 'direct'
                 
-                args = message.text.split(' ', 1)
+                args = (message.text or "").split(' ', 1)
                 if len(args) > 1:
                     payload = args[1]
                     logging.info(f"Пользователь {user_id} (@{message.from_user.username}) использует payload: {payload}")
@@ -338,7 +405,7 @@ def register_user_command_handlers(bot):
                     bot.send_message(user_id, texts.NEW_USER_REFERRED_TEXT)
             else:
                 # Существующий пользователь (issued, registered) - обновляем source если пришел по новой ссылке
-                args = message.text.split(' ', 1)
+                args = (message.text or "").split(' ', 1)
                 logging.info(f"🔍 Существующий пользователь {user_id}, проверяю payload: args={args}")
                 if len(args) > 1:
                     payload = args[1]

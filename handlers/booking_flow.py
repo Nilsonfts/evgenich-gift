@@ -31,8 +31,8 @@ User = Query()
 def _clear_profile_state(user_id: int):
     """Сбрасывает состояние сбора профиля (user_profile_data) для пользователя."""
     try:
-        from handlers.user_commands import user_profile_data as _upd
-        _upd.pop(user_id, None)
+        from handlers.user_commands import clear_profile_state
+        clear_profile_state(user_id)
     except Exception as e:
         logging.warning(f"Не удалось очистить profile state для {user_id}: {e}")
 
