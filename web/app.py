@@ -72,22 +72,47 @@ else:
 
 # ── App ──
 app = Flask(__name__, template_folder='templates_full')
-app.secret_key = os.getenv('FLASK_SECRET_KEY', 'evgenich-secret-2026-full')
+
+# Секреты обязательны в проде. В dev генерируем эфемерный (сессии живут только до рестарта).
+_FLASK_DEBUG = os.getenv('FLASK_DEBUG', '0') == '1'
+_secret = os.getenv('FLASK_SECRET_KEY')
+if not _secret:
+    if _FLASK_DEBUG:
+        import secrets as _secrets_mod
+        _secret = _secrets_mod.token_urlsafe(32)
+        logging.warning('FLASK_SECRET_KEY не задан — используем эфемерный (DEV-режим)')
+    else:
+        raise RuntimeError('FLASK_SECRET_KEY обязателен в production. Задайте переменную окружения.')
+app.secret_key = _secret
 app.permanent_session_lifetime = timedelta(hours=12)
+# Cookie hardening
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=not _FLASK_DEBUG,
+)
 
 # CSRF-защита
 csrf = CSRFProtect(app)
 
 @app.errorhandler(CSRFError)
 def handle_csrf_error(e):
-    """CSRF-ошибка → 403 с понятным сообщением."""
+    """CSRF-ошибка → 403 с понятным сообщением. Без open-redirect через Referer."""
     if request.is_json:
         return jsonify({'error': 'CSRF token missing or invalid'}), 403
     flash('Сессия истекла. Пожалуйста, обновите страницу и попробуйте снова.', 'warning')
-    return redirect(request.referrer or url_for('dashboard'))
+    # Не доверяем Referer (open-redirect) — всегда возвращаем на дашборд.
+    return redirect(url_for('dashboard'))
 
 ADMIN_USER = os.getenv('ADMIN_USER', 'admin')
-ADMIN_PASS_HASH = generate_password_hash(os.getenv('ADMIN_PASSWORD', 'Evgenich83'))
+_admin_pwd = os.getenv('ADMIN_PASSWORD')
+if not _admin_pwd:
+    if _FLASK_DEBUG:
+        _admin_pwd = 'admin'
+        logging.warning('ADMIN_PASSWORD не задан — используем DEV-дефолт "admin". Не для production!')
+    else:
+        raise RuntimeError('ADMIN_PASSWORD обязателен в production. Задайте переменную окружения.')
+ADMIN_PASS_HASH = generate_password_hash(_admin_pwd)
 
 # Config files
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1212,4 +1237,5 @@ def broadcast_details_api(broadcast_id):
 # ═══════════════════════════════════════════
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    # debug=True даёт интерактивный Werkzeug-debugger (RCE). Включаем только по явному флагу.
+    app.run(host='0.0.0.0', port=port, debug=_FLASK_DEBUG)

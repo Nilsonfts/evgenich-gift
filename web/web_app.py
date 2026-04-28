@@ -64,6 +64,26 @@ logger.info(f"🔑 Количество админов: {len(ALL_ADMINS)}")
 logger.info(f"🐘 PostgreSQL: {os.getenv('USE_POSTGRES', 'false')}")
 logger.info(f"📈 Google Sheets: {'Да' if os.getenv('GOOGLE_SHEET_KEY') else 'Нет'}")
 
+# ─────────────────────────────────────────────────────────────
+# DEPRECATED LEGACY ENTRYPOINT
+# Этот модуль НЕ имеет аутентификации и CSRF-защиты, был оставлен
+# для обратной совместимости со старыми Railway-конфигами.
+# Используйте web/app.py (web.app:app) — там login + CSRFProtect.
+# Чтобы запустить этот модуль, явно установите WEB_APP_LEGACY_ENABLED=1.
+# ─────────────────────────────────────────────────────────────
+_LEGACY_ENABLED = os.getenv('WEB_APP_LEGACY_ENABLED', '0') == '1'
+
+@app.before_request
+def _block_legacy_access():
+    """Блокируем все запросы, если legacy-режим явно не включён."""
+    if not _LEGACY_ENABLED:
+        return (
+            "This endpoint has been disabled. "
+            "Use the secured admin panel (web.app:app).",
+            410,
+        )
+    return None
+
 def is_admin_authorized(admin_id):
     """Проверяет, является ли пользователь админом"""
     return int(admin_id) in ALL_ADMINS
