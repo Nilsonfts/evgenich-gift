@@ -1445,6 +1445,60 @@ def register_user_command_handlers(bot):
             except Exception:
                 bot.send_message(message.chat.id, text[i:i+3500])
 
+    @bot.message_handler(commands=['loyalty_debug5'])
+    def handle_loyalty_debug5(message: types.Message):
+        """[ADMIN] GET-USERS с разными параметрами фильтра."""
+        user_id = message.from_user.id
+        if user_id not in ALL_ADMINS:
+            return
+        import requests as _req
+        from utils.gmb_client import gmb
+
+        if not gmb.is_configured():
+            bot.reply_to(message, "❌ GMB_API_KEY не настроен")
+            return
+
+        parts = message.text.split(maxsplit=1)
+        phone_arg = parts[1].strip() if len(parts) >= 2 else (database.get_user_phone(user_id) or "")
+        clean = gmb._normalize_phone(phone_arg)
+        url = gmb.api_url
+        api_key = gmb.api_key
+
+        out = [f"🔧 <b>GET-USERS варианты:</b> <code>{clean}</code>", ""]
+
+        attempts = [
+            ("без фильтра (все клиенты)", {'type': 'GET-USERS'}),
+            ("limit=5", {'type': 'GET-USERS', 'limit': 5}),
+            ("phones=[X] (массив)", {'type': 'GET-USERS', 'phones': [clean]}),
+            ("logins=[X] (массив)", {'type': 'GET-USERS', 'logins': [clean]}),
+            ("phone=+7X", {'type': 'GET-USERS', 'phone': '+' + clean}),
+            ("search=X", {'type': 'GET-USERS', 'search': clean}),
+            ("query=X", {'type': 'GET-USERS', 'query': clean}),
+            ("id_branch=1", {'type': 'GET-USERS', 'login': clean, 'id_branch': 1}),
+            ("date_from", {'type': 'GET-USERS', 'date_from': '2020-01-01', 'date_to': '2030-12-31'}),
+            ("type=USERS", {'type': 'USERS', 'login': clean}),
+            ("type=GET_USERS (подчерк)", {'type': 'GET_USERS', 'login': clean}),
+            ("type=USER", {'type': 'USER', 'login': clean}),
+        ]
+
+        for name, payload in attempts:
+            payload['api_key'] = api_key
+            try:
+                r = _req.post(url, json=payload, timeout=8)
+                body = r.text[:300].replace('\n', ' ')
+                marker = "✅" if body and body != '[]' and r.status_code == 200 else "⚠️"
+                out.append(f"{marker} <b>{name}</b> [{r.status_code}]")
+                out.append(f"   <code>{body}</code>")
+            except Exception as e:
+                out.append(f"❌ <b>{name}</b> {str(e)[:100]}")
+
+        text = "\n".join(out)
+        for i in range(0, len(text), 3500):
+            try:
+                bot.send_message(message.chat.id, text[i:i+3500], parse_mode="HTML")
+            except Exception:
+                bot.send_message(message.chat.id, text[i:i+3500])
+
     @bot.message_handler(commands=['restart'])
     def handle_restart_command(message: types.Message):
         """Команда для админов для сброса состояния пользователя (для тестирования)."""
