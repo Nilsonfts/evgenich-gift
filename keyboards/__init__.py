@@ -89,11 +89,10 @@ def get_concept_choice_keyboard():
     return keyboard
 
 def get_booking_options_keyboard():
+    """Оставлена для обратной совместимости — только одна кнопка брони через бота."""
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("🤖 Забронировать через меня", callback_data="booking_bot"),
-        types.InlineKeyboardButton("📞 Позвонить", callback_data="booking_phone"),
-        types.InlineKeyboardButton("🌐 Забронировать через сайт", callback_data="booking_site")
+        types.InlineKeyboardButton("🤖 Забронировать через меня", callback_data="booking_bot")
     )
     return markup
 

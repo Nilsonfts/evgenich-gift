@@ -104,17 +104,10 @@ def register_booking_handlers(bot):
             if message.from_user.id not in ALL_ADMINS:
                 bot.reply_to(message, "🔒 Для бронирования используйте закрепленную кнопку в чате или напишите мне в личку: @evgenichspbbot")
                 return
-        
-        if db.contains(User.user_id == message.from_user.id):
-            bot.reply_to(message, texts.BOOKING_IN_PROGRESS_TEXT)
-            return
 
+        # Сразу запускаем бронь с проверкой памяти (сохранённого контакта)
         logging.info(f"Пользователь {message.from_user.id} нажал 'Забронировать стол'.")
-        bot.send_message(
-            message.chat.id,
-            texts.BOOKING_PROMPT_TEXT,
-            reply_markup=keyboards.get_booking_options_keyboard()
-        )
+        start_booking_flow(bot, message, message.from_user.id)
 
     @bot.message_handler(func=lambda message: message.text == "📨 Отправить БРОНЬ")
     def handle_admin_booking_entry(message: types.Message):
@@ -229,11 +222,7 @@ def register_booking_handlers(bot):
             pass
 
         try:
-            if call.data == "booking_phone":
-                bot.send_message(call.message.chat.id, texts.BOOKING_PHONE_TEXT)
-            elif call.data == "booking_site":
-                bot.send_message(call.message.chat.id, texts.BOOKING_SITE_TEXT)
-            elif call.data == "booking_secret":
+            if call.data == "booking_secret":
                 bot.send_message(call.message.chat.id, texts.BOOKING_SECRET_CHAT_TEXT, reply_markup=keyboards.get_secret_chat_keyboard())
             elif call.data == "booking_bot":
                 # Сбрасываем состояние сбора профиля (настойка), чтобы не было конфликта

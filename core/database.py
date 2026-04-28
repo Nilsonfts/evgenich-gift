@@ -712,30 +712,41 @@ def update_user_source(user_id: int, source: str) -> bool:
         return False
 
 def find_user_by_id(user_id: int) -> Optional[dict]:
-    """Находит пользователя по ID. Возвращает dict для совместимости."""
-    # Сначала пробуем PostgreSQL
+    """Находит пользователя по ID. Возвращает dict для совместимости.
+
+    ВАЖНО: колонки phone_number / real_name / birth_date хранятся ТОЛЬКО в SQLite
+    (в PG-таблице их нет). Поэтому для работы памяти бота всегда обогащаем
+    PG-результат данными из SQLite.
+    """
+    pg_user = None
+    sqlite_user = None
+
+    # 1. Читаем PostgreSQL (если включён)
     if USE_POSTGRES and pg_client:
         try:
-            user = pg_client.get_user_by_id(user_id)
-            if user:
-                return user
+            pg_user = pg_client.get_user_by_id(user_id)
         except Exception as e:
             logging.error(f"PostgreSQL | Ошибка поиска пользователя {user_id}: {e}")
-    
-    # Fallback на SQLite
+
+    # 2. Читаем SQLite (всегда — для колонок phone_number / real_name / birth_date)
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-        user = cur.fetchone()
+        row = cur.fetchone()
         conn.close()
-        if user:
-            # Конвертируем sqlite3.Row в dict для совместимости
-            return dict(user)
-        return None
+        if row:
+            sqlite_user = dict(row)
     except Exception as e:
         logging.error(f"SQLite | Ошибка поиска пользователя {user_id}: {e}")
-        return None
+
+    # 3. Мержим: PG — основа, SQLite дополняет отсутствующие или None поля
+    if pg_user and sqlite_user:
+        for key, val in sqlite_user.items():
+            if key not in pg_user or pg_user.get(key) in (None, ''):
+                pg_user[key] = val
+        return pg_user
+    return pg_user or sqlite_user
 
 def find_user_by_id_or_username(identifier: str) -> Optional[sqlite3.Row]:
     """Находит пользователя по ID или @username."""

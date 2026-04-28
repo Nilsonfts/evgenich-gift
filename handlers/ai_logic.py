@@ -199,12 +199,9 @@ def register_ai_handlers(bot):
                         # НЕ возвращаемся здесь - пусть AI сгенерирует персональный ответ
                         # После ответа AI добавим кнопку
                     else:
-                        # В личке открываем форму
-                        bot.send_message(
-                            message.chat.id,
-                            texts.BOOKING_PROMPT_TEXT,
-                            reply_markup=keyboards.get_booking_options_keyboard()
-                        )
+                        # В личке сразу запускаем бронь (использует память сохранённого контакта)
+                        from handlers.booking_flow import start_booking_flow
+                        start_booking_flow(bot, message, user_id)
                         return
                 
                 # Жалоба - уведомить администраторов
@@ -270,12 +267,9 @@ def register_ai_handlers(bot):
                 if clean_text:
                     bot.send_message(message.chat.id, clean_text, parse_mode="Markdown")
                 
-                # Отправляем кнопки бронирования
-                bot.send_message(
-                    message.chat.id,
-                    texts.BOOKING_PROMPT_TEXT,
-                    reply_markup=keyboards.get_booking_options_keyboard()
-                )
+                # Сразу запускаем бронь (с проверкой памяти сохранённого контакта)
+                from handlers.booking_flow import start_booking_flow
+                start_booking_flow(bot, message, user_id)
             else:
                 try:
                     # Проверяем нужна ли кнопка бронирования в ГРУППЕ
