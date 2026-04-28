@@ -1332,6 +1332,115 @@ def register_user_command_handlers(bot):
             except Exception:
                 bot.send_message(message.chat.id, text[i:i+3500])
 
+    @bot.message_handler(commands=['loyalty_debug4'])
+    def handle_loyalty_debug4(message: types.Message):
+        """[ADMIN] Проверяем v34 endpoint с разными ключами поиска клиента."""
+        user_id = message.from_user.id
+        if user_id not in ALL_ADMINS:
+            return
+        import requests as _req
+        from utils.gmb_client import gmb
+
+        if not gmb.is_configured():
+            bot.reply_to(message, "❌ GMB_API_KEY не настроен")
+            return
+
+        parts = message.text.split(maxsplit=1)
+        phone_arg = parts[1].strip() if len(parts) >= 2 else (database.get_user_phone(user_id) or "")
+        if not phone_arg:
+            bot.reply_to(message, "Использование: /loyalty_debug4 <телефон>")
+            return
+        clean = gmb._normalize_phone(phone_arg)
+
+        # v34 endpoint
+        v34_url = "https://evgenich.getmeback.ru/rest/base/v34/validator/"
+        api_key = gmb.api_key
+
+        out = [f"🧬 <b>GMB v34 debug:</b> <code>{clean}</code>",
+               f"   URL: <code>{v34_url}</code>", ""]
+
+        # 1. Голый login
+        out.append("━━━ <b>v34 / login</b> ━━━")
+        try:
+            r = _req.post(v34_url, json={'api_key': api_key, 'login': clean}, timeout=8)
+            out.append(f"[{r.status_code}] <code>{r.text[:400]}</code>")
+        except Exception as e:
+            out.append(f"❌ {str(e)[:100]}")
+        out.append("")
+
+        # 2. v34 BONUS с order_price=0 и v34-параметрами
+        out.append("━━━ <b>v34 type=BONUS order_price=0</b> ━━━")
+        try:
+            payload = {
+                'api_key': api_key,
+                'type': 'BONUS',
+                'login': clean,
+                'order_price': 0,
+                'id_branch': 1,
+                'id_manager': 1,
+                'manager_name': 'debug',
+                'branch_name': 'Евгенич',
+                'return_true_if_operation_exists': True,
+                'allow_earn_and_pay': False,
+            }
+            r = _req.post(v34_url, json=payload, timeout=8)
+            out.append(f"[{r.status_code}] <code>{r.text[:500]}</code>")
+        except Exception as e:
+            out.append(f"❌ {str(e)[:100]}")
+        out.append("")
+
+        # 3. v34 CALCULATE-LIMITS
+        out.append("━━━ <b>v34 type=CALCULATE-LIMITS</b> ━━━")
+        try:
+            payload = {
+                'api_key': api_key,
+                'type': 'CALCULATE-LIMITS',
+                'login': clean,
+                'order_price': 1000,
+                'id_branch': 1,
+                'id_manager': 1,
+            }
+            r = _req.post(v34_url, json=payload, timeout=8)
+            out.append(f"[{r.status_code}] <code>{r.text[:500]}</code>")
+        except Exception as e:
+            out.append(f"❌ {str(e)[:100]}")
+        out.append("")
+
+        # 4. v34 phone (вместо login)
+        out.append("━━━ <b>v34 phone</b> ━━━")
+        try:
+            r = _req.post(v34_url, json={'api_key': api_key, 'phone': clean}, timeout=8)
+            out.append(f"[{r.status_code}] <code>{r.text[:400]}</code>")
+        except Exception as e:
+            out.append(f"❌ {str(e)[:100]}")
+        out.append("")
+
+        # 5. v34 без api_key — посмотреть формат ошибки (нам нужен текст про обязательные поля)
+        out.append("━━━ <b>v34 без api_key (ждём 401/400 с описанием)</b> ━━━")
+        try:
+            r = _req.post(v34_url, json={'login': clean}, timeout=8)
+            out.append(f"[{r.status_code}] <code>{r.text[:400]}</code>")
+        except Exception as e:
+            out.append(f"❌ {str(e)[:100]}")
+        out.append("")
+
+        # 6. v34 type=BONUS-LIST (если есть такой)
+        out.append("━━━ <b>v34 type=BONUS-LIST</b> ━━━")
+        try:
+            payload = {'api_key': api_key, 'type': 'BONUS-LIST', 'login': clean,
+                       'id_branch': 1, 'id_manager': 1}
+            r = _req.post(v34_url, json=payload, timeout=8)
+            out.append(f"[{r.status_code}] <code>{r.text[:400]}</code>")
+        except Exception as e:
+            out.append(f"❌ {str(e)[:100]}")
+
+        text = "\n".join(out)
+        for i in range(0, len(text), 3500):
+            try:
+                bot.send_message(message.chat.id, text[i:i+3500], parse_mode="HTML")
+            except Exception:
+                bot.send_message(message.chat.id, text[i:i+3500])
+
     @bot.message_handler(commands=['restart'])
     def handle_restart_command(message: types.Message):
         """Команда для админов для сброса состояния пользователя (для тестирования)."""
