@@ -59,3 +59,8 @@ __pycache__/
 
 # AI System v3.0 data (user memory, dynamic content)
 data/*.json
+
+# Runtime state files
+profile_state.json
+profile_state.json.broken
+booking_data.json
