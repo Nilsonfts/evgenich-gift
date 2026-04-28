@@ -15,6 +15,10 @@ from utils.qr_generator import create_qr_code
 # Словарь для хранения текущего payload пользователя (для определения канала)
 user_current_payload = {}
 
+# Множество user_id, которые поделились контактом из экрана «Карта лояльности».
+# Нужно чтобы handle_contact_received не утаскивал их в флоу настойки.
+_loyalty_contact_pending = set()
+
 # --- Persistent state для сбора профиля (настойка) ---
 # RAM-кэш + TinyDB-зеркало. RAM нужен для быстрых проверок в lambda message_handler,
 # TinyDB — чтобы state переживал рестарт бота (Railway redeploy и т.п.).
@@ -749,13 +753,31 @@ def register_user_command_handlers(bot):
 
             loyalty_text += "\n\n👇 Открой карту, чтобы показать QR-код бармену:"
         else:
-            # Клиент не найден или GMB не настроен — старое поведение
-            loyalty_text = (
-                "🎁 <b>Система Лояльности Евгенича!</b>\n\n"
-                "Евгенич дарит тебе <b>500 рублей</b> 💸 на карту лояльности!\n\n"
-                "Копи бонусы с каждого заказа и трать их на любимые напитки 🥃\n\n"
-                "Жми кнопку ниже 👇 и регистрируй свою карту!"
-            )
+            # Клиент не найден в GMB
+            if not phone:
+                # У бота нет телефона гостя — просим поделиться контактом прямо здесь
+                _loyalty_contact_pending.add(user_id)
+                bot.send_message(
+                    message.chat.id,
+                    "🎁 <b>Карта лояльности «Евгенич»</b>\n\n"
+                    "Чтобы показать твой баланс и уровень — поделись номером телефона. "
+                    "Найду тебя в системе по нему.\n\n"
+                    "<i>Если карты ещё нет — после контакта дам кнопку регистрации.</i>",
+                    parse_mode="HTML",
+                    reply_markup=keyboards.get_contact_request_keyboard()
+                )
+                return
+            else:
+                # Телефон есть, но в GMB не нашли — карта реально не зарегистрирована
+                # ИЛИ зарегистрирована на другой номер
+                loyalty_text = (
+                    "🎁 <b>Карта лояльности «Евгенич»</b>\n\n"
+                    f"По твоему номеру <code>{phone}</code> карты не нашёл.\n\n"
+                    "Возможные варианты:\n"
+                    "• Карта оформлена на <b>другой номер</b> — открой кабинет ниже и войди по нему\n"
+                    "• Карты <b>ещё нет</b> — Евгенич дарит <b>500 ₽</b> при регистрации\n\n"
+                    "👇 Жми кнопку — кабинет откроется прямо в Telegram:"
+                )
 
         # Отправляем сообщение с кнопкой регистрации
         bot.send_message(
@@ -948,6 +970,119 @@ def register_user_command_handlers(bot):
             parse_mode="Markdown"
         )
 
+    @bot.message_handler(commands=['profile'])
+    def handle_profile_command(message: types.Message):
+        """Показывает что бот знает о пользователе + карту лояльности из GMB."""
+        if message.chat.type != 'private':
+            bot.reply_to(message, "🔒 Профиль доступен только в личке: @evgenichspbbot")
+            return
+
+        user_id = message.from_user.id
+        tg_first = message.from_user.first_name or "—"
+        tg_username = message.from_user.username or "—"
+
+        # ── Что в БД бота ──
+        phone = database.get_user_phone(user_id) if hasattr(database, 'get_user_phone') else None
+
+        real_name = None
+        birth_date = None
+        signup_date = None
+        source = None
+        try:
+            conn = database.get_db_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT real_name, birth_date, signup_date, source "
+                "FROM users WHERE user_id = ?",
+                (user_id,)
+            )
+            row = cur.fetchone()
+            conn.close()
+            if row:
+                real_name, birth_date, signup_date, source = row
+        except Exception as e:
+            logging.warning(f"/profile DB error for {user_id}: {e}")
+
+        last_level_code = (
+            database.get_last_loyalty_level(user_id)
+            if hasattr(database, 'get_last_loyalty_level') else None
+        )
+
+        # ── Что в GMB ──
+        gmb_balance = None
+        gmb_total = None
+        gmb_kbonus = None
+        gmb_name = None
+        try:
+            from utils.gmb_client import gmb
+            if phone and gmb.is_configured():
+                info = gmb.find_client_by_phone(phone)
+                if info:
+                    cl = info.get('client', info)
+                    gmb_balance = cl.get('balance')
+                    gmb_kbonus = cl.get('k_bonus')
+                    gmb_name = cl.get('name')
+                    gmb_total = (
+                        cl.get('totalAmount')
+                        or cl.get('total_amount')
+                        or cl.get('totalAmountBonus')
+                    )
+        except Exception as e:
+            logging.warning(f"/profile GMB error for {user_id}: {e}")
+
+        # ── Уровень ──
+        level_str = "—"
+        try:
+            from utils.loyalty_levels import get_level_by_total, get_level_by_k_bonus, LEVELS
+            if gmb_total and float(gmb_total) > 0:
+                lvl = get_level_by_total(gmb_total)
+            elif gmb_kbonus:
+                lvl = get_level_by_k_bonus(gmb_kbonus)
+            elif last_level_code:
+                lvl = next((l for l in LEVELS if l["code"] == last_level_code), None)
+            else:
+                lvl = None
+            if lvl:
+                level_str = f"{lvl['emoji']} {lvl['name']} ({lvl['k_bonus']}%)"
+        except Exception:
+            pass
+
+        # ── Сборка ответа ──
+        lines = [
+            "👤 <b>Твой профиль у Евгенича</b>",
+            "",
+            "<b>Telegram:</b>",
+            f"  • ID: <code>{user_id}</code>",
+            f"  • Имя в TG: {tg_first}",
+            f"  • @username: {tg_username}",
+            "",
+            "<b>Что я знаю о тебе:</b>",
+            f"  • Имя: {real_name or '<i>не указано</i>'}",
+            f"  • Телефон: <code>{phone}</code>" if phone else "  • Телефон: <i>не указан</i>",
+            f"  • Дата рождения: {birth_date or '<i>не указано</i>'}",
+            f"  • Источник: {source or '—'}",
+            f"  • С нами с: {signup_date or '—'}",
+            "",
+            "<b>Карта лояльности (GMB):</b>",
+        ]
+
+        if not phone:
+            lines.append("  ⚠️ Не могу проверить — нет телефона.")
+            lines.append("  Жми «🎁 Карта лояльности» и поделись контактом.")
+        elif gmb_balance is None:
+            lines.append(f"  ⚠️ По номеру <code>{phone}</code> карта не найдена.")
+            lines.append("  Возможно оформлена на другой номер.")
+        else:
+            lines.append(f"  • Имя в GMB: {gmb_name or '—'}")
+            lines.append(f"  • Баланс: <b>{int(gmb_balance)} бонусов</b>")
+            if gmb_kbonus:
+                lines.append(f"  • Кэшбэк: {gmb_kbonus}%")
+            if gmb_total:
+                lines.append(f"  • Накоплено покупок: <b>{int(float(gmb_total)):,} ₽</b>".replace(",", " "))
+            lines.append(f"  • Уровень: {level_str}")
+
+        bot.send_message(message.chat.id, "\n".join(lines), parse_mode="HTML")
+
     @bot.message_handler(commands=['restart'])
     def handle_restart_command(message: types.Message):
         """Команда для админов для сброса состояния пользователя (для тестирования)."""
@@ -982,6 +1117,22 @@ def register_user_command_handlers(bot):
             
             # Сохраняем контакт в базу данных
             if database.update_user_contact(user_id, phone_number):
+                # ── Если контакт пришёл из карты лояльности — НЕ утаскиваем в флоу настойки ──
+                if user_id in _loyalty_contact_pending:
+                    _loyalty_contact_pending.discard(user_id)
+                    bot.send_message(
+                        message.chat.id,
+                        "✅ Спасибо! Номер записал. Открываю карту…",
+                        reply_markup=keyboards.get_main_menu_keyboard(user_id)
+                    )
+                    # Эмулируем повторное нажатие «🎁 Карта лояльности»
+                    try:
+                        message.text = "🎁 Карта лояльности"
+                        handle_loyalty_card(message)
+                    except Exception as e:
+                        logging.error(f"Не удалось показать карту после контакта {user_id}: {e}")
+                    return
+
                 # Благодарим за контакт
                 bot.send_message(
                     message.chat.id,
