@@ -671,33 +671,83 @@ def register_user_command_handlers(bot):
 
         # Формируем текст
         if gmb_info and (gmb_info.get('balance') is not None or gmb_info.get('client', {}).get('balance') is not None):
-            # Клиент найден в GMB — показываем баланс
+            # Клиент найден в GMB — показываем баланс + уровень + прогресс
             client_data = gmb_info.get('client', gmb_info)
             balance = client_data.get('balance', 0)
-            name_gmb = client_data.get('name', full_name)
+            name_gmb = client_data.get('name', full_name) or full_name or "Товарищ"
             k_bonus = client_data.get('k_bonus', 0)
             max_pay = client_data.get('maxPayBonusK', 0)
+            total_amount = (
+                client_data.get('totalAmount')
+                or client_data.get('total_amount')
+                or client_data.get('totalAmountBonus')
+                or 0
+            )
 
             # Доступные подарки
             gifts = client_data.get('gifts', [])
             available_gifts = [g for g in gifts if g.get('can_use')]
 
-            loyalty_text = (
-                f"🎁 <b>Твоя карта лояльности</b>\n\n"
-                f"👤 {name_gmb}\n"
-                f"💰 Баланс: <b>{balance} бонусов</b>\n"
-            )
-            if k_bonus:
-                loyalty_text += f"📊 Кэшбэк: {k_bonus}% с каждого заказа\n"
-            if max_pay:
-                loyalty_text += f"💳 Оплата бонусами: до {max_pay}% от заказа\n"
+            # Карточка с уровнем + прогресс-баром
+            try:
+                from utils.loyalty_levels import (
+                    get_level_card_text,
+                    get_level_by_total,
+                    get_level_by_k_bonus,
+                    detect_level_upgrade,
+                    get_upgrade_congratulation,
+                )
+
+                loyalty_text = get_level_card_text(
+                    name=name_gmb,
+                    balance=balance,
+                    total_amount=total_amount,
+                    k_bonus=k_bonus,
+                    max_pay_pct=max_pay,
+                )
+
+                # Определяем текущий уровень и проверяем апгрейд
+                if total_amount and float(total_amount) > 0:
+                    current_level = get_level_by_total(total_amount)
+                else:
+                    current_level = get_level_by_k_bonus(k_bonus)
+
+                prev_code = database.get_last_loyalty_level(user_id) if hasattr(database, 'get_last_loyalty_level') else None
+                upgrade = detect_level_upgrade(prev_code, current_level["code"])
+
+                # Сохраняем актуальный уровень
+                if hasattr(database, 'set_last_loyalty_level'):
+                    database.set_last_loyalty_level(user_id, current_level["code"])
+
+                # Если был апгрейд — отправим поздравление отдельным сообщением
+                if upgrade:
+                    prev_lvl, cur_lvl = upgrade
+                    try:
+                        bot.send_message(
+                            message.chat.id,
+                            get_upgrade_congratulation(prev_lvl, cur_lvl, name=name_gmb),
+                            parse_mode="HTML",
+                        )
+                    except Exception as e:
+                        logging.warning(f"Не удалось отправить поздравление об апгрейде {user_id}: {e}")
+            except Exception as e:
+                logging.warning(f"Loyalty levels render error for {user_id}: {e} — fallback на простой текст")
+                loyalty_text = (
+                    f"🎁 <b>Твоя карта лояльности</b>\n\n"
+                    f"👤 {name_gmb}\n"
+                    f"💰 Баланс: <b>{balance} бонусов</b>\n"
+                )
+                if k_bonus:
+                    loyalty_text += f"📊 Кэшбэк: {k_bonus}% с каждого заказа\n"
+                if max_pay:
+                    loyalty_text += f"💳 Оплата бонусами: до {max_pay}% от заказа\n"
 
             if available_gifts:
-                loyalty_text += "\n🎁 <b>Доступные подарки:</b>\n"
+                loyalty_text += "\n\n🎁 <b>Доступные подарки:</b>\n"
                 for g in available_gifts[:5]:
                     loyalty_text += f"  • {g.get('name', '???')} — {g.get('price', '?')} бонусов\n"
 
-            loyalty_text += "\n👇 Открой карту, чтобы показать QR-код бармену:"
+            loyalty_text += "\n\n👇 Открой карту, чтобы показать QR-код бармену:"
         else:
             # Клиент не найден или GMB не настроен — старое поведение
             loyalty_text = (

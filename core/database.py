@@ -328,6 +328,13 @@ def init_db():
             cur.execute("ALTER TABLE users ADD COLUMN block_date TEXT")
             logging.info("База данных обновлена: добавлена колонка block_date")
 
+        # Последний зафиксированный уровень лояльности (для трекинга апгрейдов)
+        try:
+            cur.execute("SELECT last_loyalty_level FROM users LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute("ALTER TABLE users ADD COLUMN last_loyalty_level TEXT")
+            logging.info("База данных обновлена: добавлена колонка last_loyalty_level")
+
         # --- НОВАЯ ТАБЛИЦА: Персонал (staff) ---
         cur.execute("""
             CREATE TABLE IF NOT EXISTS staff (
@@ -605,6 +612,34 @@ def get_user_phone(user_id: int) -> str:
     except Exception as e:
         logging.error(f"SQLite | Ошибка получения телефона для {user_id}: {e}")
         return None
+
+def get_last_loyalty_level(user_id: int):
+    """Возвращает code последнего зафиксированного уровня лояльности или None."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT last_loyalty_level FROM users WHERE user_id = ?", (user_id,))
+        row = cur.fetchone()
+        conn.close()
+        if row and row[0]:
+            return row[0]
+        return None
+    except Exception as e:
+        logging.error(f"SQLite | Ошибка чтения last_loyalty_level для {user_id}: {e}")
+        return None
+
+def set_last_loyalty_level(user_id: int, level_code: str) -> bool:
+    """Сохраняет текущий уровень лояльности пользователя."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET last_loyalty_level = ? WHERE user_id = ?", (level_code, user_id))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        logging.error(f"SQLite | Ошибка записи last_loyalty_level для {user_id}: {e}")
+        return False
 
 def update_user_name(user_id: int, real_name: str) -> bool:
     """Обновляет настоящее имя пользователя."""
