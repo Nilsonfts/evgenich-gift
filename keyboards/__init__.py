@@ -47,12 +47,26 @@ def get_contact_request_keyboard():
 # === INLINE-КЛАВИАТУРЫ ДЛЯ ПОДПИСКИ И ПОДАРКА ===
 
 def get_loyalty_keyboard():
-    """Возвращает клавиатуру с кнопкой регистрации карты лояльности."""
+    """Возвращает клавиатуру с кнопкой регистрации карты лояльности.
+
+    Открывается как Telegram Mini App — гость не уходит из Telegram в браузер,
+    форма GetMeBack рендерится внутри клиента TG (iframe + WebApp API).
+    Если у клиента TG почему-то не поддерживается web_app (очень старые версии),
+    делаем graceful fallback на обычный URL.
+    """
+    loyalty_url = "https://evgenich.getmeback.ru/wallet/frontend?code=tg_bot#/auth"
     keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton(
-        text="🎁 Получить 500₽ — Регистрация карты",
-        url="https://evgenich.getmeback.ru/wallet/frontend?code=tg_bot#/auth"
-    ))
+    try:
+        keyboard.add(types.InlineKeyboardButton(
+            text="🎁 Получить 500₽ — Регистрация карты",
+            web_app=types.WebAppInfo(url=loyalty_url)
+        ))
+    except Exception:
+        # Fallback на случай старого telebot/клиента без поддержки WebAppInfo
+        keyboard.add(types.InlineKeyboardButton(
+            text="🎁 Получить 500₽ — Регистрация карты",
+            url=loyalty_url
+        ))
     return keyboard
 
 def get_subscription_keyboard(channel_url):
