@@ -3,6 +3,7 @@
 import logging
 import datetime
 from telebot import types
+from tinydb import TinyDB, Query as _TdbQuery
 
 from core.config import CHANNEL_ID, CHANNEL_ID_MSK, HELLO_STICKER_ID, NASTOYKA_STICKER_ID, ALL_ADMINS, REPORT_CHAT_ID, NASTOYKA_NOTIFICATIONS_CHAT_ID, BOOKING_NOTIFICATIONS_CHAT_ID, get_channel_id_for_user
 import core.database as database
@@ -14,8 +15,57 @@ from utils.qr_generator import create_qr_code
 # Словарь для хранения текущего payload пользователя (для определения канала)
 user_current_payload = {}
 
-# Словарь состояний сбора профиля (module-level, доступен из других модулей)
-user_profile_data = {}
+# --- Persistent state для сбора профиля (настойка) ---
+# RAM-кэш + TinyDB-зеркало. RAM нужен для быстрых проверок в lambda message_handler,
+# TinyDB — чтобы state переживал рестарт бота (Railway redeploy и т.п.).
+_profile_state_db = TinyDB('profile_state.json')
+_ProfileQ = _TdbQuery()
+
+
+class _ProfileStateStore(dict):
+    """Словарь-обёртка: read из RAM (как и раньше), write — в RAM + TinyDB."""
+
+    def __setitem__(self, user_id, state):
+        super().__setitem__(user_id, state)
+        try:
+            _profile_state_db.upsert(
+                {'user_id': user_id, 'state': state},
+                _ProfileQ.user_id == user_id
+            )
+        except Exception as e:
+            logging.warning(f"Не удалось сохранить profile state в TinyDB для {user_id}: {e}")
+
+    def __delitem__(self, user_id):
+        super().__delitem__(user_id)
+        try:
+            _profile_state_db.remove(_ProfileQ.user_id == user_id)
+        except Exception as e:
+            logging.warning(f"Не удалось удалить profile state из TinyDB для {user_id}: {e}")
+
+    def pop(self, user_id, *args):
+        result = super().pop(user_id, *args)
+        try:
+            _profile_state_db.remove(_ProfileQ.user_id == user_id)
+        except Exception as e:
+            logging.warning(f"Не удалось удалить profile state из TinyDB для {user_id}: {e}")
+        return result
+
+
+# Восстанавливаем state из TinyDB при старте модуля (после рестарта бота)
+user_profile_data = _ProfileStateStore()
+try:
+    _restored = 0
+    for _row in _profile_state_db.all():
+        _uid = _row.get('user_id')
+        _st = _row.get('state')
+        if _uid and _st:
+            # Используем dict.__setitem__ напрямую, чтобы не дублировать запись в TinyDB
+            dict.__setitem__(user_profile_data, _uid, _st)
+            _restored += 1
+    if _restored:
+        logging.info(f"♻️  Восстановлено {_restored} незавершённых state'ов профиля из TinyDB")
+except Exception as _e:
+    logging.warning(f"Не удалось восстановить profile_state из TinyDB: {_e}")
 
 # --- Вспомогательные функции ---
 
