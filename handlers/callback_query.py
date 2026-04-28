@@ -147,7 +147,7 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
                 bot.send_message(user_id, texts.SUBSCRIPTION_SUCCESS_TEXT)
                 issue_coupon(bot, user_id, call.message.chat.id)
             else:
-                bot.answer_callback_query(call.id, texts.SUBSCRIPTION_FAIL_TEXT, show_alert=True)
+                bot.answer_callback_query(call.id, texts.get_subscription_fail_text(), show_alert=True)
         except Exception as e:
             logging.error(f"Ошибка при проверке подписки для {user_id}: {e}")
             bot.answer_callback_query(call.id, "Не удалось проверить подписку. Попробуйте позже.", show_alert=True)
@@ -176,10 +176,12 @@ def register_callback_handlers(bot, scheduler, send_friend_bonus_func, request_f
             redeem_time = datetime.now(tz_moscow).strftime('%d.%m.%Y в %H:%M')
             
             # 3. Создаем новое сообщение с датой и временем
+            _user_info = database.find_user_by_id(user_id) or {}
+            _user_name = _user_info.get('real_name') or 'товарищ'
+            _success_text = texts.get_redeem_success_text(_user_name)
             final_text = (
-                f"✅ Ну, за знакомство!\n\n"
-                f"КУПОН ПОГАШЕН: {redeem_time.upper()}\n\n" # Добавляем время капсом
-                f"Как гласит древняя мудрость: между первой и второй культурный перерывчик минут пять. Приходи, продолжим!"
+                f"{_success_text}\n\n"
+                f"КУПОН ПОГАШЕН: {redeem_time.upper()}"
             )
             
             # 4. Отправляем новое, отформатированное сообщение

@@ -1063,7 +1063,7 @@ def register_user_command_handlers(bot):
                 user_profile_data[user_id] = 'awaiting_birth_date'
                 bot.send_message(
                     message.chat.id,
-                    texts.BIRTH_DATE_REQUEST_TEXT,
+                    texts.get_birth_date_request_text(real_name),
                     parse_mode="Markdown"
                 )
             else:
@@ -1107,10 +1107,14 @@ def register_user_command_handlers(bot):
                 if database.update_user_birth_date(user_id, birth_date_text):
                     # Завершаем сбор данных
                     del user_profile_data[user_id]
-                    
+
+                    # Получаем имя для персонализации
+                    _ui = database.find_user_by_id(user_id) or {}
+                    _uname = _ui.get('real_name') or 'товарищ'
                     bot.send_message(
                         message.chat.id,
-                        texts.PROFILE_COMPLETED_TEXT
+                        texts.get_profile_completed_text(_uname, user_id),
+                        parse_mode="Markdown"
                     )
                     
                     # ЖЁСТКАЯ ПРИВЯЗКА: определяем канал по сохранённому payload
