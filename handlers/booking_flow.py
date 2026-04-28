@@ -54,7 +54,7 @@ def start_booking_flow(bot, message, user_id):
     if user_phone and user_name:
         bot.send_message(
             message.chat.id,
-            f"👋 С возвращением, {user_name}!\n\nЗабронировать на ваш номер?\n\n📱 {user_phone}",
+            texts.get_booking_returning_guest_text(user_name, user_phone),
             reply_markup=keyboards.get_booking_saved_contact_keyboard(user_phone, user_name)
         )
     else:
@@ -235,7 +235,7 @@ def register_booking_handlers(bot):
                 if user_phone and user_name:
                     bot.send_message(
                         call.message.chat.id,
-                        f"👋 С возвращением, {user_name}!\n\nЗабронировать на ваш номер?\n\n📱 {user_phone}",
+                        texts.get_booking_returning_guest_text(user_name, user_phone),
                         reply_markup=keyboards.get_booking_saved_contact_keyboard(user_phone, user_name)
                     )
                 else:
