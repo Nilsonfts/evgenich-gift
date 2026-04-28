@@ -1113,10 +1113,17 @@ def register_user_command_handlers(bot):
             ("login (норм)", {'login': clean}),
             ("phone (норм)", {'phone': clean}),
             ("id_device (норм)", {'id_device': clean}),
-            ("login (как есть)", {'login': phone_arg}),
-            ("phone (как есть)", {'phone': phone_arg}),
-            ("phone (+7XXX)", {'phone': '+' + clean if not clean.startswith('+') else clean}),
-            ("phone (8XXX)", {'phone': '8' + clean[1:]} if clean.startswith('7') and len(clean) == 11 else None),
+            # С type=CLIENT (возможно validator ждёт явный тип операции)
+            ("type=CLIENT login", {'type': 'CLIENT', 'login': clean}),
+            ("type=CLIENT-INFO login", {'type': 'CLIENT-INFO', 'login': clean}),
+            ("type=CLIENT phone", {'type': 'CLIENT', 'phone': clean}),
+            ("type=GET-CLIENT login", {'type': 'GET-CLIENT', 'login': clean}),
+            ("type=BONUS-LIST login", {'type': 'BONUS-LIST', 'login': clean}),
+            # С id_branch (возможно требуется контекст филиала)
+            ("login + id_branch=1", {'login': clean, 'id_branch': 1}),
+            ("phone + id_branch=1 + id_manager=1", {'phone': clean, 'id_branch': 1, 'id_manager': 1}),
+            # Может endpoint другой нужен
+            ("phone + 8XXX формат", {'phone': '8' + clean[1:]} if clean.startswith('7') and len(clean) == 11 else None),
         ]
 
         out = [f"🔬 <b>GMB debug для телефона:</b> <code>{phone_arg}</code>",
@@ -1145,6 +1152,65 @@ def register_user_command_handlers(bot):
             out.append("")
 
         # Отправляем по частям (telegram лимит 4096)
+        text = "\n".join(out)
+        for i in range(0, len(text), 3500):
+            try:
+                bot.send_message(message.chat.id, text[i:i+3500], parse_mode="HTML")
+            except Exception:
+                bot.send_message(message.chat.id, text[i:i+3500])
+
+    @bot.message_handler(commands=['loyalty_debug_url'])
+    def handle_loyalty_debug_url(message: types.Message):
+        """[ADMIN] Перебирает разные endpoint URL для GMB lookup."""
+        user_id = message.from_user.id
+        if user_id not in ALL_ADMINS:
+            return
+        import requests as _req
+        from utils.gmb_client import gmb
+
+        if not gmb.is_configured():
+            bot.reply_to(message, "❌ GMB_API_KEY не настроен")
+            return
+
+        parts = message.text.split(maxsplit=1)
+        phone_arg = parts[1].strip() if len(parts) >= 2 else (database.get_user_phone(user_id) or "")
+        if not phone_arg:
+            bot.reply_to(message, "Использование: /loyalty_debug_url <телефон>")
+            return
+        clean = gmb._normalize_phone(phone_arg)
+
+        # Базовый URL без validator/
+        base = "https://evgenich.getmeback.ru/rest/base/v33/"
+
+        # Кандидаты endpoint для lookup
+        endpoints = [
+            "validator/",
+            "client/",
+            "clients/",
+            "client/get/",
+            "client/info/",
+            "client/find/",
+            "client/search/",
+            "wallet/",
+            "wallet/info/",
+            "balance/",
+            "loyalty/client/",
+        ]
+
+        out = [f"🔬 <b>GMB endpoint debug:</b> <code>{clean}</code>", ""]
+        payload = {'api_key': gmb.api_key, 'login': clean}
+
+        for ep in endpoints:
+            url = base + ep
+            try:
+                r = _req.post(url, json=payload, timeout=8)
+                status = r.status_code
+                body = r.text[:200]
+                marker = "✅" if status == 200 and body and body != "[]" else ("⚠️" if status == 200 else "❌")
+                out.append(f"{marker} <code>{ep}</code> [{status}] {body}")
+            except Exception as e:
+                out.append(f"❌ <code>{ep}</code> — exception: {str(e)[:80]}")
+
         text = "\n".join(out)
         for i in range(0, len(text), 3500):
             try:
