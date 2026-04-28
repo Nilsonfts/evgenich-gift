@@ -372,12 +372,20 @@ def register_user_command_handlers(bot):
                     else:
                         logging.warning(f"⚠️ Payload '{payload}' не найден в allowed_sources!")
 
-            # Отправляем приветствие с кнопкой получения подарка
-            bot.send_message(
-                message.chat.id,
-                texts.WELCOME_TEXT,
-                reply_markup=keyboards.get_gift_keyboard()
-            )
+            # Приветствие: новым — кнопка настойки, существующим — главное меню
+            # (чтобы не предлагать заново сценарий получения настойки тем, кто уже её брал)
+            if status == 'not_found':
+                bot.send_message(
+                    message.chat.id,
+                    texts.WELCOME_TEXT,
+                    reply_markup=keyboards.get_gift_keyboard()
+                )
+            else:
+                bot.send_message(
+                    message.chat.id,
+                    f"С возвращением, {message.from_user.first_name}! \U0001F44B",
+                    reply_markup=keyboards.get_main_menu_keyboard(user_id)
+                )
         
         except Exception as e:
             logging.error(f"❌ Ошибка в handle_start для пользователя {message.from_user.id}: {e}")
@@ -859,14 +867,6 @@ def register_user_command_handlers(bot):
                 )
 
         bot.send_message(chat_id, text, parse_mode="Markdown", disable_web_page_preview=True)
-
-    @bot.message_handler(commands=['help'])
-    def handle_help_command(message: types.Message):
-        bot.send_message(
-            message.chat.id,
-            texts.get_help_text(message.from_user.id, ALL_ADMINS),
-            parse_mode="Markdown"
-        )
 
     @bot.message_handler(commands=['profile'])
     def handle_profile_command(message: types.Message):
