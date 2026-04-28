@@ -35,6 +35,10 @@ class GMBClient:
     def __init__(self, api_key: str = None, api_url: str = None):
         self.api_key = api_key or GMB_API_KEY
         self.api_url = api_url or GMB_API_URL
+        # Последний сырой ответ — для диагностики из админки
+        self.last_raw_response = None
+        self.last_raw_request = None
+        self.last_raw_status = None
 
     def _call(self, data: dict) -> Optional[Any]:
         """Базовый вызов API. Возвращает parsed JSON или None."""
@@ -45,6 +49,12 @@ class GMBClient:
         payload = {'api_key': self.api_key}
         payload.update(data)
 
+        # Сохраняем для диагностики (api_key маскируем)
+        safe_payload = dict(payload)
+        if 'api_key' in safe_payload:
+            safe_payload['api_key'] = safe_payload['api_key'][:6] + '***'
+        self.last_raw_request = safe_payload
+
         try:
             resp = requests.post(
                 self.api_url,
@@ -52,18 +62,23 @@ class GMBClient:
                 timeout=GMB_TIMEOUT,
                 headers={'Content-Type': 'application/json'}
             )
+            self.last_raw_status = resp.status_code
+            # Сохраняем сырой текст ДО raise_for_status — чтобы видеть тело ошибки
+            raw_text = resp.text
+            self.last_raw_response = raw_text[:2000]
+            logger.info(f"GMB API [{resp.status_code}] req={safe_payload} resp={raw_text[:500]}")
             resp.raise_for_status()
             result = resp.json()
-            logger.debug(f"GMB API response: {result}")
             return result
         except requests.Timeout:
             logger.error(f"GMB API timeout ({GMB_TIMEOUT}s)")
+            self.last_raw_response = f"TIMEOUT after {GMB_TIMEOUT}s"
             return None
         except requests.RequestException as e:
             logger.error(f"GMB API error: {e}")
             return None
         except ValueError:
-            logger.error(f"GMB API invalid JSON: {resp.text[:200]}")
+            logger.error(f"GMB API invalid JSON")
             return None
 
     # ───────────────────────────

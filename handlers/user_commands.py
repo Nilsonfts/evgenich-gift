@@ -1083,7 +1083,73 @@ def register_user_command_handlers(bot):
 
         bot.send_message(message.chat.id, "\n".join(lines), parse_mode="HTML")
 
-    @bot.message_handler(commands=['restart'])
+    @bot.message_handler(commands=['loyalty_debug'])
+    def handle_loyalty_debug(message: types.Message):
+        """[ADMIN] Отладка GMB: пробует разные форматы запроса для одного телефона."""
+        user_id = message.from_user.id
+        if user_id not in ALL_ADMINS:
+            return
+        import json as _json
+        from utils.gmb_client import gmb
+
+        if not gmb.is_configured():
+            bot.reply_to(message, "❌ GMB_API_KEY не настроен")
+            return
+
+        # Парсим аргумент: /loyalty_debug 79996106215
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            phone_arg = database.get_user_phone(user_id) or ""
+            if not phone_arg:
+                bot.reply_to(message, "Использование: /loyalty_debug <телефон>\nПример: /loyalty_debug 79996106215")
+                return
+        else:
+            phone_arg = parts[1].strip()
+
+        clean = gmb._normalize_phone(phone_arg)
+
+        # Пробуем 4 варианта запроса
+        variants = [
+            ("phone (как есть)", {'phone': phone_arg}),
+            ("phone (нормализованный 7XXX)", {'phone': clean}),
+            ("phone с +", {'phone': '+' + clean if not clean.startswith('+') else clean}),
+            ("phone (8XXX)", {'phone': '8' + clean[1:]} if clean.startswith('7') and len(clean) == 11 else None),
+        ]
+
+        out = [f"🔬 <b>GMB debug для телефона:</b> <code>{phone_arg}</code>",
+               f"   нормализовано: <code>{clean}</code>",
+               f"   API URL: <code>{gmb.api_url}</code>",
+               ""]
+
+        for name, payload in variants:
+            if payload is None:
+                continue
+            out.append(f"━━━ <b>{name}</b> ━━━")
+            out.append(f"req: <code>{payload}</code>")
+            try:
+                result = gmb._call(payload)
+                status = gmb.last_raw_status
+                raw = gmb.last_raw_response or "—"
+                out.append(f"HTTP: {status}")
+                out.append(f"raw: <code>{raw[:400]}</code>")
+                if result:
+                    out.append(f"parsed type: {type(result).__name__}")
+                    if isinstance(result, (dict, list)):
+                        preview = _json.dumps(result, ensure_ascii=False)[:300]
+                        out.append(f"parsed: <code>{preview}</code>")
+            except Exception as e:
+                out.append(f"❌ exception: {e}")
+            out.append("")
+
+        # Отправляем по частям (telegram лимит 4096)
+        text = "\n".join(out)
+        for i in range(0, len(text), 3500):
+            try:
+                bot.send_message(message.chat.id, text[i:i+3500], parse_mode="HTML")
+            except Exception:
+                bot.send_message(message.chat.id, text[i:i+3500])
+
+
     def handle_restart_command(message: types.Message):
         """Команда для админов для сброса состояния пользователя (для тестирования)."""
         user_id = message.from_user.id
