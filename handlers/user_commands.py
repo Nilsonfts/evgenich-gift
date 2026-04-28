@@ -1110,6 +1110,10 @@ def register_user_command_handlers(bot):
 
         # Пробуем разные поля и разные форматы телефона
         variants = [
+            # ★ ОСНОВНОЙ — type=GET-USERS (подтверждено саппортом GMB)
+            ("★ type=GET-USERS login", {'type': 'GET-USERS', 'login': clean}),
+            ("★ type=GET-USERS phone", {'type': 'GET-USERS', 'phone': clean}),
+            # Остальные — для контроля
             ("login (норм)", {'login': clean}),
             ("phone (норм)", {'phone': clean}),
             ("id_device (норм)", {'id_device': clean}),

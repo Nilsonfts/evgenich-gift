@@ -86,33 +86,33 @@ class GMBClient:
     # ───────────────────────────
     def find_client_by_phone(self, phone: str) -> Optional[Dict]:
         """
-        Ищет клиента по номеру телефона.
+        Ищет клиента в GMB по телефону.
 
-        В GMB телефон хранится как `login` (79991234567 без +).
-        Пробуем несколько вариантов полей (в порядке вероятности):
-          1. login=79XX     — основной, так хранится в GMB
-          2. phone=79XX     — fallback, если API всё же ждёт phone
-          3. id_device=79XX — fallback, если API ждёт id_device
+        Правильный метод lookup в GMB — type=GET-USERS (подтверждено саппортом).
+        Телефон в GMB хранится как `login` (79991234567 без +).
         """
         clean_phone = self._normalize_phone(phone)
         if not clean_phone:
             return None
 
-        # Порядок попыток (первый удачный — выходим)
+        # Основной способ — GET-USERS с login
         attempts = [
+            {'type': 'GET-USERS', 'login': clean_phone},
+            {'type': 'GET-USERS', 'phone': clean_phone},
+            # Fallback'ы на случай если GET-USERS в этой версии API не работает
             {'login': clean_phone},
             {'phone': clean_phone},
-            {'id_device': clean_phone},
         ]
 
         for payload in attempts:
             result = self._call(payload)
             parsed = self._parse_client_response(result)
             if parsed:
-                logger.info(f"GMB клиент найден через {list(payload.keys())[0]}={clean_phone}")
+                key = next((k for k in payload if k != 'type'), '?')
+                logger.info(f"GMB клиент найден через type={payload.get('type', '-')} {key}={clean_phone}")
                 return parsed
 
-        logger.warning(f"GMB клиент не найден ни по одному полю для {clean_phone}")
+        logger.warning(f"GMB клиент не найден для {clean_phone}")
         return None
 
     def find_client_by_id(self, id_client: int) -> Optional[Dict]:
