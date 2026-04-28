@@ -802,6 +802,44 @@ def register_user_command_handlers(bot):
         else:
             bot.send_message(message.chat.id, "Евгенич пока не записал для вас обращение, товарищ.")
 
+    @bot.message_handler(commands=['friend'])
+    def handle_friend_command(message):
+        """Команда /friend — выдаёт персональную реферальную ссылку и статистику."""
+        user_id = message.from_user.id
+        chat_id = message.chat.id
+        try:
+            bot_username = bot.get_me().username
+        except Exception as e:
+            logging.error(f"Не удалось получить username бота: {e}")
+            bot_username = "evgenichspbbot"
+
+        ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
+
+        # Получаем статистику рефералов (если есть)
+        try:
+            stats = database.get_referral_stats(user_id)
+        except Exception as e:
+            logging.error(f"Ошибка получения referral stats для {user_id}: {e}")
+            stats = None
+
+        text = texts.FRIEND_PROMPT_TEXT + "\n\n"
+        text += f"🔗 `{ref_link}`\n\n"
+        text += texts.FRIEND_RULES_TEXT
+
+        if stats:
+            total = stats.get('total_referrals', 0) if isinstance(stats, dict) else 0
+            redeemed = stats.get('redeemed_referrals', 0) if isinstance(stats, dict) else 0
+            rewards = stats.get('rewards_received', 0) if isinstance(stats, dict) else 0
+            if total or redeemed or rewards:
+                text += (
+                    f"\n\n📊 *Твоя статистика:*\n"
+                    f"• Привёл всего: {total}\n"
+                    f"• Получили настойку: {redeemed}\n"
+                    f"• Тебе начислено наград: {rewards}"
+                )
+
+        bot.send_message(chat_id, text, parse_mode="Markdown", disable_web_page_preview=True)
+
     @bot.message_handler(commands=['help'])
     def handle_help_command(message: types.Message):
         bot.send_message(
