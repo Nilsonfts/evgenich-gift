@@ -257,6 +257,17 @@ if __name__ == "__main__":
     except Exception as e:
         logging.warning(f"⚠️ Не удалось проверить webhook: {e}")
 
+    # === Устанавливаем меню команд бота (видно в Telegram при нажатии "/") ===
+    try:
+        bot.set_my_commands([
+            telebot.types.BotCommand("start", "🏠 Главное меню"),
+            telebot.types.BotCommand("book", "📋 Забронировать столик"),
+            telebot.types.BotCommand("help", "❓ Справка"),
+        ])
+        logging.info("✅ Меню команд бота обновлено: /start, /book, /help")
+    except Exception as e:
+        logging.warning(f"⚠️ Не удалось обновить меню команд: {e}")
+
     # Запуск бота с обработкой ошибок
     # КРИТИЧНО: указываем allowed_updates с callback_query, иначе кнопки не работают!
     ALLOWED_UPDATES = ['message', 'callback_query', 'inline_query', 'chosen_inline_result',
