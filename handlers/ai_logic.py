@@ -66,13 +66,21 @@ def register_ai_handlers(bot):
         if is_group_chat:
             chat_title = message.chat.title or "Без названия"
             text_lower = message.text.lower() if message.text else ""
-            
-            # ПРИОРИТЕТ 0: Проактивные сообщения (РЕДКО!)
-            proactive_response = proactive_messenger.should_respond(message.text, message.chat.id)
-            if proactive_response:
-                logging.info(f"🎲 Проактивный ответ в группе '{chat_title}'")
-                bot.reply_to(message, proactive_response)
-                return
+
+            # Не лезем в личные диалоги между гостями (reply на не-бота)
+            is_reply_to_other_user = (
+                message.reply_to_message
+                and message.reply_to_message.from_user
+                and not message.reply_to_message.from_user.is_bot
+            )
+
+            # ПРИОРИТЕТ 0: Проактивные сообщения (РЕДКО, и НЕ в чужих диалогах)
+            if not is_reply_to_other_user:
+                proactive_response = proactive_messenger.should_respond(message.text, message.chat.id)
+                if proactive_response:
+                    logging.info(f"🎲 Проактивный ответ в группе '{chat_title}'")
+                    bot.reply_to(message, proactive_response)
+                    return
             
             # ПРИОРИТЕТ 1: Ключевые слова для помощи (ВСЕГДА отвечаем!)
             # Бронирование
