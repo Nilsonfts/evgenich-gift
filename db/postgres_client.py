@@ -49,7 +49,17 @@ class PostgresClient:
             if not self.db_url:
                 raise ValueError("DATABASE_URL не установлен!")
             
-            self.engine = create_engine(self.db_url, echo=False)
+            self.engine = create_engine(
+                self.db_url,
+                echo=False,
+                # pool_pre_ping: проверяем соединение перед использованием —
+                # фиксит "server closed the connection unexpectedly" после idle на Railway
+                pool_pre_ping=True,
+                # pool_recycle=300: пересоздаём коннекты старше 5 минут
+                pool_recycle=300,
+                pool_size=5,
+                max_overflow=10,
+            )
             
             # Проверяем подключение
             with self.engine.connect() as connection:

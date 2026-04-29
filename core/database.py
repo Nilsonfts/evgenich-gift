@@ -231,9 +231,17 @@ def get_db_connection():
     db_dir = os.path.dirname(DB_FILE)
     if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir, exist_ok=True)
-    
-    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+
+    # timeout=30: при конкурентной записи ждём блокировку 30с вместо мгновенного SQLITE_BUSY
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
+    # WAL: читатели не блокируют писателей и наоборот — критично для pyTelebot threaded
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+    except Exception as _e:
+        logging.debug(f"SQLite PRAGMA setup skipped: {_e}")
     return conn
 
 def init_db():
