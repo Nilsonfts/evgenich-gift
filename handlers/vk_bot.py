@@ -138,6 +138,14 @@ T_FALLBACK   = (
     "Я понимаю только сценарий бронирования столика 🥃\n"
     'Напиши «бронь» или «столик» — забронируем за минуту.'
 )
+T_AI_FOOTER = (
+    "\n\nЕсли захочешь забронировать столик — жми кнопку ниже. "
+    "Если нужен живой человек — позову менеджера."
+)
+T_MANAGER_CALLED = (
+    "Передал твоё сообщение менеджеру 🙋\n"
+    "С тобой свяжутся в ближайшее время."
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Клавиатуры VK
@@ -178,6 +186,25 @@ def _kb_cancel() -> str:
 
 def _kb_empty() -> str:
     return json.dumps({"buttons": [], "one_time": True}, ensure_ascii=False)
+
+def _kb_smalltalk() -> str:
+    """Клавиатура после AI-ответа: предложить бронь или вызвать менеджера."""
+    return json.dumps({
+        "one_time": False,
+        "inline": False,
+        "buttons": [
+            [{
+                "action": {"type": "text", "label": "🎫 Забронировать столик",
+                           "payload": json.dumps({"start_booking": True})},
+                "color": "primary",
+            }],
+            [{
+                "action": {"type": "text", "label": "🙋 Позвать администратора",
+                           "payload": json.dumps({"call_manager": True})},
+                "color": "secondary",
+            }],
+        ],
+    }, ensure_ascii=False)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -226,6 +253,140 @@ def _tg_notify(text: str) -> None:
             logger.error("Telegram sendMessage не ок: %s %s", r.status_code, r.text[:200])
     except Exception as e:
         logger.exception("Telegram уведомление упало: %s", e)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Google Sheets экспорт (аналогично TG-броням, gid=1842872487)
+# ──────────────────────────────────────────────────────────────────────────────
+_SHEETS_GID = "1842872487"  # вкладка "Заявки из Соц сетей" (та же, что у TG-броней)
+
+def _clean_phone_for_sheets(phone: str) -> str:
+    """+7… → 7…, чтобы Sheets не превращал в формулу/число."""
+    return re.sub(r"\D+", "", phone or "")
+
+def _moscow_now_str() -> str:
+    """Текущее время по МСК (UTC+3) в формате '%d.%m.%Y %H:%M'."""
+    return (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M")
+
+def _export_vk_to_sheets(s: dict, vk_user_id: int, vk_profile: Optional[dict]) -> bool:
+    """Пишет VK-бронь в основную Google-таблицу (вкладка 'Заявки из Соц сетей').
+    Колонки и UTM — как у гостевых TG-броней, отличается:
+      G (ТЕГ для АМО) = код бара (ЕВГ_МСК_ПЯТ / ЕВГ_МСК_ЦВЕТ)
+      F (Источник) = "🟦 Гостевое бронирование (ВК)"
+      J (UTM Source) = "vk"
+      H (Кто создал) = "👤 Посетитель (через ВК)"
+    """
+    raw_creds = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
+    sheet_key = os.getenv("GOOGLE_SHEET_KEY", "")
+    if not raw_creds or not sheet_key:
+        logger.info("VK→Sheets: GOOGLE_SHEET_KEY/GOOGLE_CREDENTIALS_JSON не заданы — пропускаю экспорт")
+        return False
+    try:
+        import gspread  # лениво, чтобы импорт не падал при отсутствии пакета
+        from google.oauth2.service_account import Credentials
+    except ImportError as e:
+        logger.error("VK→Sheets: gspread/google-auth не установлены: %s", e)
+        return False
+
+    # Парсим credentials (поддерживаем и dict, и многострочный JSON)
+    try:
+        creds_info = json.loads(raw_creds)
+    except (ValueError, TypeError):
+        try:
+            cleaned = " ".join(line.strip() for line in raw_creds.split("\n") if line.strip())
+            creds_info = json.loads(cleaned)
+        except Exception as e:
+            logger.error("VK→Sheets: не удалось распарсить GOOGLE_CREDENTIALS_JSON: %s", e)
+            return False
+
+    try:
+        creds = Credentials.from_service_account_info(
+            creds_info, scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
+        gc = gspread.authorize(creds)
+        sheet = gc.open_by_key(sheet_key)
+        worksheet = None
+        for ws in sheet.worksheets():
+            if str(ws.id) == _SHEETS_GID:
+                worksheet = ws
+                break
+        if not worksheet:
+            logger.error("VK→Sheets: вкладка gid=%s не найдена", _SHEETS_GID)
+            return False
+
+        bar_info = _BAR_BY_KEY.get(s.get("bar_key"), {})
+        amo_tag = bar_info.get("code", "VK_GUEST")
+        datetime_combined = f"{s.get('date','')} {s.get('time','')}".strip()
+        profile_name = ""
+        if vk_profile:
+            profile_name = f"{vk_profile.get('first_name','')} {vk_profile.get('last_name','')}".strip()
+
+        row = [
+            _moscow_now_str(),                                  # A: Дата заявки
+            s.get("name", ""),                                  # B: Имя гостя
+            _clean_phone_for_sheets(s.get("phone", "")),        # C: Телефон
+            datetime_combined,                                  # D: Дата и время посещения
+            s.get("guests", ""),                                # E: Кол-во гостей
+            "🟦 Гостевое бронирование (ВК)",                    # F: Источник
+            amo_tag,                                            # G: ТЕГ для АМО (код бара)
+            "👤 Посетитель (через ВК)",                          # H: Кто создал
+            "Новая",                                            # I: Статус
+            "vk",                                               # J: UTM Source
+            "social",                                           # K: UTM Medium
+            "guest_booking",                                    # L: UTM Campaign
+            "vk_bot_guest_booking",                             # M: UTM Content
+            "guest_vk",                                         # N: UTM Term
+            f"VK-{int(time.time())}",                           # O: ID заявки
+            f"vk:{vk_user_id}{(' (' + profile_name + ')') if profile_name else ''}",  # P: VK ID создателя
+        ]
+        worksheet.append_row(row)
+        logger.info("VK→Sheets: бронь добавлена. user=%s bar=%s", vk_user_id, amo_tag)
+        return True
+    except Exception as e:
+        logger.exception("VK→Sheets: ошибка экспорта: %s", e)
+        return False
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AI-ассистент (свободные вопросы, не сценарий брони)
+# ──────────────────────────────────────────────────────────────────────────────
+_AI_SYSTEM = (
+    "Ты Евгенич — бот-бармен сети рюмочных «Евгенич». "
+    "Города: Москва (Пятницкая 30 и Цветной бульвар) и Санкт-Петербург. "
+    "В ВКонтакте принимаем брони только по Москве. "
+    "Стиль: дружелюбный, на «ты», коротко (1–3 предложения), не больше одного эмодзи. "
+    "Если гость хочет забронировать столик — ответь кратко: "
+    "«Сейчас оформим — выбери бар ниже» и больше ничего, кнопки покажу сам. "
+    "Не выдумывай меню, цены и акции — если не уверен, направляй к администратору. "
+    "Если вопрос не по теме бара — мягко предложи позвать администратора."
+)
+
+def _ai_reply(user_text: str) -> Optional[str]:
+    """Спрашиваем OpenAI. Возвращает текст ответа или None при любой ошибке."""
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    if not api_key:
+        return None
+    try:
+        from openai import OpenAI  # lazy import
+    except ImportError:
+        logger.warning("VK AI: пакет openai не установлен")
+        return None
+    try:
+        client = OpenAI(api_key=api_key, timeout=12.0)
+        resp = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            messages=[
+                {"role": "system", "content": _AI_SYSTEM},
+                {"role": "user", "content": user_text[:1000]},
+            ],
+            temperature=0.6,
+            max_tokens=180,
+        )
+        text = (resp.choices[0].message.content or "").strip()
+        return text or None
+    except Exception as e:
+        logger.warning("VK AI: ошибка OpenAI: %s", e)
+        return None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -385,6 +546,11 @@ def _finalize(vk_user_id: int, s: dict, vk_profile: Optional[dict]) -> None:
         f"🌐 Источник: <b>VK сообщество</b>"
     )
     _tg_notify(msg)
+    # Экспорт в Google Sheets — best-effort, не блокирует ответ гостю
+    try:
+        _export_vk_to_sheets(s, vk_user_id, vk_profile)
+    except Exception as e:
+        logger.exception("VK→Sheets вызов упал: %s", e)
     _vk_send(vk_user_id, T_DONE, _kb_empty())
     _drop_session(vk_user_id)
     logger.info("VK booking confirmed: vk_user=%s bar=%s date=%s time=%s",
@@ -415,17 +581,45 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
 
             s = _get_session(vk_user_id)
 
-            # Нет активной сессии → стартуем по триггеру или показываем приглашение
+            # Нет активной сессии → стартуем по триггеру/кнопке или подключаем AI
             if not s:
+                # Кнопка «🎫 Забронировать столик» из smalltalk-клавиатуры
+                if payload and payload.get("start_booking"):
+                    _start_flow(vk_user_id)
+                    return
+
+                # Кнопка «🙋 Позвать администратора» — уведомление в TG-чат менеджеров
+                if payload and payload.get("call_manager"):
+                    profile_name = ""
+                    if vk_profile:
+                        profile_name = f"{vk_profile.get('first_name','')} {vk_profile.get('last_name','')}".strip()
+                    vk_link = f"https://vk.com/id{vk_user_id}"
+                    _tg_notify(
+                        "🙋 <b>Гость из ВКонтакте просит администратора</b>\n\n"
+                        f"👤 {profile_name or '—'}\n"
+                        f"🔗 <a href=\"{vk_link}\">{vk_link}</a>\n"
+                        f"🆔 VK ID: <code>{vk_user_id}</code>\n\n"
+                        "Свяжитесь с гостем напрямую."
+                    )
+                    _vk_send(vk_user_id, T_MANAGER_CALLED, _kb_empty())
+                    return
+
+                # Триггер брони — стартуем сценарий
                 if _is_booking_trigger(text) or (payload and payload.get("bar")):
                     _start_flow(vk_user_id)
-                    # Если в payload уже есть bar — сразу обработаем как ответ на шаге bar
                     if payload and payload.get("bar"):
-                        s = _get_session(vk_user_id)  # перечитываем
+                        s = _get_session(vk_user_id)
                     else:
                         return
                 else:
-                    _vk_send(vk_user_id, T_FALLBACK, _kb_empty())
+                    # Свободный вопрос → пробуем AI
+                    if text:
+                        ai_text = _ai_reply(text)
+                        if ai_text:
+                            _vk_send(vk_user_id, ai_text + T_AI_FOOTER, _kb_smalltalk())
+                            return
+                    # AI выключен/упал/пустой текст — старый фоллбэк
+                    _vk_send(vk_user_id, T_FALLBACK, _kb_smalltalk())
                     return
 
             step = s.get("step", "bar")
