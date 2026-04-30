@@ -28,14 +28,18 @@ from typing import Any, Optional
 import requests
 from tinydb import Query, TinyDB
 
-from core.config import (
-    BOOKING_NOTIFICATIONS_CHAT_ID_MSK,
-    BOT_TOKEN,
-    REPORT_CHAT_ID,
-    VK_ENABLED,
-    VK_GROUP_TOKEN,
-    VK_SECRET_KEY,
-)
+# VK-обработчик читает все секреты НАПРЯМУЮ из os.environ.
+# Это намеренно: web-сервис может не иметь TELEGRAM-переменных (CHANNEL_ID, ADMIN_IDS,
+# стикеры), которые core/config.py требует обязательно. Тогда `from core.config import ...`
+# бросит ValueError на этапе импорта и весь VK-функционал не поднимется.
+VK_ENABLED = os.getenv("VK_ENABLED", "false").lower() in ("true", "1", "yes")
+VK_GROUP_TOKEN = os.getenv("VK_GROUP_TOKEN", "")
+VK_CONFIRMATION_TOKEN = os.getenv("VK_CONFIRMATION_TOKEN", "")
+VK_SECRET_KEY = os.getenv("VK_SECRET_KEY", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+# Чат МСК-броней — хардкод (как в core/config.py), уведомления летят сюда
+BOOKING_NOTIFICATIONS_CHAT_ID_MSK = -1003120803112
+REPORT_CHAT_ID = os.getenv("REPORT_CHAT_ID")
 
 logger = logging.getLogger(__name__)
 
@@ -511,7 +515,6 @@ def process_callback_event(event: dict) -> str:
 
     # 1. Подтверждение сервера при настройке Callback API
     if etype == "confirmation":
-        from core.config import VK_CONFIRMATION_TOKEN
         return VK_CONFIRMATION_TOKEN or "ok"
 
     # 2. Новое сообщение
