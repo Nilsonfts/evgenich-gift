@@ -290,20 +290,33 @@ def vk_health():
     Диагностический эндпоинт. Показывает что web-процесс реально видит в окружении.
     Токены НЕ раскрывает — только их наличие и длину.
     """
-    from core.config import (
-        VK_ENABLED, VK_GROUP_TOKEN, VK_GROUP_ID,
-        VK_CONFIRMATION_TOKEN, VK_SECRET_KEY, BOT_TOKEN,
-    )
-    return jsonify({
-        "VK_ENABLED": VK_ENABLED,
-        "VK_GROUP_ID": VK_GROUP_ID or None,
-        "VK_CONFIRMATION_TOKEN_set": bool(VK_CONFIRMATION_TOKEN),
-        "VK_CONFIRMATION_TOKEN_value": VK_CONFIRMATION_TOKEN,  # короткий, можно показать
-        "VK_GROUP_TOKEN_set": bool(VK_GROUP_TOKEN),
-        "VK_GROUP_TOKEN_len": len(VK_GROUP_TOKEN) if VK_GROUP_TOKEN else 0,
-        "VK_SECRET_KEY_set": bool(VK_SECRET_KEY),
-        "BOT_TOKEN_set": bool(BOT_TOKEN),
-    })
+    try:
+        import os as _os
+        # Читаем НАПРЯМУЮ из окружения, минуя core.config — чтобы исключить кэш импорта
+        raw = {
+            "VK_ENABLED": _os.environ.get("VK_ENABLED"),
+            "VK_GROUP_ID": _os.environ.get("VK_GROUP_ID"),
+            "VK_CONFIRMATION_TOKEN": _os.environ.get("VK_CONFIRMATION_TOKEN"),
+            "VK_GROUP_TOKEN_len": len(_os.environ.get("VK_GROUP_TOKEN", "")),
+            "VK_SECRET_KEY_set": bool(_os.environ.get("VK_SECRET_KEY")),
+            "BOT_TOKEN_set": bool(_os.environ.get("BOT_TOKEN")),
+        }
+        # И параллельно — что РЕАЛЬНО видит наш код:
+        try:
+            from core.config import VK_ENABLED as _VK_ENABLED, VK_CONFIRMATION_TOKEN as _VK_TOK
+            parsed = {"VK_ENABLED_parsed": _VK_ENABLED, "VK_CONFIRMATION_TOKEN_parsed": _VK_TOK}
+        except Exception as e:
+            parsed = {"core_config_import_error": str(e)}
+        body = "RAW ENV:\n"
+        for k, v in raw.items():
+            body += f"  {k} = {v!r}\n"
+        body += "\nPARSED:\n"
+        for k, v in parsed.items():
+            body += f"  {k} = {v!r}\n"
+        return Response(body, mimetype="text/plain")
+    except Exception as e:
+        import traceback
+        return Response(f"ERROR: {e}\n\n{traceback.format_exc()}", mimetype="text/plain", status=500)
 
 
 # ═══════════════════════════════════════════
