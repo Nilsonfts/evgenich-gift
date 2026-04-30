@@ -56,6 +56,40 @@ _db = TinyDB(_DB_PATH)
 _Session = Query()
 _db_lock = threading.RLock()  # TinyDB не потокобезопасен
 
+# Дополнительный лок на user_id — предотвращает параллельную обработку
+# двух одновременных событий от одного пользователя (race condition).
+_user_locks: dict[int, threading.Lock] = {}
+_user_locks_lock = threading.Lock()
+
+def _get_user_lock(vk_user_id: int) -> threading.Lock:
+    with _user_locks_lock:
+        lock = _user_locks.get(vk_user_id)
+        if lock is None:
+            lock = threading.Lock()
+            _user_locks[vk_user_id] = lock
+        return lock
+
+# Дедупликация event_id от VK (Callback API повторяет события, если не получил
+# 'ok' за 10 секунд). Храним последние 1000 event_id ~30 минут.
+import collections as _collections
+_seen_events: _collections.OrderedDict = _collections.OrderedDict()
+_seen_events_lock = threading.Lock()
+_SEEN_EVENTS_MAX = 1000
+
+def _is_duplicate_event(event_id: str) -> bool:
+    """True, если этот event_id уже обрабатывался."""
+    if not event_id:
+        return False
+    with _seen_events_lock:
+        if event_id in _seen_events:
+            return True
+        _seen_events[event_id] = True
+        # LRU: выкидываем самые старые
+        while len(_seen_events) > _SEEN_EVENTS_MAX:
+            _seen_events.popitem(last=False)
+        return False
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Конфигурация баров (только МСК — Пятницкая и Цветной)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -362,142 +396,147 @@ def _finalize(vk_user_id: int, s: dict, vk_profile: Optional[dict]) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                    vk_profile: Optional[dict] = None) -> None:
-    """Роутер шагов. Не бросает исключения наружу."""
+    """Роутер шагов. Не бросает исключения наружу.
+    Защищён per-user lock — два одновременных события одного пользователя
+    обрабатываются последовательно, без race condition на TinyDB-сессии.
+    """
     text = (text or "").strip()
-    try:
-        # Глобальная отмена
-        if _is_cancel(text) or (payload and payload.get("cancel")):
-            if _get_session(vk_user_id):
-                _drop_session(vk_user_id)
-                _vk_send(vk_user_id, T_CANCELLED, _kb_empty())
-            else:
-                _vk_send(vk_user_id, T_FALLBACK, _kb_empty())
-            return
-
-        s = _get_session(vk_user_id)
-
-        # Нет активной сессии → стартуем по триггеру или показываем приглашение
-        if not s:
-            if _is_booking_trigger(text) or (payload and payload.get("bar")):
-                _start_flow(vk_user_id)
-                # Если в payload уже есть bar — сразу обработаем как ответ на шаге bar
-                if payload and payload.get("bar"):
-                    s = _get_session(vk_user_id)  # перечитываем
-                else:
-                    return
-            else:
-                _vk_send(vk_user_id, T_FALLBACK, _kb_empty())
-                return
-
-        step = s.get("step", "bar")
-
-        # ── ШАГ: bar ─────────────────────────────────
-        if step == "bar":
-            bar_key = None
-            if payload and payload.get("bar"):
-                bar_key = payload["bar"]
-            else:
-                low = text.lower()
-                if low in _BAR_BY_LABEL:
-                    bar_key = _BAR_BY_LABEL[low]["key"]
-                elif "пятниц" in low:
-                    bar_key = "pyatnitskaya"
-                elif "цветн" in low:
-                    bar_key = "tsvetnoj"
-            if not bar_key or bar_key not in _BAR_BY_KEY:
-                _vk_send(vk_user_id, T_BAD_BAR, _kb_bars())
-                return
-            s["bar_key"] = bar_key
-            s["step"] = "date"
-            _save_session(vk_user_id, s)
-            _ask_date(vk_user_id)
-            return
-
-        # ── ШАГ: date ────────────────────────────────
-        if step == "date":
-            date = _parse_date(text)
-            if not date:
-                _vk_send(vk_user_id, T_BAD_DATE, _kb_cancel())
-                return
-            s["date"] = date
-            s["step"] = "time"
-            _save_session(vk_user_id, s)
-            _ask_time(vk_user_id)
-            return
-
-        # ── ШАГ: time ────────────────────────────────
-        if step == "time":
-            t = _parse_time(text)
-            if not t:
-                _vk_send(vk_user_id, T_BAD_TIME, _kb_cancel())
-                return
-            s["time"] = t
-            s["step"] = "guests"
-            _save_session(vk_user_id, s)
-            _ask_guests(vk_user_id)
-            return
-
-        # ── ШАГ: guests ──────────────────────────────
-        if step == "guests":
-            n = _parse_guests(text)
-            if not n:
-                _vk_send(vk_user_id, T_BAD_GUESTS, _kb_cancel())
-                return
-            s["guests"] = n
-            s["step"] = "name"
-            _save_session(vk_user_id, s)
-            _ask_name(vk_user_id)
-            return
-
-        # ── ШАГ: name ────────────────────────────────
-        if step == "name":
-            name = text.strip()
-            if len(name) < 2:
-                _vk_send(vk_user_id, "Имя слишком короткое. Напиши, как обращаться.", _kb_cancel())
-                return
-            s["name"] = name[:60]
-            s["step"] = "phone"
-            _save_session(vk_user_id, s)
-            _ask_phone(vk_user_id)
-            return
-
-        # ── ШАГ: phone ───────────────────────────────
-        if step == "phone":
-            phone = _parse_phone(text)
-            if not phone:
-                _vk_send(vk_user_id, T_BAD_PHONE, _kb_cancel())
-                return
-            s["phone"] = phone
-            s["step"] = "confirm"
-            _save_session(vk_user_id, s)
-            _ask_confirm(vk_user_id, s)
-            return
-
-        # ── ШАГ: confirm ─────────────────────────────
-        if step == "confirm":
-            if _is_yes(text):
-                _finalize(vk_user_id, s, vk_profile)
-            else:
-                # Что угодно кроме «да» считаем уточнением → переспросим
-                _vk_send(
-                    vk_user_id,
-                    'Если что-то не так — напиши «отмена» и начнём заново. '
-                    'Если всё ок — нажми «✅ Да, отправляем».',
-                    _kb_confirm(),
-                )
-            return
-
-        # Неизвестный шаг → сбрасываем
-        logger.warning("VK: неизвестный шаг %s у vk_user=%s — сброс сессии", step, vk_user_id)
-        _drop_session(vk_user_id)
-        _vk_send(vk_user_id, T_FALLBACK, _kb_empty())
-
-    except Exception as e:
-        logger.exception("VK handle_message упал для vk_user=%s: %s", vk_user_id, e)
+    lock = _get_user_lock(vk_user_id)
+    with lock:
         try:
-            _vk_send(vk_user_id, "Что-то пошло не так с моей стороны 🙁 Напиши «бронь» — начнём заново.", _kb_empty())
-        except Exception:
-            pass
+            # Глобальная отмена
+            if _is_cancel(text) or (payload and payload.get("cancel")):
+                if _get_session(vk_user_id):
+                    _drop_session(vk_user_id)
+                    _vk_send(vk_user_id, T_CANCELLED, _kb_empty())
+                else:
+                    _vk_send(vk_user_id, T_FALLBACK, _kb_empty())
+                return
+
+            s = _get_session(vk_user_id)
+
+            # Нет активной сессии → стартуем по триггеру или показываем приглашение
+            if not s:
+                if _is_booking_trigger(text) or (payload and payload.get("bar")):
+                    _start_flow(vk_user_id)
+                    # Если в payload уже есть bar — сразу обработаем как ответ на шаге bar
+                    if payload and payload.get("bar"):
+                        s = _get_session(vk_user_id)  # перечитываем
+                    else:
+                        return
+                else:
+                    _vk_send(vk_user_id, T_FALLBACK, _kb_empty())
+                    return
+
+            step = s.get("step", "bar")
+
+            # ── ШАГ: bar ─────────────────────────────────
+            if step == "bar":
+                bar_key = None
+                if payload and payload.get("bar"):
+                    bar_key = payload["bar"]
+                else:
+                    low = text.lower()
+                    if low in _BAR_BY_LABEL:
+                        bar_key = _BAR_BY_LABEL[low]["key"]
+                    elif "пятниц" in low:
+                        bar_key = "pyatnitskaya"
+                    elif "цветн" in low:
+                        bar_key = "tsvetnoj"
+                if not bar_key or bar_key not in _BAR_BY_KEY:
+                    _vk_send(vk_user_id, T_BAD_BAR, _kb_bars())
+                    return
+                s["bar_key"] = bar_key
+                s["step"] = "date"
+                _save_session(vk_user_id, s)
+                _ask_date(vk_user_id)
+                return
+
+            # ── ШАГ: date ────────────────────────────────
+            if step == "date":
+                date = _parse_date(text)
+                if not date:
+                    _vk_send(vk_user_id, T_BAD_DATE, _kb_cancel())
+                    return
+                s["date"] = date
+                s["step"] = "time"
+                _save_session(vk_user_id, s)
+                _ask_time(vk_user_id)
+                return
+
+            # ── ШАГ: time ────────────────────────────────
+            if step == "time":
+                t = _parse_time(text)
+                if not t:
+                    _vk_send(vk_user_id, T_BAD_TIME, _kb_cancel())
+                    return
+                s["time"] = t
+                s["step"] = "guests"
+                _save_session(vk_user_id, s)
+                _ask_guests(vk_user_id)
+                return
+
+            # ── ШАГ: guests ──────────────────────────────
+            if step == "guests":
+                n = _parse_guests(text)
+                if not n:
+                    _vk_send(vk_user_id, T_BAD_GUESTS, _kb_cancel())
+                    return
+                s["guests"] = n
+                s["step"] = "name"
+                _save_session(vk_user_id, s)
+                _ask_name(vk_user_id)
+                return
+
+            # ── ШАГ: name ────────────────────────────────
+            if step == "name":
+                name = text.strip()
+                if len(name) < 2:
+                    _vk_send(vk_user_id, "Имя слишком короткое. Напиши, как обращаться.", _kb_cancel())
+                    return
+                s["name"] = name[:60]
+                s["step"] = "phone"
+                _save_session(vk_user_id, s)
+                _ask_phone(vk_user_id)
+                return
+
+            # ── ШАГ: phone ───────────────────────────────
+            if step == "phone":
+                phone = _parse_phone(text)
+                if not phone:
+                    _vk_send(vk_user_id, T_BAD_PHONE, _kb_cancel())
+                    return
+                s["phone"] = phone
+                s["step"] = "confirm"
+                _save_session(vk_user_id, s)
+                _ask_confirm(vk_user_id, s)
+                return
+
+            # ── ШАГ: confirm ─────────────────────────────
+            if step == "confirm":
+                if _is_yes(text):
+                    _finalize(vk_user_id, s, vk_profile)
+                else:
+                    # Что угодно кроме «да» считаем уточнением → переспросим
+                    _vk_send(
+                        vk_user_id,
+                        'Если что-то не так — напиши «отмена» и начнём заново. '
+                        'Если всё ок — нажми «✅ Да, отправляем».',
+                        _kb_confirm(),
+                    )
+                return
+
+            # Неизвестный шаг → сбрасываем
+            logger.warning("VK: неизвестный шаг %s у vk_user=%s — сброс сессии", step, vk_user_id)
+            _drop_session(vk_user_id)
+            _vk_send(vk_user_id, T_FALLBACK, _kb_empty())
+
+        except Exception as e:
+            logger.exception("VK handle_message упал для vk_user=%s: %s", vk_user_id, e)
+            try:
+                _vk_send(vk_user_id, "Что-то пошло не так с моей стороны 🙁 Напиши «бронь» — начнём заново.", _kb_empty())
+            except Exception:
+                pass
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -517,13 +556,21 @@ def process_callback_event(event: dict) -> str:
     if etype == "confirmation":
         return VK_CONFIRMATION_TOKEN or "ok"
 
-    # 2. Новое сообщение
+    # 2. Дедупликация: VK повторяет события если не получил 'ok' за 10 сек.
+    # event_id одинаковый у повторов — игнорируем уже обработанные.
+    event_id = event.get("event_id")
+    if _is_duplicate_event(event_id):
+        logger.info("VK: дубль event_id=%s — пропускаем", event_id)
+        return "ok"
+
+    # 3. Новое сообщение — обрабатываем В ФОНЕ, чтобы вернуть 'ok' мгновенно.
+    # Иначе VK может не дождаться ответа за 10 сек (особенно если VK API или
+    # Telegram API подвисает) и повторит событие → race condition в state machine.
     if etype == "message_new":
         obj = event.get("object", {}) or {}
-        msg = obj.get("message", obj)  # в новых версиях message вложен, в старых — на уровне object
+        msg = obj.get("message", obj)
         vk_user_id = msg.get("from_id")
         if not vk_user_id or vk_user_id < 0:
-            # Группа писать сама себе не должна; отбрасываем
             return "ok"
         text = msg.get("text", "") or ""
         payload_raw = msg.get("payload")
@@ -533,15 +580,19 @@ def process_callback_event(event: dict) -> str:
                 payload = json.loads(payload_raw)
             except (ValueError, TypeError):
                 payload = None
-
-        # client_info / профиль — берём из вложенного profiles, если есть
         profiles = obj.get("client_info", {}).get("profiles") if isinstance(obj.get("client_info"), dict) else None
         vk_profile = profiles[0] if profiles else None
 
-        handle_message(vk_user_id, text, payload=payload, vk_profile=vk_profile)
+        # Фоновый поток — не блокируем ответ VK
+        threading.Thread(
+            target=handle_message,
+            args=(vk_user_id, text, payload, vk_profile),
+            daemon=True,
+            name=f"vk-handler-{vk_user_id}",
+        ).start()
         return "ok"
 
-    # Любые другие события игнорируем (можно расширять при необходимости)
+    # Любые другие события игнорируем
     logger.debug("VK: пропущено событие типа %s", etype)
     return "ok"
 
