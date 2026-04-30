@@ -64,3 +64,4 @@ data/*.json
 profile_state.json
 profile_state.json.broken
 booking_data.json
+data/vk_booking_data.json

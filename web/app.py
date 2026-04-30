@@ -250,6 +250,40 @@ def logout():
 
 
 # ═══════════════════════════════════════════
+#  VK CALLBACK API (личные сообщения сообщества → бронь)
+# ═══════════════════════════════════════════
+@app.route('/vk/callback', methods=['POST'])
+@csrf.exempt
+def vk_callback():
+    """
+    Принимает события Callback API ВКонтакте.
+    Эндпоинт публичный (VK не передаёт CSRF), защищён secret_key из настроек VK.
+    URL для VK: https://<railway-домен>/vk/callback
+    """
+    try:
+        from handlers.vk_bot import process_callback_event, verify_secret
+    except Exception as e:
+        logging.exception("VK: не удалось импортировать обработчик: %s", e)
+        return ("ok", 200)
+
+    try:
+        event = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        event = {}
+
+    # Проверка секрета (если задан в Railway). Confirmation-запрос приходит без secret —
+    # на этапе подтверждения VK пропускаем проверку.
+    if event.get("type") != "confirmation":
+        if not verify_secret(event.get("secret")):
+            logging.warning("VK callback: невалидный secret от %s", request.remote_addr)
+            return ("forbidden", 403)
+
+    response_text = process_callback_event(event)
+    # VK ждёт plain text ответа (для confirmation — токен, для остального — 'ok')
+    return Response(response_text, mimetype="text/plain")
+
+
+# ═══════════════════════════════════════════
 #  DASHBOARD
 # ═══════════════════════════════════════════
 @app.route('/')

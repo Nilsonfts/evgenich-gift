@@ -124,6 +124,13 @@ GMB_API_KEY = os.getenv("GMB_API_KEY", "")
 GMB_API_URL = os.getenv("GMB_API_URL", "https://evgenich.getmeback.ru/rest/base/v33/validator/")
 GMB_SPASIBO_BOT_TOKEN = os.getenv("GMB_SPASIBO_BOT_TOKEN", "")  # Токен @spasibo_EVGENICH_bot
 
+# --- ВКонтакте (личные сообщения сообщества → бронь столика) ---
+VK_ENABLED = os.getenv("VK_ENABLED", "false").lower() in ("true", "1", "yes")
+VK_GROUP_TOKEN = os.getenv("VK_GROUP_TOKEN", "")           # community access token (права: messages, manage)
+VK_GROUP_ID = os.getenv("VK_GROUP_ID", "")                 # numeric ID группы без знака минус
+VK_CONFIRMATION_TOKEN = os.getenv("VK_CONFIRMATION_TOKEN", "")  # из настроек Callback API
+VK_SECRET_KEY = os.getenv("VK_SECRET_KEY", "")             # секрет для верификации запросов от VK
+
 # --- Ссылки ---
 
 # --- База данных ---
