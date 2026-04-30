@@ -283,6 +283,29 @@ def vk_callback():
     return Response(response_text, mimetype="text/plain")
 
 
+@app.route('/vk/health', methods=['GET'])
+@csrf.exempt
+def vk_health():
+    """
+    Диагностический эндпоинт. Показывает что web-процесс реально видит в окружении.
+    Токены НЕ раскрывает — только их наличие и длину.
+    """
+    from core.config import (
+        VK_ENABLED, VK_GROUP_TOKEN, VK_GROUP_ID,
+        VK_CONFIRMATION_TOKEN, VK_SECRET_KEY, BOT_TOKEN,
+    )
+    return jsonify({
+        "VK_ENABLED": VK_ENABLED,
+        "VK_GROUP_ID": VK_GROUP_ID or None,
+        "VK_CONFIRMATION_TOKEN_set": bool(VK_CONFIRMATION_TOKEN),
+        "VK_CONFIRMATION_TOKEN_value": VK_CONFIRMATION_TOKEN,  # короткий, можно показать
+        "VK_GROUP_TOKEN_set": bool(VK_GROUP_TOKEN),
+        "VK_GROUP_TOKEN_len": len(VK_GROUP_TOKEN) if VK_GROUP_TOKEN else 0,
+        "VK_SECRET_KEY_set": bool(VK_SECRET_KEY),
+        "BOT_TOKEN_set": bool(BOT_TOKEN),
+    })
+
+
 # ═══════════════════════════════════════════
 #  DASHBOARD
 # ═══════════════════════════════════════════
