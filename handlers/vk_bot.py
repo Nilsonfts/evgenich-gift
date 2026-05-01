@@ -160,9 +160,10 @@ T_GREETING = (
 )
 
 # Варианты приветствия — выбираются с учётом времени суток (МСК) и того,
-# знаком ли уже гость. Хвост «Выбирай заведение:» добавляется отдельно.
-_GREET_TAIL_NEW = "Помогу забронировать столик за минуту. Выбирай заведение:"
-_GREET_TAIL_BACK = "Подыщем столик? Выбирай заведение:"
+# знаком ли уже гость. Хвост подбирается динамически в зависимости от того,
+# с какого шага мы стартуем (нового гостя ведём в имя, повторного — в дату).
+_GREET_TAIL_NEW = "Помогу забронировать столик за минуту. Как тебя зовут?"
+_GREET_TAIL_BACK = "Подыщем столик? На какую дату планируем?"
 
 _GREETINGS_MORNING = [
     "Доброе утро, товарищ! ☕",
@@ -248,6 +249,7 @@ T_BAD_TIME   = "Не разобрал время. Напиши в формате
 T_BAD_GUESTS = "Нужно число от 1 до 20. Сколько гостей?"
 T_BAD_PHONE  = "Похоже, телефон не полный. Нужно минимум 10 цифр, например +7 999 123-45-67."
 T_BAD_BAR    = "Выбери одно из заведений кнопкой ниже:"
+T_ASK_BAR    = "📍 Отлично! В каком из наших заведений будешь?"
 T_RETURNING_CONTACT = (
     "С возвращением, {name}! 🥃\n"
     "Использую твой прошлый контакт: {phone}.\n"
@@ -1166,8 +1168,24 @@ def _is_yes(text: str) -> bool:
 # Шаги сценария
 # ──────────────────────────────────────────────────────────────────────────────
 def _start_flow(vk_user_id: int) -> None:
-    _save_session(vk_user_id, {"step": "bar"})
-    _vk_send(vk_user_id, _make_greeting(vk_user_id), _kb_bars())
+    """Стартуем сценарий брони в порядке как в TG:
+    имя → телефон → дата → время → гости → заведение → подтверждение.
+
+    Если у гостя сохранён контакт (он уже бронировал) — пропускаем имя+телефон
+    и сразу спрашиваем дату.
+    """
+    contact = _get_vk_contact(vk_user_id)
+    if contact:
+        s = {
+            "step": "date",
+            "name": contact["name"],
+            "phone": contact["phone"],
+        }
+        _save_session(vk_user_id, s)
+        _vk_send(vk_user_id, _make_greeting(vk_user_id), _kb_cancel())
+        return
+    _save_session(vk_user_id, {"step": "name"})
+    _vk_send(vk_user_id, _make_greeting(vk_user_id), _kb_cancel())
 
 def _ask_date(vk_user_id: int) -> None:
     _vk_send(vk_user_id, T_ASK_DATE, _kb_cancel())
@@ -1183,6 +1201,9 @@ def _ask_name(vk_user_id: int) -> None:
 
 def _ask_phone(vk_user_id: int) -> None:
     _vk_send(vk_user_id, T_ASK_PHONE, _kb_cancel())
+
+def _ask_bar(vk_user_id: int) -> None:
+    _vk_send(vk_user_id, T_ASK_BAR, _kb_bars())
 
 def _ask_confirm(vk_user_id: int, s: dict) -> None:
     bar = _BAR_BY_KEY.get(s.get("bar_key"), {}).get("name", "—")
@@ -1354,25 +1375,35 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                     _vk_send(vk_user_id, T_FALLBACK, _kb_smalltalk())
                     return
 
-            step = s.get("step", "bar")
+            step = s.get("step", "name")
 
-            # ── ШАГ: bar ─────────────────────────────────
-            if step == "bar":
-                bar_key = None
-                if payload and payload.get("bar"):
-                    bar_key = payload["bar"]
-                else:
-                    low = text.lower()
-                    if low in _BAR_BY_LABEL:
-                        bar_key = _BAR_BY_LABEL[low]["key"]
-                    elif "пятниц" in low:
-                        bar_key = "pyatnitskaya"
-                    elif "цветн" in low:
-                        bar_key = "tsvetnoj"
-                if not bar_key or bar_key not in _BAR_BY_KEY:
-                    _vk_send(vk_user_id, T_BAD_BAR, _kb_bars())
+            # ── ШАГ: name ────────────────────────────────
+            if step == "name":
+                name = text.strip()
+                if len(name) < 2:
+                    _vk_send(vk_user_id, "Имя слишком короткое. Напиши, как обращаться.", _kb_cancel())
                     return
-                s["bar_key"] = bar_key
+                s["name"] = name[:60]
+                s["step"] = "phone"
+                _save_session(vk_user_id, s)
+                _ask_phone(vk_user_id)
+                return
+
+            # ── ШАГ: phone ───────────────────────────────
+            if step == "phone":
+                phone = _parse_phone(text)
+                if not phone:
+                    _vk_send(vk_user_id, T_BAD_PHONE, _kb_cancel())
+                    return
+                s["phone"] = phone
+                # Если правим только контакт у уже собранной брони — сразу
+                # возвращаемся на подтверждение, не переспрашивая дату/время/бар.
+                if s.pop("editing_contact", False):
+                    s["step"] = "confirm"
+                    _save_vk_contact(vk_user_id, s.get("name", ""), phone)
+                    _save_session(vk_user_id, s)
+                    _ask_confirm(vk_user_id, s)
+                    return
                 s["step"] = "date"
                 _save_session(vk_user_id, s)
                 _ask_date(vk_user_id)
@@ -1409,47 +1440,28 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                     _vk_send(vk_user_id, T_BAD_GUESTS, _kb_cancel())
                     return
                 s["guests"] = n
-                # Если у гостя уже есть запомненный контакт — пропускаем
-                # шаги «имя» и «телефон» и сразу идём к подтверждению.
-                saved_contact = _get_vk_contact(vk_user_id)
-                if saved_contact:
-                    s["name"] = saved_contact["name"]
-                    s["phone"] = saved_contact["phone"]
-                    s["step"] = "confirm"
-                    _save_session(vk_user_id, s)
-                    _vk_send(
-                        vk_user_id,
-                        T_RETURNING_CONTACT.format(
-                            name=saved_contact["name"],
-                            phone=saved_contact["phone"],
-                        ),
-                    )
-                    _ask_confirm(vk_user_id, s)
-                    return
-                s["step"] = "name"
+                s["step"] = "bar"
                 _save_session(vk_user_id, s)
-                _ask_name(vk_user_id)
+                _ask_bar(vk_user_id)
                 return
 
-            # ── ШАГ: name ────────────────────────────────
-            if step == "name":
-                name = text.strip()
-                if len(name) < 2:
-                    _vk_send(vk_user_id, "Имя слишком короткое. Напиши, как обращаться.", _kb_cancel())
+            # ── ШАГ: bar ─────────────────────────────────
+            if step == "bar":
+                bar_key = None
+                if payload and payload.get("bar"):
+                    bar_key = payload["bar"]
+                else:
+                    low = text.lower()
+                    if low in _BAR_BY_LABEL:
+                        bar_key = _BAR_BY_LABEL[low]["key"]
+                    elif "пятниц" in low:
+                        bar_key = "pyatnitskaya"
+                    elif "цветн" in low:
+                        bar_key = "tsvetnoj"
+                if not bar_key or bar_key not in _BAR_BY_KEY:
+                    _vk_send(vk_user_id, T_BAD_BAR, _kb_bars())
                     return
-                s["name"] = name[:60]
-                s["step"] = "phone"
-                _save_session(vk_user_id, s)
-                _ask_phone(vk_user_id)
-                return
-
-            # ── ШАГ: phone ───────────────────────────────
-            if step == "phone":
-                phone = _parse_phone(text)
-                if not phone:
-                    _vk_send(vk_user_id, T_BAD_PHONE, _kb_cancel())
-                    return
-                s["phone"] = phone
+                s["bar_key"] = bar_key
                 s["step"] = "confirm"
                 _save_session(vk_user_id, s)
                 _ask_confirm(vk_user_id, s)
@@ -1458,9 +1470,12 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
             # ── ШАГ: confirm ─────────────────────────────
             if step == "confirm":
                 low = text.strip().lower()
-                # Гость хочет поправить имя/телефон → сбрасываем на шаг «имя»
+                # Гость хочет поправить имя/телефон → сбрасываем на шаг «имя»,
+                # но дату/время/гостей/бар сохраняем. Флаг editing_contact
+                # вернёт его сразу на confirm после нового телефона.
                 if "измен" in low and "контакт" in low:
                     s["step"] = "name"
+                    s["editing_contact"] = True
                     s.pop("name", None)
                     s.pop("phone", None)
                     _save_session(vk_user_id, s)
