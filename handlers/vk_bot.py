@@ -1549,7 +1549,8 @@ def _schedule_loyalty_offer(vk_user_id: int, delay: float = 10.0) -> None:
 # Главный обработчик входящего сообщения от VK
 # ──────────────────────────────────────────────────────────────────────────────
 def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
-                   vk_profile: Optional[dict] = None) -> None:
+                   vk_profile: Optional[dict] = None,
+                   attachments: Optional[list] = None) -> None:
     """Роутер шагов. Не бросает исключения наружу.
     Защищён per-user lock — два одновременных события одного пользователя
     обрабатываются последовательно, без race condition на TinyDB-сессии.
@@ -1560,8 +1561,28 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
         # Любое входящее событие отменяет проактивный пинг — гость всё ещё здесь.
         _cancel_idle_ping(vk_user_id)
         try:
+            # Медиа без текста: голосовое → вежливый ответ; фото/видео/стикер → тишина.
+            if not text and attachments:
+                kinds = {a.get("type") for a in attachments if isinstance(a, dict)}
+                if "audio_message" in kinds:
+                    _vk_send(
+                        vk_user_id,
+                        "Голосовые пока не разбираю 🙏 Напиши текстом — отвечу подробно.",
+                        _kb_smalltalk(),
+                    )
+                    return
+                # Фото/видео/стикер без текста — молча игнорим, не дёргаем AI пустотой.
+                if kinds & {"photo", "video", "sticker", "doc", "wall", "link"}:
+                    return
+
             if text:
                 _log_vk_turn(vk_user_id, "user", text)
+
+            # Фильтр мата: реагируем только если нет активной брони — внутри сценария
+            # ругательство может быть частью адреса/имени и т.п., не блокируем.
+            if text and not _get_session(vk_user_id) and _is_offensive(text):
+                _vk_send(vk_user_id, random.choice(_OFFENSIVE_REPLIES), _kb_smalltalk())
+                return
 
             # Глобальная отмена
             if _is_cancel(text) or (payload and payload.get("cancel")):
