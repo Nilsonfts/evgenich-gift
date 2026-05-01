@@ -56,6 +56,11 @@ _db = TinyDB(_DB_PATH)
 _Session = Query()
 _db_lock = threading.RLock()  # TinyDB не потокобезопасен
 
+# Отдельная таблица для сохранённых контактов гостей (не сессии).
+# Запоминаем имя/телефон после первой брони — при следующей просто подставляем.
+_contacts_table = _db.table("contacts")
+_Contact = Query()
+
 # Дополнительный лок на user_id — предотвращает параллельную обработку
 # двух одновременных событий от одного пользователя (race condition).
 _user_locks: dict[int, threading.Lock] = {}
@@ -149,6 +154,12 @@ T_MANAGER_CALLED = (
     "Передал твоё сообщение старшему 🙋\n"
     "С тобой свяжутся в ближайшее время."
 )
+T_USE_SAVED_CONTACT = (
+    "Помню тебя, товарищ! 🙌\n"
+    "В прошлый раз бронировали на:\n"
+    "👤 {name}\n📞 {phone}\n\n"
+    "Использовать те же контакты или ввести новые?"
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Клавиатуры VK
@@ -189,6 +200,26 @@ def _kb_cancel() -> str:
 
 def _kb_empty() -> str:
     return json.dumps({"buttons": [], "one_time": True}, ensure_ascii=False)
+
+def _kb_use_saved_contact() -> str:
+    """Кнопки на шаге name: использовать сохранённый контакт или ввести новый."""
+    return json.dumps({
+        "one_time": True,
+        "inline": False,
+        "buttons": [
+            [{
+                "action": {"type": "text", "label": "✅ Да, эти данные",
+                           "payload": json.dumps({"use_saved": True})},
+                "color": "positive",
+            }],
+            [{
+                "action": {"type": "text", "label": "✏️ Ввести новые",
+                           "payload": json.dumps({"new_contact": True})},
+                "color": "secondary",
+            }],
+            [{"action": {"type": "text", "label": "❌ Отмена"}, "color": "negative"}],
+        ],
+    }, ensure_ascii=False)
 
 def _kb_smalltalk() -> str:
     """Клавиатура после AI-ответа: предложить бронь или вызвать менеджера."""
@@ -353,19 +384,51 @@ def _export_vk_to_sheets(s: dict, vk_user_id: int, vk_profile: Optional[dict]) -
 # ──────────────────────────────────────────────────────────────────────────────
 # AI-ассистент (свободные вопросы, не сценарий брони)
 # ──────────────────────────────────────────────────────────────────────────────
-_AI_SYSTEM = (
+_AI_SYSTEM_BASE = (
     "Ты Евгенич — бот-бармен сети рюмочных «Евгенич». "
     "Города: Москва (Пятницкая 30 и Цветной бульвар) и Санкт-Петербург. "
     "В ВКонтакте принимаем брони только по Москве. "
-    "Стиль: дружелюбный, на «ты», коротко (1–3 предложения), не больше одного эмодзи. "
-    "Если гость хочет забронировать столик — ответь кратко: "
-    "«Сейчас оформим — выбери бар ниже» и больше ничего, кнопки покажу сам. "
-    "Не выдумывай меню, цены и акции — если не уверен, направляй к старшему. "
-    "Если вопрос не по теме бара — мягко предложи позвать старшего."
+    "Часы работы: каждый день с 12:00 до 02:00, пт-сб до 04:00. "
+    "Специализация — авторские настойки и закуски в советском стиле.\n\n"
+    "Стиль общения:\n"
+    "— на «ты», по-дружески, как с приятелем у барной стойки\n"
+    "— коротко: 2–4 предложения, не лекция\n"
+    "— не больше одного эмодзи на сообщение\n"
+    "— иногда задавай встречный вопрос, чтобы разговор шёл живее\n"
+    "— используй обращения «товарищ», «дружище» — но в меру\n\n"
+    "Правила:\n"
+    "— НЕ выдумывай меню, конкретные цены, акции и наличие — если не уверен, направь к старшему\n"
+    "— если гость хочет забронировать — скажи коротко «сейчас оформим, выбери бар» (кнопки сам покажу)\n"
+    "— если вопрос совсем не по теме бара — мягко предложи позвать старшего\n"
+    "— помни предыдущие реплики гостя в этом диалоге"
 )
 
-def _ai_reply(user_text: str) -> Optional[str]:
-    """Спрашиваем OpenAI. Возвращает текст ответа или None при любой ошибке."""
+def _build_ai_messages(user_text: str, vk_user_id: int,
+                       vk_profile: Optional[dict]) -> list:
+    """Собирает messages для OpenAI: system + история + текущая реплика."""
+    system = _AI_SYSTEM_BASE
+    if vk_profile and vk_profile.get("first_name"):
+        system += f"\n\nГостя зовут {vk_profile['first_name']} — обращайся по имени, когда уместно."
+    saved = _get_saved_contact(vk_user_id)
+    if saved:
+        system += (
+            f"\n\nВажно: гость уже бронировал у нас (на имя {saved.get('name','?')}). "
+            f"Если попросит — можешь упомянуть, что помнишь его и контакты на месте."
+        )
+
+    messages = [{"role": "system", "content": system}]
+    history = _get_chat_history(vk_user_id)
+    for h in history[-_CHAT_HISTORY_MAX * 2:]:
+        role = h.get("role")
+        content = h.get("content")
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": user_text[:1000]})
+    return messages
+
+def _ai_reply(user_text: str, vk_user_id: int,
+              vk_profile: Optional[dict] = None) -> Optional[str]:
+    """Спрашиваем OpenAI с учётом истории диалога. None при любой ошибке."""
     api_key = os.getenv("OPENAI_API_KEY", "")
     if not api_key:
         return None
@@ -378,14 +441,14 @@ def _ai_reply(user_text: str) -> Optional[str]:
         client = OpenAI(api_key=api_key, timeout=12.0)
         resp = client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            messages=[
-                {"role": "system", "content": _AI_SYSTEM},
-                {"role": "user", "content": user_text[:1000]},
-            ],
-            temperature=0.6,
-            max_tokens=180,
+            messages=_build_ai_messages(user_text, vk_user_id, vk_profile),
+            temperature=0.7,
+            max_tokens=220,
         )
         text = (resp.choices[0].message.content or "").strip()
+        if text:
+            _append_chat_history(vk_user_id, "user", user_text)
+            _append_chat_history(vk_user_id, "assistant", text)
         return text or None
     except Exception as e:
         logger.warning("VK AI: ошибка OpenAI: %s", e)
@@ -409,6 +472,52 @@ def _save_session(vk_user_id: int, data: dict) -> None:
 def _drop_session(vk_user_id: int) -> None:
     with _db_lock:
         _db.remove(_Session.vk_user_id == vk_user_id)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Память контактов гостя (имя/телефон) — между бронями
+# ──────────────────────────────────────────────────────────────────────────────
+def _get_saved_contact(vk_user_id: int) -> Optional[dict]:
+    with _db_lock:
+        rows = _contacts_table.search(_Contact.vk_user_id == vk_user_id)
+        return rows[0] if rows else None
+
+def _save_contact(vk_user_id: int, name: str, phone: str) -> None:
+    with _db_lock:
+        _contacts_table.upsert(
+            {"vk_user_id": vk_user_id, "name": name, "phone": phone,
+             "updated_at": datetime.utcnow().isoformat()},
+            _Contact.vk_user_id == vk_user_id,
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# История диалога для AI (последние 10 пар user/assistant) — в той же сессии
+# ──────────────────────────────────────────────────────────────────────────────
+_CHAT_HISTORY_MAX = 10
+
+def _get_chat_history(vk_user_id: int) -> list:
+    with _db_lock:
+        rows = _db.search(_Session.vk_user_id == vk_user_id)
+        if rows:
+            return rows[0].get("chat_history", []) or []
+    return []
+
+def _append_chat_history(vk_user_id: int, role: str, content: str) -> None:
+    """Хранит историю в той же записи сессии (или создаёт новую запись без 'step')."""
+    with _db_lock:
+        rows = _db.search(_Session.vk_user_id == vk_user_id)
+        history = rows[0].get("chat_history", []) if rows else []
+        history.append({"role": role, "content": content[:500]})
+        history = history[-_CHAT_HISTORY_MAX * 2:]  # пары user/assistant
+        if rows:
+            _db.update({"chat_history": history,
+                        "updated_at": datetime.utcnow().isoformat()},
+                       _Session.vk_user_id == vk_user_id)
+        else:
+            _db.insert({"vk_user_id": vk_user_id,
+                        "chat_history": history,
+                        "updated_at": datetime.utcnow().isoformat()})
 
 
 # ──────────────────────────────────────────────────────────────────────────────
