@@ -297,6 +297,39 @@ def _kb_offline_manager() -> str:
     }, ensure_ascii=False)
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Пинг старшего в TG-чате при заявке «позвать старшего»
+# ──────────────────────────────────────────────────────────────────────────────
+# Дина (старший МСК): @didi613. Можно переопределить через env.
+MANAGER_TG_USERNAME = os.getenv("VK_MANAGER_TG_USERNAME", "didi613").lstrip("@")
+MANAGER_TG_NAME = os.getenv("VK_MANAGER_TG_NAME", "Дина")
+
+# Разные тексты-пинки, чтобы сообщения не были однообразными
+_PING_LINES_ON_SHIFT = (
+    "{mention} {name}, тебя в ВК зовут — глянь сообщения 👀",
+    "{mention} {name}, новый гость в ВК пишет — иди прочти 💬",
+    "{mention} {name}, в ВК просят живого человека, забеги ответить 🙋",
+    "{mention} {name}, гость в ВК ждёт ответа — прими эстафету 🥃",
+    "{mention} {name}, в личке группы новенький — нужен твой ответ ✨",
+    "{mention} {name}, тебя дёрнули в ВК — глянь, что хотят 👋",
+)
+_PING_LINES_OFF_SHIFT = (
+    "{mention} {name}, гость в ВК писал тебе вне смены ({when}) — ответь, как заступишь 🌙",
+    "{mention} {name}, в ВК тебя ждёт сообщение, ты сейчас не на смене — посмотри {when} ⏰",
+    "{mention} {name}, пинг в ВК до твоей смены — отпишись {when} 💌",
+)
+
+
+def _ping_manager_line(on_shift: bool, when: str = "") -> str:
+    """Возвращает случайную строку-пинг для @username Дины."""
+    import random as _rnd  # лениво, чтобы не тащить в верхний скоуп
+
+    mention = f"@{MANAGER_TG_USERNAME}" if MANAGER_TG_USERNAME else ""
+    template = _rnd.choice(_PING_LINES_ON_SHIFT if on_shift else _PING_LINES_OFF_SHIFT)
+    return template.format(mention=mention, name=MANAGER_TG_NAME, when=when).strip()
+
+
+
 # CTA на карту лояльности — отправляется через ~10 секунд после подтверждения брони
 LOYALTY_URL = os.getenv("VK_LOYALTY_URL", "https://moscow.evgenich.bar/loyalty")
 T_LOYALTY = (
@@ -1141,23 +1174,25 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                         # Тихо логируем в TG (без отметки "СРОЧНО"), чтобы менеджер
                         # ответил, как только выйдет на смену
                         when = _format_next_shift(status["next_shift"])
+                        ping = _ping_manager_line(on_shift=False, when=when)
                         _tg_notify(
+                            f"{ping}\n\n"
                             "🌙 <b>Гость из ВКонтакте писал старшему вне смены</b>\n\n"
                             f"👤 {profile_name or '—'}\n"
                             f"🔗 <a href=\"{vk_link}\">{vk_link}</a>\n"
                             f"🆔 VK ID: <code>{vk_user_id}</code>\n"
-                            f"⏰ Старший на смене: <b>{when}</b>\n\n"
-                            "Свяжитесь с гостем, когда заступите."
+                            f"⏰ Старший на смене: <b>{when}</b>"
                         )
                         return
 
                     # Старший на смене — обычное уведомление
+                    ping = _ping_manager_line(on_shift=True)
                     _tg_notify(
+                        f"{ping}\n\n"
                         "🙋 <b>Гость из ВКонтакте просит старшего</b>\n\n"
                         f"👤 {profile_name or '—'}\n"
                         f"🔗 <a href=\"{vk_link}\">{vk_link}</a>\n"
-                        f"🆔 VK ID: <code>{vk_user_id}</code>\n\n"
-                        "Свяжитесь с гостем напрямую."
+                        f"🆔 VK ID: <code>{vk_user_id}</code>"
                     )
                     _vk_send(vk_user_id, T_MANAGER_CALLED, _kb_empty())
                     return
