@@ -5,6 +5,10 @@
 
 from ai.knowledge_base import KNOWLEDGE_BASE_TEXT
 
+# Сообщение-заглушка, которое возвращается при отсутствии релевантного контекста.
+# Экспортируется, чтобы вызывающий код мог надёжно определить «пустой» ответ.
+KNOWLEDGE_EMPTY_MSG = "Ничего конкретного не нашлось, но я всё равно попробую помочь."
+
 
 def find_relevant_info(query: str) -> str:
     """
@@ -20,7 +24,7 @@ def find_relevant_info(query: str) -> str:
             relevant_context.append(line)
     
     if not relevant_context:
-        return "Ничего конкретного не нашлось, но я всё равно попробую помочь."
+        return KNOWLEDGE_EMPTY_MSG
     
     # Убираем дубликаты и объединяем
     seen = set()

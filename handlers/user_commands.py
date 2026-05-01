@@ -1626,3 +1626,8 @@ def register_user_command_handlers(bot):
             bot.send_message(user_id, "Произошла ошибка при проверке пароля. Попробуйте позже.")
             if user_id in password_attempts:
                 del password_attempts[user_id]
+
+    @bot.message_handler(commands=['ping'])
+    def handle_ping(message: types.Message):
+        """Проверка доступности бота — отвечает «Я тут!»."""
+        bot.reply_to(message, "🟢 Я тут! Евгенич на связи 🥃")
