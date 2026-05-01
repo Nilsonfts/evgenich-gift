@@ -144,8 +144,8 @@ def _is_duplicate_event(event_id: str) -> bool:
 # Конфигурация баров (только МСК — Пятницкая и Цветной)
 # ──────────────────────────────────────────────────────────────────────────────
 BARS = [
-    {"key": "pyatnitskaya", "label": "🏛 Пятницкая 30",   "name": "Москва, Пятницкая 30",   "code": "ЕВГ_МСК_ПЯТ"},
-    {"key": "tsvetnoj",     "label": "🌸 Цветной бульвар", "name": "Москва, Цветной бульвар", "code": "ЕВГ_МСК_ЦВЕТ"},
+    {"key": "pyatnitskaya", "label": "🏛 Пятницкая 30с1",   "name": "Москва, Пятницкая 30с1",   "code": "ЕВГ_МСК_ПЯТ"},
+    {"key": "tsvetnoj",     "label": "🌸 Цветной бульвар 11с3", "name": "Москва, Цветной бульвар 11с3", "code": "ЕВГ_МСК_ЦВЕТ"},
 ]
 _BAR_BY_KEY = {b["key"]: b for b in BARS}
 _BAR_BY_LABEL = {b["label"].lower(): b for b in BARS}
@@ -461,6 +461,96 @@ def _kb_cancel() -> str:
 def _kb_empty() -> str:
     return json.dumps({"buttons": [], "one_time": True}, ensure_ascii=False)
 
+
+# ── Быстрые ответы на шагах date/time/guests ─────────────────────────────────
+_RU_WEEKDAYS_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+
+
+def _kb_dates() -> str:
+    """Кнопки: Сегодня / Завтра / Послезавтра + ближайшие пт/сб/вс (если ещё не среди трёх)."""
+    today = _moscow_now()
+    base = [
+        (today, "Сегодня"),
+        (today + timedelta(days=1), "Завтра"),
+        (today + timedelta(days=2), "Послезавтра"),
+    ]
+    # Дополняем ближайшими выходными (пт/сб/вс), если их ещё нет среди трёх первых
+    weekend_targets = (4, 5, 6)  # Пт=4, Сб=5, Вс=6
+    extras: list[tuple[datetime, str]] = []
+    seen_dates = {d.date() for d, _ in base}
+    for offset in range(3, 8):
+        d = today + timedelta(days=offset)
+        if d.weekday() in weekend_targets and d.date() not in seen_dates:
+            extras.append((d, _RU_WEEKDAYS_SHORT[d.weekday()]))
+            seen_dates.add(d.date())
+        if len(extras) >= 3:
+            break
+
+    rows: list[list[dict]] = []
+    row: list[dict] = []
+    for d, label_word in base + extras:
+        date_str = d.strftime("%d.%m.%Y")
+        label = f"{label_word} {d.strftime('%d.%m')}"
+        row.append({
+            "action": {"type": "text", "label": label, "payload": json.dumps({"date": date_str})},
+            "color": "primary",
+        })
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([{
+        "action": {"type": "text", "label": "❌ Отмена", "payload": json.dumps({"cancel": True})},
+        "color": "negative",
+    }])
+    return json.dumps({"one_time": False, "inline": False, "buttons": rows}, ensure_ascii=False)
+
+
+def _kb_times() -> str:
+    """Кнопки с популярными временами для брони."""
+    times = ["18:00", "19:00", "19:30", "20:00", "20:30", "21:00", "21:30", "22:00"]
+    rows: list[list[dict]] = []
+    row: list[dict] = []
+    for t in times:
+        row.append({
+            "action": {"type": "text", "label": t, "payload": json.dumps({"time": t})},
+            "color": "primary",
+        })
+        if len(row) == 4:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([{
+        "action": {"type": "text", "label": "❌ Отмена", "payload": json.dumps({"cancel": True})},
+        "color": "negative",
+    }])
+    return json.dumps({"one_time": False, "inline": False, "buttons": rows}, ensure_ascii=False)
+
+
+def _kb_guests() -> str:
+    """Кнопки с количеством гостей."""
+    counts = ["2", "3", "4", "5", "6", "8", "10"]
+    rows: list[list[dict]] = []
+    row: list[dict] = []
+    for c in counts:
+        row.append({
+            "action": {"type": "text", "label": c, "payload": json.dumps({"guests": int(c)})},
+            "color": "primary",
+        })
+        if len(row) == 4:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([{
+        "action": {"type": "text", "label": "❌ Отмена", "payload": json.dumps({"cancel": True})},
+        "color": "negative",
+    }])
+    return json.dumps({"one_time": False, "inline": False, "buttons": rows}, ensure_ascii=False)
+
+
 def _kb_loyalty() -> str:
     """Inline-клавиатура с прямой ссылкой на регистрацию карты лояльности."""
     return json.dumps({
@@ -759,7 +849,7 @@ def _clear_vk_history(vk_user_id: int) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 _AI_SYSTEM = (
     "Ты Евгенич — живой AI-ассистент сети рюмочных «Евгенич». "
-    "В ВКонтакте отвечаешь по московским барам: Пятницкая 30 и Цветной бульвар. "
+    "В ВКонтакте отвечаешь по московским барам: Пятницкая 30с1 и Цветной бульвар 11с3. "
     "СПб (Невский 53, Рубинштейна 9) — упоминай только если спросят напрямую. "
     "\n\n"
     "СТИЛЬ:\n"
@@ -1083,7 +1173,18 @@ def _save_vk_contact(vk_user_id: int, name: str, phone: str) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 _DATE_RE = re.compile(r"^(\d{1,2})[.\-/](\d{1,2})(?:[.\-/](\d{2,4}))?$")
 _TIME_RE = re.compile(r"^(\d{1,2})[:.\- ](\d{2})$")
+# Чистый час без минут («19», «19ч», «19 часов»)
+_HOUR_ONLY_RE = re.compile(r"^(\d{1,2})\s*(?:ч|час|часов|часа|часок|h)?$")
 _PHONE_DIGITS_RE = re.compile(r"\D+")
+_WEEKDAYS_MAP = {
+    "пн": 0, "понедельник": 0, "в понедельник": 0,
+    "вт": 1, "вторник": 1, "во вторник": 1,
+    "ср": 2, "среда": 2, "в среду": 2,
+    "чт": 3, "четверг": 3, "в четверг": 3,
+    "пт": 4, "пятница": 4, "в пятницу": 4,
+    "сб": 5, "суббота": 5, "в субботу": 5,
+    "вс": 6, "воскресенье": 6, "в воскресенье": 6,
+}
 _BOOKING_TRIGGERS = (
     "бронь", "брон", "столик", "стол ", "забронир", "резерв",
     "book", "booking", "забронировать", "/book", "/start",
@@ -1091,12 +1192,26 @@ _BOOKING_TRIGGERS = (
 
 def _parse_date(text: str) -> Optional[str]:
     t = text.strip().lower()
-    today = datetime.now()
+    today = _moscow_now()
     if t in ("сегодня", "сегодн", "today"):
         return today.strftime("%d.%m.%Y")
     if t in ("завтра", "завтр", "tomorrow"):
         return (today + timedelta(days=1)).strftime("%d.%m.%Y")
-    m = _DATE_RE.match(t)
+    if t in ("послезавтра", "послезавтр"):
+        return (today + timedelta(days=2)).strftime("%d.%m.%Y")
+    # Кнопка VK приходит в формате "Сегодня 02.05" / "Пт 03.05" — явный хвост dd.mm
+    tail_match = re.search(r"(\d{1,2})[.\-/](\d{1,2})$", t)
+    if tail_match and t != tail_match.group(0):
+        # Обработаем как обычную дату из хвоста
+        t_for_match = tail_match.group(0)
+    else:
+        t_for_match = t
+    # День недели — берём ближайшую будущую (включая сегодня, если совпало)
+    wd = _WEEKDAYS_MAP.get(t_for_match)
+    if wd is not None:
+        delta = (wd - today.weekday()) % 7
+        return (today + timedelta(days=delta)).strftime("%d.%m.%Y")
+    m = _DATE_RE.match(t_for_match)
     if not m:
         return None
     d, mn, y = m.group(1), m.group(2), m.group(3)
@@ -1121,13 +1236,21 @@ def _parse_date(text: str) -> Optional[str]:
         return None
 
 def _parse_time(text: str) -> Optional[str]:
-    m = _TIME_RE.match(text.strip())
-    if not m:
+    raw = text.strip().lower()
+    m = _TIME_RE.match(raw)
+    if m:
+        h, mn = int(m.group(1)), int(m.group(2))
+        if 0 <= h <= 23 and 0 <= mn <= 59:
+            return f"{h:02d}:{mn:02d}"
         return None
-    h, mn = int(m.group(1)), int(m.group(2))
-    if not (0 <= h <= 23 and 0 <= mn <= 59):
-        return None
-    return f"{h:02d}:{mn:02d}"
+    # Один час без минут — «19» / «19ч» / «в 19» → 19:00
+    raw2 = raw.lstrip("в ").strip()
+    m2 = _HOUR_ONLY_RE.match(raw2)
+    if m2:
+        h = int(m2.group(1))
+        if 0 <= h <= 23:
+            return f"{h:02d}:00"
+    return None
 
 def _parse_guests(text: str) -> Optional[int]:
     digits = _PHONE_DIGITS_RE.sub("", text.strip())
@@ -1188,13 +1311,13 @@ def _start_flow(vk_user_id: int) -> None:
     _vk_send(vk_user_id, _make_greeting(vk_user_id), _kb_cancel())
 
 def _ask_date(vk_user_id: int) -> None:
-    _vk_send(vk_user_id, T_ASK_DATE, _kb_cancel())
+    _vk_send(vk_user_id, T_ASK_DATE, _kb_dates())
 
 def _ask_time(vk_user_id: int) -> None:
-    _vk_send(vk_user_id, T_ASK_TIME, _kb_cancel())
+    _vk_send(vk_user_id, T_ASK_TIME, _kb_times())
 
 def _ask_guests(vk_user_id: int) -> None:
-    _vk_send(vk_user_id, T_ASK_GUESTS, _kb_cancel())
+    _vk_send(vk_user_id, T_ASK_GUESTS, _kb_guests())
 
 def _ask_name(vk_user_id: int) -> None:
     _vk_send(vk_user_id, T_ASK_NAME, _kb_cancel())
@@ -1411,9 +1534,13 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
 
             # ── ШАГ: date ────────────────────────────────
             if step == "date":
-                date = _parse_date(text)
+                date = None
+                if payload and payload.get("date"):
+                    date = payload["date"]
+                else:
+                    date = _parse_date(text)
                 if not date:
-                    _vk_send(vk_user_id, T_BAD_DATE, _kb_cancel())
+                    _vk_send(vk_user_id, T_BAD_DATE, _kb_dates())
                     return
                 s["date"] = date
                 s["step"] = "time"
@@ -1423,9 +1550,13 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
 
             # ── ШАГ: time ────────────────────────────────
             if step == "time":
-                t = _parse_time(text)
+                t = None
+                if payload and payload.get("time"):
+                    t = payload["time"]
+                else:
+                    t = _parse_time(text)
                 if not t:
-                    _vk_send(vk_user_id, T_BAD_TIME, _kb_cancel())
+                    _vk_send(vk_user_id, T_BAD_TIME, _kb_times())
                     return
                 s["time"] = t
                 s["step"] = "guests"
@@ -1435,9 +1566,18 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
 
             # ── ШАГ: guests ──────────────────────────────
             if step == "guests":
-                n = _parse_guests(text)
+                n = None
+                if payload and payload.get("guests") is not None:
+                    try:
+                        n = int(payload["guests"])
+                        if not (1 <= n <= 20):
+                            n = None
+                    except (ValueError, TypeError):
+                        n = None
+                if n is None:
+                    n = _parse_guests(text)
                 if not n:
-                    _vk_send(vk_user_id, T_BAD_GUESTS, _kb_cancel())
+                    _vk_send(vk_user_id, T_BAD_GUESTS, _kb_guests())
                     return
                 s["guests"] = n
                 s["step"] = "bar"
