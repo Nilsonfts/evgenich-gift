@@ -560,6 +560,8 @@ def _try_send_wall_posts(vk_user_id: int, user_text: str) -> bool:
     """Если гость спрашивает про афишу/мероприятия/посты — шлём пост со стены.
 
     Возвращает True, если что-то отправили (значит дальше AI не дёргаем).
+    Если стену прочитать не удалось, всё равно шлём дружелюбную ссылку на
+    группу — лучше, чем дать AI извиняться 'не могу отправить афишу'.
     """
     try:
         from ai.vk_wall import is_wall_query, find_event_posts, format_posts_for_message  # noqa: PLC0415
@@ -573,21 +575,31 @@ def _try_send_wall_posts(vk_user_id: int, user_text: str) -> bool:
         posts = find_event_posts(user_text, max_posts=2)
     except Exception as e:
         logger.warning("VK wall: не удалось получить посты: %s", e)
-        return False
+        posts = []
 
-    if not posts:
-        return False
+    if posts:
+        text, attachment = format_posts_for_message(posts, limit=2)
+        if attachment:
+            try:
+                kb = _kb_smalltalk() if _should_attach_smalltalk_kb(vk_user_id, text) else None
+                _vk_send(vk_user_id, text, kb, attachment=attachment)
+                return True
+            except Exception as e:
+                logger.warning("VK wall: отправка поста упала: %s", e)
 
-    text, attachment = format_posts_for_message(posts, limit=2)
-    if not attachment:
-        return False
-
+    # Fallback — посты не получили (нет токена/scope wall/VK_GROUP_ID), но гость
+    # явно просит афишу. Не отдаём это AI (он начнёт извиняться) — отвечаем сами.
+    group_url = os.getenv("VK_GROUP_URL", "https://vk.com/evgenichmsk")
+    fallback = (
+        "Свежая афиша всегда в постах группы — там анонсы вечеринок, "
+        "квартирников и спецпрограммы.\n"
+        f"👉 {group_url}"
+    )
     try:
-        kb = _kb_smalltalk() if _should_attach_smalltalk_kb(vk_user_id, text) else None
-        _vk_send(vk_user_id, text, kb, attachment=attachment)
+        _vk_send(vk_user_id, fallback, _kb_smalltalk())
         return True
     except Exception as e:
-        logger.warning("VK wall: отправка поста упала: %s", e)
+        logger.warning("VK wall fallback: отправка не прошла: %s", e)
         return False
 
 

@@ -55,7 +55,12 @@ def _get_token() -> str:
 
 
 def _resolve_group_id() -> int:
-    """Определяет числовой ID сообщества: либо из env, либо через groups.getById."""
+    """Определяет числовой ID сообщества.
+
+    1. env VK_GROUP_ID (желательно задавать явно — экономит вызов API).
+    2. Нижний фолбэк: groups.getById без параметров — для community-токена
+       возвращает инфу именно этого сообщества.
+    """
     global _group_id_cache
     if _group_id_cache:
         return _group_id_cache
@@ -64,12 +69,14 @@ def _resolve_group_id() -> int:
     if env_id:
         try:
             _group_id_cache = abs(int(env_id))
+            logger.info("VK wall: использую VK_GROUP_ID=%s из env", _group_id_cache)
             return _group_id_cache
         except ValueError:
             logger.warning("VK_GROUP_ID не число: %r", env_id)
 
     token = _get_token()
     if not token:
+        logger.warning("VK wall: VK_GROUP_TOKEN не задан, group_id определить нельзя")
         return 0
     try:
         r = requests.get(
@@ -79,14 +86,16 @@ def _resolve_group_id() -> int:
         )
         data = r.json()
         if "error" in data:
-            logger.warning("VK groups.getById error: %s", data["error"])
+            logger.warning("VK groups.getById error: %s. Задай VK_GROUP_ID явно", data["error"])
             return 0
         groups = data.get("response", {}).get("groups") or data.get("response") or []
         if isinstance(groups, list) and groups:
             gid = int(groups[0].get("id", 0))
             if gid:
                 _group_id_cache = gid
+                logger.info("VK wall: group_id определён через API: %s", gid)
                 return gid
+        logger.warning("VK wall: groups.getById вернул пусто: %s", data)
     except Exception as e:
         logger.warning("VK groups.getById упал: %s", e)
     return 0
@@ -102,6 +111,7 @@ def _fetch_wall(force: bool = False) -> list[dict]:
     token = _get_token()
     gid = _resolve_group_id()
     if not token or not gid:
+        logger.warning("VK wall: невозможно читать стену: token=%s gid=%s", bool(token), gid)
         return []
 
     owner_id = -gid
