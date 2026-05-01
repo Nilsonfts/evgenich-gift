@@ -212,8 +212,13 @@ def _kb_smalltalk() -> str:
 _VK_API = "https://api.vk.com/method"
 _VK_VERSION = "5.199"
 
-def _vk_send(user_id: int, text: str, keyboard: Optional[str] = None) -> None:
-    """Отправляет сообщение пользователю VK. Глотает любые ошибки сети с логом."""
+def _vk_send(user_id: int, text: str, keyboard: Optional[str] = None,
+             attachment: Optional[str] = None) -> None:
+    """Отправляет сообщение пользователю VK. Глотает любые ошибки сети с логом.
+
+    `attachment` — строка вида 'wall-12345_678' или несколько через запятую,
+    чтобы переслать пост со стены сообщества прямо в личку.
+    """
     if not VK_GROUP_TOKEN:
         logger.warning("VK_GROUP_TOKEN не задан — сообщение пользователю %s не отправлено", user_id)
         return
@@ -227,6 +232,8 @@ def _vk_send(user_id: int, text: str, keyboard: Optional[str] = None) -> None:
     }
     if keyboard is not None:
         payload["keyboard"] = keyboard
+    if attachment:
+        payload["attachment"] = attachment
     try:
         r = requests.post(f"{_VK_API}/messages.send", data=payload, timeout=10)
         data = r.json()
@@ -478,7 +485,11 @@ _AI_SYSTEM = (
     "\n"
     "БРОНЬ:\n"
     "— Только если гость САМ явно хочет забронировать («бронь», «столик», «зарезервировать», «можно стол на …») — ответь одним коротким предложением и добавь маркер [START_BOOKING] в самом конце (без пробела).\n"
-    "— На вопросы вроде «как дела», «что у вас по музыке», «какой депозит» — НИКОГДА не добавляй [START_BOOKING] и НЕ предлагай бронь."
+    "— На вопросы вроде «как дела», «что у вас по музыке», «какой депозит» — НИКОГДА не добавляй [START_BOOKING] и НЕ предлагай бронь.\n"
+    "\n"
+    "АФИША И СОБЫТИЯ:\n"
+    "— Не выдумывай конкретные мероприятия, даты концертов, названия вечеринок и имена артистов.\n"
+    "— Если гость спрашивает «что сегодня/завтра», «какая афиша», «что по мероприятиям» — общими словами скажи про формат (квартирник в будни, диско-квартирник в пт-сб) и предложи посмотреть свежие посты в группе ВК. Конкретные анонсы — отдельно пришлются постом со стены."
 )
 
 # Маркер, который AI вставляет когда нужно открыть сценарий бронирования
@@ -516,6 +527,41 @@ def _should_attach_smalltalk_kb(vk_user_id: int, ai_text: str) -> bool:
     except Exception:
         return True
     return False
+
+
+def _try_send_wall_posts(vk_user_id: int, user_text: str) -> bool:
+    """Если гость спрашивает про афишу/мероприятия/посты — шлём пост со стены.
+
+    Возвращает True, если что-то отправили (значит дальше AI не дёргаем).
+    """
+    try:
+        from ai.vk_wall import is_wall_query, find_event_posts, format_posts_for_message  # noqa: PLC0415
+    except ImportError:
+        return False
+
+    if not is_wall_query(user_text):
+        return False
+
+    try:
+        posts = find_event_posts(user_text, max_posts=2)
+    except Exception as e:
+        logger.warning("VK wall: не удалось получить посты: %s", e)
+        return False
+
+    if not posts:
+        return False
+
+    text, attachment = format_posts_for_message(posts, limit=2)
+    if not attachment:
+        return False
+
+    try:
+        kb = _kb_smalltalk() if _should_attach_smalltalk_kb(vk_user_id, text) else None
+        _vk_send(vk_user_id, text, kb, attachment=attachment)
+        return True
+    except Exception as e:
+        logger.warning("VK wall: отправка поста упала: %s", e)
+        return False
 
 
 def _ai_reply(user_text: str, vk_user_id: int = 0) -> Optional[str]:
@@ -809,6 +855,10 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                 else:
                     # Свободный вопрос → пробуем AI с историей диалога
                     if text:
+                        # 1) Если гость спрашивает про афишу/мероприятия/посты —
+                        #    сначала пробуем достать пост со стены сообщества.
+                        if _try_send_wall_posts(vk_user_id, text):
+                            return
                         ai_text = _ai_reply(text, vk_user_id)
                         if ai_text:
                             # AI попросил открыть сценарий бронирования
