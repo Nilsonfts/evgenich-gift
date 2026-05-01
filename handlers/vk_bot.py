@@ -594,23 +594,61 @@ def _should_attach_smalltalk_kb(vk_user_id: int, ai_text: str) -> bool:
     return False
 
 
+def _try_send_menu_photos(vk_user_id: int, user_text: str) -> bool:
+    """Если гость просит меню — шлём фото из альбомов 'Меню кухни'/'Меню бара'."""
+    try:
+        from ai.vk_media import is_menu_query, find_menu_attachments  # noqa: PLC0415
+    except ImportError:
+        return False
+
+    if not is_menu_query(user_text):
+        return False
+
+    try:
+        text, attachment = find_menu_attachments(user_text, max_attachments=8)
+    except Exception as e:
+        logger.warning("VK menu: не удалось получить фото: %s", e)
+        return False
+
+    if attachment:
+        try:
+            _vk_send(vk_user_id, text, _kb_smalltalk(), attachment=attachment)
+            return True
+        except Exception as e:
+            logger.warning("VK menu: отправка фото упала: %s", e)
+
+    # Альбомы с меню не найдены — отвечаем коротко из базы знаний (через AI/fallback),
+    # не зацикливаем здесь, дальше пойдёт _ai_reply.
+    return False
+
+
 def _try_send_wall_posts(vk_user_id: int, user_text: str) -> bool:
     """Если гость спрашивает про афишу/мероприятия/посты — шлём пост со стены.
 
-    Возвращает True, если что-то отправили (значит дальше AI не дёргаем).
-    Если стену прочитать не удалось, всё равно шлём дружелюбную ссылку на
-    группу — лучше, чем дать AI извиняться 'не могу отправить афишу'.
+    Логика по убыванию приоритета:
+      1) пост, релевантный тексту запроса (по словам);
+      2) если совпадений нет — самый свежий пост (или закреп);
+      3) если стену вообще не получили (нет VK_GROUP_ID/scope) — текстовый fallback
+         со ссылкой на группу.
     """
     try:
-        from ai.vk_wall import is_wall_query, find_event_posts, format_posts_for_message  # noqa: PLC0415
+        from ai.vk_wall import (  # noqa: PLC0415
+            is_wall_query,
+            find_event_posts,
+            get_recent_posts,
+            format_posts_for_message,
+        )
     except ImportError:
         return False
 
     if not is_wall_query(user_text):
         return False
 
+    posts: list = []
     try:
         posts = find_event_posts(user_text, max_posts=2)
+        if not posts:
+            posts = get_recent_posts(limit=2)
     except Exception as e:
         logger.warning("VK wall: не удалось получить посты: %s", e)
         posts = []
@@ -619,8 +657,7 @@ def _try_send_wall_posts(vk_user_id: int, user_text: str) -> bool:
         text, attachment = format_posts_for_message(posts, limit=2)
         if attachment:
             try:
-                kb = _kb_smalltalk() if _should_attach_smalltalk_kb(vk_user_id, text) else None
-                _vk_send(vk_user_id, text, kb, attachment=attachment)
+                _vk_send(vk_user_id, text, _kb_smalltalk(), attachment=attachment)
                 return True
             except Exception as e:
                 logger.warning("VK wall: отправка поста упала: %s", e)
@@ -951,7 +988,10 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                 else:
                     # Свободный вопрос → пробуем AI с историей диалога
                     if text:
-                        # 1) Если гость спрашивает про афишу/мероприятия/посты —
+                        # 1) Если гость просит меню — шлём фото из альбомов «Меню кухни/бара»
+                        if _try_send_menu_photos(vk_user_id, text):
+                            return
+                        # 2) Если гость спрашивает про афишу/мероприятия/посты —
                         #    сначала пробуем достать пост со стены сообщества.
                         if _try_send_wall_posts(vk_user_id, text):
                             return
