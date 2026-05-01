@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import re
 import threading
 import time
@@ -157,6 +158,70 @@ T_GREETING = (
     "Я Евгенич — помогу забронировать столик за минуту.\n\n"
     "Выбирай заведение:"
 )
+
+# Варианты приветствия — выбираются с учётом времени суток (МСК) и того,
+# знаком ли уже гость. Хвост «Выбирай заведение:» добавляется отдельно.
+_GREET_TAIL_NEW = "Помогу забронировать столик за минуту. Выбирай заведение:"
+_GREET_TAIL_BACK = "Подыщем столик? Выбирай заведение:"
+
+_GREETINGS_MORNING = [
+    "Доброе утро, товарищ! ☕",
+    "Утро доброе! ☀️ Готовлю стойку.",
+    "С добрым утром! 🥃 Уже на смене.",
+]
+_GREETINGS_DAY = [
+    "Здравствуй, товарищ! 🥃",
+    "Приветствую! 👋 За стойкой как штык.",
+    "Добрый день, товарищ! Чем порадовать?",
+    "Здорово, товарищ! 🥃",
+]
+_GREETINGS_EVENING = [
+    "Добрый вечер, товарищ! 🌆 Вечер обещает быть ламповым.",
+    "Здорово, товарищ! 🥃 Вечер у нас в самом разгаре.",
+    "Приветствую! 🍻 К вечеру всё готово.",
+]
+_GREETINGS_NIGHT = [
+    "Доброй ночи, товарищ! 🌙 Я ещё на посту.",
+    "На связи, товарищ. 🥃 Полуночник?",
+]
+
+_GREETINGS_RETURN = [
+    "С возвращением, {name}! 🥃",
+    "О, {name}, рад тебя видеть снова! 👋",
+    "Снова на огонёк, {name}? 🔥 Заходи.",
+    "Здорово, {name}! Давно не виделись.",
+    "{name}, рад снова слышать! 🥃",
+]
+
+
+def _greet_pool_for_hour(hour: int) -> list[str]:
+    if 5 <= hour < 11:
+        return _GREETINGS_MORNING
+    if 11 <= hour < 17:
+        return _GREETINGS_DAY
+    if 17 <= hour < 23:
+        return _GREETINGS_EVENING
+    return _GREETINGS_NIGHT
+
+
+def _make_greeting(vk_user_id: int) -> str:
+    """Случайное приветствие с учётом времени суток МСК и знакомства с гостем.
+
+    Если у гостя сохранён контакт (повторное обращение) — приветствуем по имени.
+    Иначе — нейтральное приветствие по времени суток. Хвост-инструкция
+    про выбор заведения остаётся неизменным.
+    """
+    hour = _moscow_now().hour
+    contact = _get_vk_contact(vk_user_id)
+    if contact and contact.get("name"):
+        # Возьмём первое имя без отчества/фамилии для естественности
+        first_name = contact["name"].split()[0]
+        head = random.choice(_GREETINGS_RETURN).format(name=first_name)
+        tail = _GREET_TAIL_BACK
+    else:
+        head = random.choice(_greet_pool_for_hour(hour))
+        tail = _GREET_TAIL_NEW
+    return f"{head}\n{tail}"
 T_ASK_DATE   = "📅 На какую дату? (например: 25.04 или «сегодня», «завтра»)"
 T_ASK_TIME   = "🕐 На какое время? (например: 19:30)"
 T_ASK_GUESTS = "👥 Сколько будет гостей? (число от 1 до 20)"
@@ -1102,7 +1167,7 @@ def _is_yes(text: str) -> bool:
 # ──────────────────────────────────────────────────────────────────────────────
 def _start_flow(vk_user_id: int) -> None:
     _save_session(vk_user_id, {"step": "bar"})
-    _vk_send(vk_user_id, T_GREETING, _kb_bars())
+    _vk_send(vk_user_id, _make_greeting(vk_user_id), _kb_bars())
 
 def _ask_date(vk_user_id: int) -> None:
     _vk_send(vk_user_id, T_ASK_DATE, _kb_cancel())
