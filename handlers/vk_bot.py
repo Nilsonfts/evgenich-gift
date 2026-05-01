@@ -146,6 +146,16 @@ T_MANAGER_CALLED = (
     "С тобой свяжутся в ближайшее время."
 )
 
+# CTA на карту лояльности — отправляется через ~10 секунд после подтверждения брони
+LOYALTY_URL = os.getenv("VK_LOYALTY_URL", "https://moscow.evgenich.bar/loyalty")
+T_LOYALTY = (
+    "🎁 Погоди, это ещё не всё!\n\n"
+    "Евгенич — щедрая душа. Ловишь 500 ₽ на карту лояльности 💰\n\n"
+    "Копи бонусы с каждого визита и трать на напитки и еду — "
+    "как свои, только приятнее 🥃\n\n"
+    "Жми кнопку ниже и регистрируй карту 👇"
+)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Клавиатуры VK
 # ──────────────────────────────────────────────────────────────────────────────
@@ -185,6 +195,23 @@ def _kb_cancel() -> str:
 
 def _kb_empty() -> str:
     return json.dumps({"buttons": [], "one_time": True}, ensure_ascii=False)
+
+def _kb_loyalty() -> str:
+    """Inline-клавиатура с прямой ссылкой на регистрацию карты лояльности."""
+    return json.dumps({
+        "inline": True,
+        "buttons": [
+            [{
+                "action": {
+                    "type": "open_link",
+                    "link": LOYALTY_URL,
+                    "label": "🎁 Забрать 500 ₽ на карту",
+                    "payload": json.dumps({"loyalty": True}),
+                },
+            }],
+        ],
+    }, ensure_ascii=False)
+
 
 def _kb_smalltalk() -> str:
     """Клавиатура после AI-ответа: предложить бронь или вызвать менеджера."""
@@ -790,8 +817,26 @@ def _finalize(vk_user_id: int, s: dict, vk_profile: Optional[dict]) -> None:
         logger.exception("VK→Sheets вызов упал: %s", e)
     _vk_send(vk_user_id, T_DONE, _kb_empty())
     _drop_session(vk_user_id)
+    _schedule_loyalty_offer(vk_user_id)
     logger.info("VK booking confirmed: vk_user=%s bar=%s date=%s time=%s",
                 vk_user_id, bar_info.get("code"), s.get("date"), s.get("time"))
+
+
+def _schedule_loyalty_offer(vk_user_id: int, delay: float = 10.0) -> None:
+    """Через N секунд после подтверждения брони шлём CTA на карту лояльности.
+
+    Inline-кнопка ведёт на LOYALTY_URL. Любые ошибки — глушим в лог.
+    """
+    def _send():
+        try:
+            _vk_send(vk_user_id, T_LOYALTY, _kb_loyalty())
+            logger.info("VK loyalty CTA отправлен %s", vk_user_id)
+        except Exception as e:
+            logger.warning("VK loyalty CTA не отправлен %s: %s", vk_user_id, e)
+
+    timer = threading.Timer(delay, _send)
+    timer.daemon = True
+    timer.start()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
