@@ -263,8 +263,9 @@ if __name__ == "__main__":
             telebot.types.BotCommand("start", "🏠 Главное меню"),
             telebot.types.BotCommand("book", "📋 Забронировать столик"),
             telebot.types.BotCommand("help", "❓ Справка"),
+            telebot.types.BotCommand("ping", "🟢 Проверить доступность бота"),
         ])
-        logging.info("✅ Меню команд бота обновлено: /start, /book, /help")
+        logging.info("✅ Меню команд бота обновлено: /start, /book, /help, /ping")
     except Exception as e:
         logging.warning(f"⚠️ Не удалось обновить меню команд: {e}")
 
