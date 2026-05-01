@@ -184,6 +184,119 @@ T_MANAGER_CALLED = (
     "С тобой свяжутся в ближайшее время."
 )
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Расписание старшего (МСК): пн–сб 11:00–22:00, ВС — выходной
+# ──────────────────────────────────────────────────────────────────────────────
+MANAGER_WORK_START_HOUR = int(os.getenv("VK_MANAGER_START_HOUR", "11"))
+MANAGER_WORK_END_HOUR = int(os.getenv("VK_MANAGER_END_HOUR", "22"))
+MANAGER_DAY_OFF_WEEKDAY = 6  # Воскресенье (понедельник=0)
+
+
+def _moscow_now() -> datetime:
+    """Текущее время МСК (UTC+3, без DST)."""
+    return datetime.utcnow() + timedelta(hours=3)
+
+
+def _manager_status() -> dict:
+    """Возвращает статус старшего на текущий момент в МСК.
+
+    Поля:
+        available: bool — старший на смене прямо сейчас
+        reason: str — 'on_shift' | 'before_shift' | 'after_shift' | 'day_off'
+        next_shift: datetime — когда выйдет на смену (МСК)
+    """
+    now = _moscow_now()
+    weekday = now.weekday()
+    today_start = now.replace(hour=MANAGER_WORK_START_HOUR, minute=0, second=0, microsecond=0)
+    today_end = now.replace(hour=MANAGER_WORK_END_HOUR, minute=0, second=0, microsecond=0)
+
+    # Воскресенье — выходной целиком
+    if weekday == MANAGER_DAY_OFF_WEEKDAY:
+        # Следующая смена — понедельник 11:00
+        next_shift = (now + timedelta(days=1)).replace(
+            hour=MANAGER_WORK_START_HOUR, minute=0, second=0, microsecond=0
+        )
+        return {"available": False, "reason": "day_off", "next_shift": next_shift}
+
+    if now < today_start:
+        return {"available": False, "reason": "before_shift", "next_shift": today_start}
+
+    if now >= today_end:
+        # Завтра. Если завтра воскресенье — переносим на понедельник
+        delta_days = 2 if weekday == 5 else 1  # суббота → понедельник
+        next_shift = (now + timedelta(days=delta_days)).replace(
+            hour=MANAGER_WORK_START_HOUR, minute=0, second=0, microsecond=0
+        )
+        return {"available": False, "reason": "after_shift", "next_shift": next_shift}
+
+    return {"available": True, "reason": "on_shift", "next_shift": today_start}
+
+
+_WEEKDAY_TOMORROW = {
+    0: "завтра в", 1: "завтра в", 2: "завтра в", 3: "завтра в",
+    4: "завтра в", 5: "в понедельник в",  # сб → пн
+    6: "завтра в",  # вс → пн (но vc не должен сюда попадать)
+}
+
+
+def _format_next_shift(next_shift: datetime) -> str:
+    """Человеческая фраза 'сегодня в 11:00' / 'завтра в 11:00' / 'в понедельник в 11:00'."""
+    now = _moscow_now()
+    same_day = next_shift.date() == now.date()
+    time_str = next_shift.strftime("%H:%M")
+    if same_day:
+        return f"сегодня в {time_str}"
+    if next_shift.weekday() == 0 and now.weekday() == 5:
+        return f"в понедельник в {time_str}"
+    if (next_shift.date() - now.date()).days == 1:
+        return f"завтра в {time_str}"
+    weekday_ru = ["в понедельник", "во вторник", "в среду", "в четверг",
+                  "в пятницу", "в субботу", "в воскресенье"][next_shift.weekday()]
+    return f"{weekday_ru} в {time_str}"
+
+
+def _manager_offline_message(status: dict) -> str:
+    """Текст для гостя, когда старшего сейчас нет."""
+    when = _format_next_shift(status["next_shift"])
+    reason = status["reason"]
+    if reason == "day_off":
+        return (
+            "Старший сегодня на выходном — у него воскресенье 🌿\n"
+            f"Выйдет на смену {when} и сразу свяжется с тобой.\n\n"
+            "Если нужно срочно — оставь бронь столика прямо сейчас, я её приму "
+            "и менеджер бара перезвонит для подтверждения."
+        )
+    if reason == "before_shift":
+        return (
+            "Смена старшего ещё не началась — он на связи с 11:00 до 22:00 (кроме воскресенья).\n"
+            f"Заступит {when} и сразу ответит на твоё сообщение.\n\n"
+            "Если хочешь — могу прямо сейчас оформить бронь столика, "
+            "менеджер бара перезвонит для подтверждения."
+        )
+    # after_shift
+    return (
+        "Старший уже ушёл отдыхать — рабочий день у него до 22:00 🌙\n"
+        f"Будет на связи {when} и сразу напишет тебе.\n\n"
+        "Если по делу — оставь бронь столика прямо сейчас, я её приму, "
+        "менеджер бара перезвонит для подтверждения."
+    )
+
+
+def _kb_offline_manager() -> str:
+    """Клавиатура: предложить бронь, когда старший вне смены."""
+    return json.dumps({
+        "one_time": False,
+        "inline": False,
+        "buttons": [
+            [{
+                "action": {"type": "text", "label": "🎫 Забронировать столик",
+                           "payload": json.dumps({"start_booking": True})},
+                "color": "primary",
+            }],
+        ],
+    }, ensure_ascii=False)
+
+
 # CTA на карту лояльности — отправляется через ~10 секунд после подтверждения брони
 LOYALTY_URL = os.getenv("VK_LOYALTY_URL", "https://moscow.evgenich.bar/loyalty")
 T_LOYALTY = (
@@ -548,6 +661,10 @@ _AI_SYSTEM = (
     "— Если спросят, кто ты — честно скажи, что AI-ассистент бара Евгенич, не выдавай себя за конкретного человека.\n"
     "— Не повторяй из ответа в ответ одну и ту же фразу про бронь или старшего. Если уже предложил — больше не повторяй.\n"
     "\n"
+    "СТАРШИЙ:\n"
+    "— Старший на связи пн–сб с 11:00 до 22:00 по МСК. Воскресенье — у него выходной.\n"
+    "— Если предлагаешь позвать старшего вне его смены — сразу честно скажи, что прямо сейчас он не на смене, ответит как только выйдет, и предложи оформить бронь столика, чтобы менеджер бара перезвонил.\n"
+    "\n"
     "БРОНЬ:\n"
     "— Только если гость САМ явно хочет забронировать («бронь», «столик», «зарезервировать», «можно стол на …») — ответь одним коротким предложением и добавь маркер [START_BOOKING] в самом конце (без пробела).\n"
     "— На вопросы вроде «как дела», «что у вас по музыке», «какой депозит» — НИКОГДА не добавляй [START_BOOKING] и НЕ предлагай бронь.\n"
@@ -737,6 +854,26 @@ def _ai_reply(user_text: str, vk_user_id: int = 0) -> Optional[str]:
 
     # Формируем системный промпт (с базой знаний, если нашлась)
     system_content = _AI_SYSTEM
+    # Текущий статус старшего — чтобы AI говорил правдиво про "сейчас на смене / выходной"
+    try:
+        status = _manager_status()
+        when = _format_next_shift(status["next_shift"])
+        if status["available"]:
+            system_content += f"\n\nСТАРШИЙ СЕЙЧАС: на смене (до {MANAGER_WORK_END_HOUR:02d}:00 МСК)."
+        else:
+            reason_ru = {
+                "day_off": "сегодня воскресенье — выходной",
+                "before_shift": "смена ещё не началась",
+                "after_shift": "смена уже закончилась, ушёл отдыхать",
+            }.get(status["reason"], "не на смене")
+            system_content += (
+                f"\n\nСТАРШИЙ СЕЙЧАС: НЕ на смене ({reason_ru}). "
+                f"Будет на связи {when}. "
+                "Если предлагаешь позвать старшего — обязательно скажи, что прямо сейчас его нет, "
+                "ответит когда выйдет, и предложи оформить бронь."
+            )
+    except Exception:
+        pass
     if knowledge_snippet:
         system_content += f"\n\nРелевантная информация:\n{knowledge_snippet[:_KNOWLEDGE_SNIPPET_MAX_LEN]}"
 
@@ -995,6 +1132,26 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                     if vk_profile:
                         profile_name = f"{vk_profile.get('first_name','')} {vk_profile.get('last_name','')}".strip()
                     vk_link = f"https://vk.com/id{vk_user_id}"
+                    status = _manager_status()
+
+                    # Старшего сейчас нет — честно говорим гостю и предлагаем бронь
+                    if not status["available"]:
+                        offline_text = _manager_offline_message(status)
+                        _vk_send(vk_user_id, offline_text, _kb_offline_manager())
+                        # Тихо логируем в TG (без отметки "СРОЧНО"), чтобы менеджер
+                        # ответил, как только выйдет на смену
+                        when = _format_next_shift(status["next_shift"])
+                        _tg_notify(
+                            "🌙 <b>Гость из ВКонтакте писал старшему вне смены</b>\n\n"
+                            f"👤 {profile_name or '—'}\n"
+                            f"🔗 <a href=\"{vk_link}\">{vk_link}</a>\n"
+                            f"🆔 VK ID: <code>{vk_user_id}</code>\n"
+                            f"⏰ Старший на смене: <b>{when}</b>\n\n"
+                            "Свяжитесь с гостем, когда заступите."
+                        )
+                        return
+
+                    # Старший на смене — обычное уведомление
                     _tg_notify(
                         "🙋 <b>Гость из ВКонтакте просит старшего</b>\n\n"
                         f"👤 {profile_name or '—'}\n"
