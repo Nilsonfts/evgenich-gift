@@ -42,6 +42,9 @@ BOOKING_NOTIFICATIONS_CHAT_ID_MSK = -1003120803112
 REPORT_CHAT_ID = os.getenv("REPORT_CHAT_ID")
 
 logger = logging.getLogger(__name__)
+_DATABASE_MODULE = None
+_DATABASE_IMPORT_ATTEMPTED = False
+_VK_DIALOG_SOURCE = "vk"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Хранилище сессий
@@ -236,6 +239,8 @@ def _vk_send(user_id: int, text: str, keyboard: Optional[str] = None) -> None:
         data = r.json()
         if "error" in data:
             logger.error("VK messages.send error для %s: %s", user_id, data["error"])
+            return
+        _log_vk_turn(user_id, "assistant", text)
     except Exception as e:
         logger.exception("VK messages.send упал для %s: %s", user_id, e)
 
@@ -365,20 +370,56 @@ _hist_db_lock = threading.RLock()
 _VK_HIST_MAX_TURNS = 8  # Число диалоговых ходов (user+assistant = 2 записи на ход)
 
 
-def _get_vk_history(vk_user_id: int) -> list:
-    """Возвращает историю диалога VK-пользователя как список {role, content}."""
-    with _hist_db_lock:
-        rows = _hist_db.search(_HistQuery.vk_user_id == vk_user_id)
-        return rows[0].get("history", []) if rows else []
+def _get_database_module():
+    """Ленивый импорт общего DB-слоя, чтобы VK web-процесс не падал на импорте TG-конфига."""
+    global _DATABASE_MODULE, _DATABASE_IMPORT_ATTEMPTED
+    if _DATABASE_IMPORT_ATTEMPTED:
+        return _DATABASE_MODULE
+
+    _DATABASE_IMPORT_ATTEMPTED = True
+    try:
+        import core.database as database  # noqa: PLC0415
+
+        _DATABASE_MODULE = database
+    except Exception as e:
+        logger.warning("VK DB: не удалось импортировать core.database, использую fallback: %s", e)
+        _DATABASE_MODULE = None
+    return _DATABASE_MODULE
 
 
-def _add_vk_turn(vk_user_id: int, role: str, content: str) -> None:
-    """Добавляет ход в историю диалога, сохраняет последние N ходов."""
+def _get_vk_history(vk_user_id: int, limit: int = 12) -> list:
+    """Возвращает историю VK-диалога из SQL, а при недоступности — из локального fallback."""
+    database = _get_database_module()
+    if database is not None:
+        try:
+            return database.get_conversation_history(vk_user_id, limit=limit, source=_VK_DIALOG_SOURCE)
+        except Exception as e:
+            logger.warning("VK DB: не удалось прочитать историю %s, использую fallback: %s", vk_user_id, e)
+
     with _hist_db_lock:
         rows = _hist_db.search(_HistQuery.vk_user_id == vk_user_id)
         history = rows[0].get("history", []) if rows else []
-        history.append({"role": role, "content": content})
-        # Оставляем только последние N*2 записей (N ходов × 2 роли)
+        return history[-limit:]
+
+
+def _log_vk_turn(vk_user_id: int, role: str, content: str) -> None:
+    """Сохраняет ход диалога в SQL; если БД недоступна, пишет во временный fallback."""
+    text = (content or "").strip()
+    if not text:
+        return
+
+    database = _get_database_module()
+    if database is not None:
+        try:
+            database.log_conversation_turn(vk_user_id, role, text, source=_VK_DIALOG_SOURCE)
+            return
+        except Exception as e:
+            logger.warning("VK DB: не удалось записать %s для %s, использую fallback: %s", role, vk_user_id, e)
+
+    with _hist_db_lock:
+        rows = _hist_db.search(_HistQuery.vk_user_id == vk_user_id)
+        history = rows[0].get("history", []) if rows else []
+        history.append({"role": role, "content": text})
         max_records = _VK_HIST_MAX_TURNS * 2
         if len(history) > max_records:
             history = history[-max_records:]
@@ -388,8 +429,35 @@ def _add_vk_turn(vk_user_id: int, role: str, content: str) -> None:
         )
 
 
+def _persist_vk_booking(vk_user_id: int, s: dict) -> None:
+    """Пишет подтвержденную VK-бронь в PostgreSQL Railway, если он настроен."""
+    database = _get_database_module()
+    if database is None:
+        return
+
+    pg_client = getattr(database, "pg_client", None)
+    if not getattr(database, "USE_POSTGRES", False) or pg_client is None:
+        return
+
+    try:
+        booking_date = datetime.strptime(s["date"], "%d.%m.%Y")
+        pg_client.add_booking(
+            user_id=vk_user_id,
+            date=booking_date,
+            time=s.get("time", ""),
+            guests=s.get("guests"),
+            name=s.get("name", ""),
+            phone=s.get("phone", ""),
+            comment=f"VK booking | bar={s.get('bar_key', '')}",
+            source="vk",
+            source_detail=f"vk:{vk_user_id}:{s.get('bar_key', '')}",
+        )
+    except Exception as e:
+        logger.warning("VK DB: не удалось сохранить бронь %s: %s", vk_user_id, e)
+
+
 def _clear_vk_history(vk_user_id: int) -> None:
-    """Очищает историю диалога VK-пользователя."""
+    """Очищает только локальный fallback. SQL-историю сохраняем как долгую память."""
     with _hist_db_lock:
         _hist_db.remove(_HistQuery.vk_user_id == vk_user_id)
 
@@ -401,7 +469,9 @@ _AI_SYSTEM = (
     "Ты Евгенич — бот-бармен сети рюмочных «Евгенич». "
     "Города: Москва (Пятницкая 30 и Цветной бульвар) и Санкт-Петербург. "
     "В ВКонтакте принимаем брони только по Москве. "
-    "Стиль: дружелюбный, на «ты», коротко (1–3 предложения), не больше одного эмодзи. "
+    "Стиль: дружелюбный, живой, на «ты», коротко (1–3 предложения), не больше одного эмодзи. "
+    "Если спросят, кто ты, честно говори, что ты AI-ассистент Евгенич во ВКонтакте, а не конкретный сотрудник. "
+    "После ответа по теме мягко предлагай помочь с бронью, если это уместно. "
     "Если гость явно хочет забронировать столик — ответь ОДНИМ предложением и добавь "
     "маркер [START_BOOKING] в конце своего текста (без пробела перед ним). "
     "Иначе просто отвечай по теме вопроса. "
@@ -454,9 +524,14 @@ def _ai_reply(user_text: str, vk_user_id: int = 0) -> Optional[str]:
 
     # Строим сообщения: системный промпт → история → текущий запрос
     messages: list[dict[str, str]] = [{"role": "system", "content": system_content}]
-    if vk_user_id:
-        messages.extend(_get_vk_history(vk_user_id))
-    messages.append({"role": "user", "content": user_text[:1000]})
+    history = _get_vk_history(vk_user_id, limit=12) if vk_user_id else []
+    if history:
+        messages.extend(history)
+
+    normalized_user_text = user_text[:1000]
+    last_message = history[-1] if history else None
+    if not last_message or last_message.get("role") != "user" or last_message.get("content") != normalized_user_text:
+        messages.append({"role": "user", "content": normalized_user_text})
 
     try:
         client = OpenAI(api_key=api_key, timeout=12.0)
@@ -467,11 +542,6 @@ def _ai_reply(user_text: str, vk_user_id: int = 0) -> Optional[str]:
             max_tokens=200,
         )
         reply_text = (resp.choices[0].message.content or "").strip()
-        if reply_text and vk_user_id:
-            # Сохраняем ход в историю (без маркера — маркер служебный)
-            clean = reply_text.replace(_BOOKING_MARKER, "").strip()
-            _add_vk_turn(vk_user_id, "user", user_text[:1000])
-            _add_vk_turn(vk_user_id, "assistant", clean)
         return reply_text or None
     except Exception as e:
         logger.warning("VK AI: ошибка OpenAI: %s", e)
@@ -635,6 +705,7 @@ def _finalize(vk_user_id: int, s: dict, vk_profile: Optional[dict]) -> None:
         f"🌐 Источник: <b>VK сообщество</b>"
     )
     _tg_notify(msg)
+    _persist_vk_booking(vk_user_id, s)
     # Экспорт в Google Sheets — best-effort, не блокирует ответ гостю
     try:
         _export_vk_to_sheets(s, vk_user_id, vk_profile)
@@ -642,7 +713,6 @@ def _finalize(vk_user_id: int, s: dict, vk_profile: Optional[dict]) -> None:
         logger.exception("VK→Sheets вызов упал: %s", e)
     _vk_send(vk_user_id, T_DONE, _kb_empty())
     _drop_session(vk_user_id)
-    _clear_vk_history(vk_user_id)
     logger.info("VK booking confirmed: vk_user=%s bar=%s date=%s time=%s",
                 vk_user_id, bar_info.get("code"), s.get("date"), s.get("time"))
 
@@ -660,6 +730,9 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
     lock = _get_user_lock(vk_user_id)
     with lock:
         try:
+            if text:
+                _log_vk_turn(vk_user_id, "user", text)
+
             # Глобальная отмена
             if _is_cancel(text) or (payload and payload.get("cancel")):
                 if _get_session(vk_user_id):
@@ -697,7 +770,6 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
 
                 # Триггер брони — стартуем сценарий
                 if _is_booking_trigger(text) or (payload and payload.get("bar")):
-                    _clear_vk_history(vk_user_id)
                     _start_flow(vk_user_id)
                     if payload and payload.get("bar"):
                         s = _get_session(vk_user_id)
@@ -713,7 +785,6 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                                 clean = ai_text.replace(_BOOKING_MARKER, "").strip()
                                 if clean:
                                     _vk_send(vk_user_id, clean, _kb_smalltalk())
-                                _clear_vk_history(vk_user_id)
                                 _start_flow(vk_user_id)
                                 return
                             _vk_send(vk_user_id, ai_text + T_AI_FOOTER, _kb_smalltalk())

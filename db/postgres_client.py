@@ -36,6 +36,7 @@ class PostgresClient:
         self.staff_table = None
         self.bookings_table = None
         self.events_table = None
+        self.conversation_history_table = None
         self.settings_table = None
         self.game_results_table = None
         
@@ -130,6 +131,16 @@ class PostgresClient:
             Column('event_data', Text),
             Column('timestamp', DateTime, default=datetime.datetime.now),
         )
+
+        self.conversation_history_table = Table(
+            'conversation_history', self.metadata,
+            Column('id', Integer, primary_key=True),
+            Column('user_id', Integer, nullable=False),
+            Column('source', String(30), nullable=False, default='telegram'),
+            Column('role', String(20), nullable=False),
+            Column('text', Text, nullable=False),
+            Column('timestamp', DateTime, default=datetime.datetime.now),
+        )
         
         # Таблица настроек
         self.settings_table = Table(
@@ -158,6 +169,7 @@ class PostgresClient:
             logging.info("PostgreSQL tables created successfully")
             # Миграция: добавляем недостающие колонки
             self._ensure_broadcast_columns()
+            self._ensure_conversation_history_columns()
             return True
         except SQLAlchemyError as e:
             logging.error(f"Failed to create PostgreSQL tables: {e}")
@@ -181,6 +193,24 @@ class PostgresClient:
                     logging.info("PostgreSQL | Колонки blocked/block_date уже существуют")
         except Exception as e:
             logging.warning(f"PostgreSQL | Не удалось проверить/добавить колонки blocked: {e}")
+
+    def _ensure_conversation_history_columns(self):
+        """Добавляет source в conversation_history если таблица уже существовала без него."""
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(sa.text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'conversation_history' AND column_name = 'source'"
+                ))
+                if not result.fetchone():
+                    conn.execute(sa.text(
+                        "ALTER TABLE conversation_history "
+                        "ADD COLUMN source VARCHAR(30) NOT NULL DEFAULT 'telegram'"
+                    ))
+                    conn.commit()
+                    logging.info("PostgreSQL | Миграция: добавлена колонка source в conversation_history")
+        except Exception as e:
+            logging.warning(f"PostgreSQL | Не удалось проверить/добавить source в conversation_history: {e}")
     
     def add_new_user(self, user_id, username, first_name, source, referrer_id=None, brought_by_staff_id=None):
         """
@@ -307,6 +337,47 @@ class PostgresClient:
         except SQLAlchemyError as e:
             logging.error(f"PostgreSQL | Ошибка добавления бронирования для {user_id}: {e}")
             return None
+
+    def log_conversation_turn(self, user_id, role, text, source="telegram"):
+        """Сохраняет сообщение в историю диалога."""
+        try:
+            with self.engine.connect() as connection:
+                stmt = insert(self.conversation_history_table).values(
+                    user_id=user_id,
+                    source=source,
+                    role=role,
+                    text=text,
+                    timestamp=datetime.datetime.now(pytz.timezone('Europe/Moscow')),
+                )
+                connection.execute(stmt)
+                connection.commit()
+                return True
+        except SQLAlchemyError as e:
+            logging.error(f"PostgreSQL | Ошибка логирования диалога для {source}:{user_id}: {e}")
+            return False
+
+    def get_conversation_history(self, user_id, limit=10, source="telegram"):
+        """Возвращает историю диалога пользователя в формате OpenAI messages."""
+        try:
+            with self.engine.connect() as connection:
+                query = (
+                    select(
+                        self.conversation_history_table.c.role,
+                        self.conversation_history_table.c.text,
+                    )
+                    .where(self.conversation_history_table.c.user_id == user_id)
+                    .where(self.conversation_history_table.c.source == source)
+                    .order_by(self.conversation_history_table.c.timestamp.desc())
+                    .limit(limit)
+                )
+                rows = connection.execute(query).fetchall()
+                return [
+                    {"role": row._mapping["role"], "content": row._mapping["text"]}
+                    for row in reversed(rows)
+                ]
+        except SQLAlchemyError as e:
+            logging.error(f"PostgreSQL | Ошибка получения истории диалога для {source}:{user_id}: {e}")
+            return []
     
     def get_user_by_id(self, user_id):
         """

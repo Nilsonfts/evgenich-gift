@@ -244,6 +244,34 @@ def get_db_connection():
         logging.debug(f"SQLite PRAGMA setup skipped: {_e}")
     return conn
 
+def _ensure_conversation_history_schema(conn=None):
+    """Гарантирует наличие platform/source колонки для истории диалогов в SQLite."""
+    own_conn = conn is None
+    try:
+        if conn is None:
+            conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS conversation_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                source TEXT DEFAULT 'telegram',
+                role TEXT,
+                text TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        try:
+            cur.execute("SELECT source FROM conversation_history LIMIT 1")
+        except sqlite3.OperationalError:
+            cur.execute("ALTER TABLE conversation_history ADD COLUMN source TEXT DEFAULT 'telegram'")
+        conn.commit()
+    finally:
+        if own_conn and conn is not None:
+            conn.close()
+
 def init_db():
     """Инициализирует/обновляет структуру базы данных."""
     try:
@@ -356,11 +384,7 @@ def init_db():
             )""")
 
         # Остальные таблицы
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS conversation_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, role TEXT,
-                text TEXT, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )""")
+        _ensure_conversation_history_schema(conn)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS feedback (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
@@ -1039,27 +1063,36 @@ def get_report_data_for_period(start_time: datetime, end_time: datetime) -> tupl
         logging.error(f"Ошибка сбора данных для отчета: {e}")
         return 0, 0, [], {}, 0
 
-def log_conversation_turn(user_id: int, role: str, text: str):
+def log_conversation_turn(user_id: int, role: str, text: str, source: str = "telegram"):
     try:
+        if USE_POSTGRES and pg_client:
+            pg_client.log_conversation_turn(user_id, role, text, source=source)
+            return
+
         conn = get_db_connection()
+        _ensure_conversation_history_schema(conn)
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO conversation_history (user_id, role, text) VALUES (?, ?, ?)",
-            (user_id, role, text)
+            "INSERT INTO conversation_history (user_id, source, role, text) VALUES (?, ?, ?, ?)",
+            (user_id, source, role, text)
         )
         conn.commit()
         conn.close()
     except Exception as e:
-        logging.error(f"Ошибка логирования диалога для {user_id}: {e}")
+        logging.error(f"Ошибка логирования диалога для {source}:{user_id}: {e}")
 
-def get_conversation_history(user_id: int, limit: int = 10) -> List[Dict[str, str]]:
+def get_conversation_history(user_id: int, limit: int = 10, source: str = "telegram") -> List[Dict[str, str]]:
     history = []
     try:
+        if USE_POSTGRES and pg_client:
+            return pg_client.get_conversation_history(user_id, limit=limit, source=source)
+
         conn = get_db_connection()
+        _ensure_conversation_history_schema(conn)
         cur = conn.cursor()
         cur.execute(
-            "SELECT role, text FROM conversation_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
-            (user_id, limit)
+            "SELECT role, text FROM conversation_history WHERE user_id = ? AND source = ? ORDER BY timestamp DESC LIMIT ?",
+            (user_id, source, limit)
         )
         rows = cur.fetchall()
         conn.close()
@@ -1067,7 +1100,7 @@ def get_conversation_history(user_id: int, limit: int = 10) -> List[Dict[str, st
             history.append({"role": row['role'], "content": row['text']})
         return history
     except Exception as e:
-        logging.error(f"Ошибка получения истории диалога для {user_id}: {e}")
+        logging.error(f"Ошибка получения истории диалога для {source}:{user_id}: {e}")
         return history
 
 def log_ai_feedback(user_id: int, query: str, response: str, rating: str):
