@@ -59,6 +59,44 @@ _db = TinyDB(_DB_PATH)
 _Session = Query()
 _db_lock = threading.RLock()  # TinyDB не потокобезопасен
 
+
+# Межпроцессный файловый лок на сессии — на случай, если gunicorn запущен
+# с несколькими worker'ами. TinyDB не безопасен между процессами: при гонке
+# один из шагов сценария может быть «потерян» и гость откатится назад.
+_FLOCK_PATH = os.path.join(os.path.dirname(_DB_PATH), ".vk_session.lock")
+try:
+    import fcntl as _fcntl  # POSIX-only, на Railway/Linux всегда есть
+except ImportError:  # pragma: no cover
+    _fcntl = None  # type: ignore[assignment]
+
+
+class _CrossProcessLock:
+    """Контекст-менеджер: эксклюзивная блокировка файла через fcntl.flock.
+    Если fcntl недоступен (Windows) — превращается в no-op.
+    """
+
+    def __enter__(self):
+        if _fcntl is None:
+            return self
+        # Открываем (создаём) lock-файл и держим его до выхода из контекста
+        self._fh = open(_FLOCK_PATH, "a+")
+        try:
+            _fcntl.flock(self._fh.fileno(), _fcntl.LOCK_EX)
+        except OSError:
+            # Если ОС не даёт лок — лучше продолжить, чем уронить запрос
+            pass
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if _fcntl is None:
+            return False
+        try:
+            _fcntl.flock(self._fh.fileno(), _fcntl.LOCK_UN)
+        finally:
+            self._fh.close()
+        return False
+
+
 # Дополнительный лок на user_id — предотвращает параллельную обработку
 # двух одновременных событий от одного пользователя (race condition).
 _user_locks: dict[int, threading.Lock] = {}
@@ -668,18 +706,19 @@ def _ai_reply(user_text: str, vk_user_id: int = 0) -> Optional[str]:
 # Сессия пользователя (TinyDB)
 # ──────────────────────────────────────────────────────────────────────────────
 def _get_session(vk_user_id: int) -> Optional[dict]:
-    with _db_lock:
+    with _CrossProcessLock(), _db_lock:
+        _db.clear_cache()  # перечитать файл, если другой воркер его обновил
         rows = _db.search(_Session.vk_user_id == vk_user_id)
         return rows[0] if rows else None
 
 def _save_session(vk_user_id: int, data: dict) -> None:
     data["vk_user_id"] = vk_user_id
     data["updated_at"] = datetime.utcnow().isoformat()
-    with _db_lock:
+    with _CrossProcessLock(), _db_lock:
         _db.upsert(data, _Session.vk_user_id == vk_user_id)
 
 def _drop_session(vk_user_id: int) -> None:
-    with _db_lock:
+    with _CrossProcessLock(), _db_lock:
         _db.remove(_Session.vk_user_id == vk_user_id)
 
 
