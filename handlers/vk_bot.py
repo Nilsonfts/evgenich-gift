@@ -351,6 +351,50 @@ def _export_vk_to_sheets(s: dict, vk_user_id: int, vk_profile: Optional[dict]) -
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# История диалога для AI (отдельный TinyDB, не конфликтует с сессиями брони)
+# ──────────────────────────────────────────────────────────────────────────────
+_HIST_DB_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data",
+    "vk_ai_history.json",
+)
+os.makedirs(os.path.dirname(_HIST_DB_PATH), exist_ok=True)
+_hist_db = TinyDB(_HIST_DB_PATH)
+_HistQuery = Query()
+_hist_db_lock = threading.RLock()
+_VK_HIST_MAX_TURNS = 8  # Число диалоговых ходов (user+assistant = 2 записи на ход)
+
+
+def _get_vk_history(vk_user_id: int) -> list:
+    """Возвращает историю диалога VK-пользователя как список {role, content}."""
+    with _hist_db_lock:
+        rows = _hist_db.search(_HistQuery.vk_user_id == vk_user_id)
+        return rows[0].get("history", []) if rows else []
+
+
+def _add_vk_turn(vk_user_id: int, role: str, content: str) -> None:
+    """Добавляет ход в историю диалога, сохраняет последние N ходов."""
+    with _hist_db_lock:
+        rows = _hist_db.search(_HistQuery.vk_user_id == vk_user_id)
+        history = rows[0].get("history", []) if rows else []
+        history.append({"role": role, "content": content})
+        # Оставляем только последние N*2 записей (N ходов × 2 роли)
+        max_records = _VK_HIST_MAX_TURNS * 2
+        if len(history) > max_records:
+            history = history[-max_records:]
+        _hist_db.upsert(
+            {"vk_user_id": vk_user_id, "history": history},
+            _HistQuery.vk_user_id == vk_user_id,
+        )
+
+
+def _clear_vk_history(vk_user_id: int) -> None:
+    """Очищает историю диалога VK-пользователя."""
+    with _hist_db_lock:
+        _hist_db.remove(_HistQuery.vk_user_id == vk_user_id)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # AI-ассистент (свободные вопросы, не сценарий брони)
 # ──────────────────────────────────────────────────────────────────────────────
 _AI_SYSTEM = (
@@ -358,14 +402,27 @@ _AI_SYSTEM = (
     "Города: Москва (Пятницкая 30 и Цветной бульвар) и Санкт-Петербург. "
     "В ВКонтакте принимаем брони только по Москве. "
     "Стиль: дружелюбный, на «ты», коротко (1–3 предложения), не больше одного эмодзи. "
-    "Если гость хочет забронировать столик — ответь кратко: "
-    "«Сейчас оформим — выбери бар ниже» и больше ничего, кнопки покажу сам. "
+    "Если гость явно хочет забронировать столик — ответь ОДНИМ предложением и добавь "
+    "маркер [START_BOOKING] в конце своего текста (без пробела перед ним). "
+    "Иначе просто отвечай по теме вопроса. "
     "Не выдумывай меню, цены и акции — если не уверен, направляй к старшему. "
-    "Если вопрос не по теме бара — мягко предложи позвать старшего."
+    "Если вопрос совсем не по теме бара — мягко предложи позвать старшего."
 )
 
-def _ai_reply(user_text: str) -> Optional[str]:
-    """Спрашиваем OpenAI. Возвращает текст ответа или None при любой ошибке."""
+# Маркер, который AI вставляет когда нужно открыть сценарий бронирования
+_BOOKING_MARKER = "[START_BOOKING]"
+# Максимальная длина фрагмента из базы знаний, добавляемого в системный промпт
+_KNOWLEDGE_SNIPPET_MAX_LEN = 600
+# Температура генерации — умеренная, чтобы ответы были разнообразны, но предсказуемы
+_AI_TEMPERATURE = 0.65
+
+
+def _ai_reply(user_text: str, vk_user_id: int = 0) -> Optional[str]:
+    """Спрашиваем OpenAI с историей диалога и базой знаний.
+
+    Возвращает текст ответа или None при любой ошибке.
+    Текст может содержать маркер _BOOKING_MARKER — обрабатывается в handle_message.
+    """
     api_key = os.getenv("OPENAI_API_KEY", "")
     if not api_key:
         return None
@@ -374,19 +431,48 @@ def _ai_reply(user_text: str) -> Optional[str]:
     except ImportError:
         logger.warning("VK AI: пакет openai не установлен")
         return None
+
+    # Подгружаем релевантный фрагмент базы знаний (lazy import — безопасен)
+    knowledge_snippet = ""
+    try:
+        from ai.knowledge import find_relevant_info, KNOWLEDGE_EMPTY_MSG  # noqa: PLC0415
+    except ImportError:
+        find_relevant_info = None  # type: ignore[assignment]
+        KNOWLEDGE_EMPTY_MSG = ""
+    if find_relevant_info is not None:
+        try:
+            snippet = find_relevant_info(user_text)
+            if snippet and KNOWLEDGE_EMPTY_MSG not in snippet:
+                knowledge_snippet = snippet
+        except Exception as e:
+            logger.debug("VK AI: база знаний недоступна: %s", e)
+
+    # Формируем системный промпт (с базой знаний, если нашлась)
+    system_content = _AI_SYSTEM
+    if knowledge_snippet:
+        system_content += f"\n\nРелевантная информация:\n{knowledge_snippet[:_KNOWLEDGE_SNIPPET_MAX_LEN]}"
+
+    # Строим сообщения: системный промпт → история → текущий запрос
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_content}]
+    if vk_user_id:
+        messages.extend(_get_vk_history(vk_user_id))
+    messages.append({"role": "user", "content": user_text[:1000]})
+
     try:
         client = OpenAI(api_key=api_key, timeout=12.0)
         resp = client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            messages=[
-                {"role": "system", "content": _AI_SYSTEM},
-                {"role": "user", "content": user_text[:1000]},
-            ],
-            temperature=0.6,
-            max_tokens=180,
+            messages=messages,
+            temperature=_AI_TEMPERATURE,
+            max_tokens=200,
         )
-        text = (resp.choices[0].message.content or "").strip()
-        return text or None
+        reply_text = (resp.choices[0].message.content or "").strip()
+        if reply_text and vk_user_id:
+            # Сохраняем ход в историю (без маркера — маркер служебный)
+            clean = reply_text.replace(_BOOKING_MARKER, "").strip()
+            _add_vk_turn(vk_user_id, "user", user_text[:1000])
+            _add_vk_turn(vk_user_id, "assistant", clean)
+        return reply_text or None
     except Exception as e:
         logger.warning("VK AI: ошибка OpenAI: %s", e)
         return None
@@ -556,6 +642,7 @@ def _finalize(vk_user_id: int, s: dict, vk_profile: Optional[dict]) -> None:
         logger.exception("VK→Sheets вызов упал: %s", e)
     _vk_send(vk_user_id, T_DONE, _kb_empty())
     _drop_session(vk_user_id)
+    _clear_vk_history(vk_user_id)
     logger.info("VK booking confirmed: vk_user=%s bar=%s date=%s time=%s",
                 vk_user_id, bar_info.get("code"), s.get("date"), s.get("time"))
 
@@ -577,6 +664,7 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
             if _is_cancel(text) or (payload and payload.get("cancel")):
                 if _get_session(vk_user_id):
                     _drop_session(vk_user_id)
+                    _clear_vk_history(vk_user_id)
                     _vk_send(vk_user_id, T_CANCELLED, _kb_empty())
                 else:
                     _vk_send(vk_user_id, T_FALLBACK, _kb_empty())
@@ -609,16 +697,25 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
 
                 # Триггер брони — стартуем сценарий
                 if _is_booking_trigger(text) or (payload and payload.get("bar")):
+                    _clear_vk_history(vk_user_id)
                     _start_flow(vk_user_id)
                     if payload and payload.get("bar"):
                         s = _get_session(vk_user_id)
                     else:
                         return
                 else:
-                    # Свободный вопрос → пробуем AI
+                    # Свободный вопрос → пробуем AI с историей диалога
                     if text:
-                        ai_text = _ai_reply(text)
+                        ai_text = _ai_reply(text, vk_user_id)
                         if ai_text:
+                            # AI попросил открыть сценарий бронирования
+                            if _BOOKING_MARKER in ai_text:
+                                clean = ai_text.replace(_BOOKING_MARKER, "").strip()
+                                if clean:
+                                    _vk_send(vk_user_id, clean, _kb_smalltalk())
+                                _clear_vk_history(vk_user_id)
+                                _start_flow(vk_user_id)
+                                return
                             _vk_send(vk_user_id, ai_text + T_AI_FOOTER, _kb_smalltalk())
                             return
                     # AI выключен/упал/пустой текст — старый фоллбэк
