@@ -162,7 +162,7 @@ T_GREETING = (
 # Варианты приветствия — выбираются с учётом времени суток (МСК) и того,
 # знаком ли уже гость. Хвост подбирается динамически в зависимости от того,
 # с какого шага мы стартуем (нового гостя ведём в имя, повторного — в дату).
-_GREET_TAIL_NEW = "Помогу забронировать столик за минуту. Как тебя зовут?"
+_GREET_TAIL_NEW = "Помогу забронировать столик за минуту. Напиши свой номер телефона — от этого пляшем."
 _GREET_TAIL_BACK = "Подыщем столик? На какую дату планируем?"
 
 _GREETINGS_MORNING = [
@@ -1169,9 +1169,9 @@ def _is_yes(text: str) -> bool:
 # ──────────────────────────────────────────────────────────────────────────────
 def _start_flow(vk_user_id: int) -> None:
     """Стартуем сценарий брони в порядке как в TG:
-    имя → телефон → дата → время → гости → заведение → подтверждение.
+    телефон → имя → дата → время → гости → заведение → подтверждение.
 
-    Если у гостя сохранён контакт (он уже бронировал) — пропускаем имя+телефон
+    Если у гостя сохранён контакт (он уже бронировал) — пропускаем телефон+имя
     и сразу спрашиваем дату.
     """
     contact = _get_vk_contact(vk_user_id)
@@ -1184,7 +1184,7 @@ def _start_flow(vk_user_id: int) -> None:
         _save_session(vk_user_id, s)
         _vk_send(vk_user_id, _make_greeting(vk_user_id), _kb_cancel())
         return
-    _save_session(vk_user_id, {"step": "name"})
+    _save_session(vk_user_id, {"step": "phone"})
     _vk_send(vk_user_id, _make_greeting(vk_user_id), _kb_cancel())
 
 def _ask_date(vk_user_id: int) -> None:
@@ -1375,19 +1375,7 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                     _vk_send(vk_user_id, T_FALLBACK, _kb_smalltalk())
                     return
 
-            step = s.get("step", "name")
-
-            # ── ШАГ: name ────────────────────────────────
-            if step == "name":
-                name = text.strip()
-                if len(name) < 2:
-                    _vk_send(vk_user_id, "Имя слишком короткое. Напиши, как обращаться.", _kb_cancel())
-                    return
-                s["name"] = name[:60]
-                s["step"] = "phone"
-                _save_session(vk_user_id, s)
-                _ask_phone(vk_user_id)
-                return
+            step = s.get("step", "phone")
 
             # ── ШАГ: phone ───────────────────────────────
             if step == "phone":
@@ -1396,11 +1384,23 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                     _vk_send(vk_user_id, T_BAD_PHONE, _kb_cancel())
                     return
                 s["phone"] = phone
+                s["step"] = "name"
+                _save_session(vk_user_id, s)
+                _ask_name(vk_user_id)
+                return
+
+            # ── ШАГ: name ────────────────────────────────
+            if step == "name":
+                name = text.strip()
+                if len(name) < 2:
+                    _vk_send(vk_user_id, "Имя слишком короткое. Напиши, как обращаться.", _kb_cancel())
+                    return
+                s["name"] = name[:60]
                 # Если правим только контакт у уже собранной брони — сразу
                 # возвращаемся на подтверждение, не переспрашивая дату/время/бар.
                 if s.pop("editing_contact", False):
                     s["step"] = "confirm"
-                    _save_vk_contact(vk_user_id, s.get("name", ""), phone)
+                    _save_vk_contact(vk_user_id, name[:60], s.get("phone", ""))
                     _save_session(vk_user_id, s)
                     _ask_confirm(vk_user_id, s)
                     return
@@ -1474,14 +1474,14 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                 # но дату/время/гостей/бар сохраняем. Флаг editing_contact
                 # вернёт его сразу на confirm после нового телефона.
                 if "измен" in low and "контакт" in low:
-                    s["step"] = "name"
+                    s["step"] = "phone"
                     s["editing_contact"] = True
                     s.pop("name", None)
                     s.pop("phone", None)
                     _save_session(vk_user_id, s)
                     _vk_send(
                         vk_user_id,
-                        "Окей, обновим контакт. Как тебя записать?",
+                        "Окей, обновим контакт. На какой номер записать?",
                         _kb_cancel(),
                     )
                     return
