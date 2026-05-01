@@ -223,7 +223,7 @@ def _make_greeting(vk_user_id: int) -> str:
         head = random.choice(_greet_pool_for_hour(hour))
         tail = _GREET_TAIL_NEW
     return f"{head}\n{tail}"
-T_ASK_DATE   = "📅 На какую дату? (например: 25.04 или «сегодня», «завтра»)"
+T_ASK_DATE   = "📅 На какую дату? (например: 25.04, «19 мая», «сегодня», «завтра»)"
 T_ASK_TIME   = "🕐 На какое время? (например: 19:30)"
 T_ASK_GUESTS = "👥 Сколько будет гостей? (число от 1 до 20)"
 T_ASK_NAME   = "👤 Как тебя зовут? Напиши имя, чтобы менеджер обратился по-человечески."
@@ -257,7 +257,7 @@ _DONE_VARIANTS = [
 def _make_done_text() -> str:
     return random.choice(_DONE_VARIANTS)
 T_CANCELLED = "Отменил. Если захочешь начать заново — просто напиши «бронь» или «столик»."
-T_BAD_DATE   = "Хм, не понял дату. Напиши в формате 25.04 или 25.04.2026 (либо «сегодня», «завтра»)."
+T_BAD_DATE   = "Хм, не понял дату. Напиши в формате 25.04, 25.04.2026, «19 мая» или «сегодня»/«завтра»."
 T_BAD_TIME   = "Не разобрал время. Напиши в формате 19:30 (часы:минуты)."
 T_BAD_GUESTS = "Нужно число от 1 до 20. Сколько гостей?"
 T_BAD_PHONE  = "Похоже, телефон не полный. Нужно минимум 10 цифр, например +7 999 123-45-67."
@@ -1260,6 +1260,28 @@ _BOOKING_TRIGGERS = (
     "book", "booking", "забронировать", "/book", "/start",
 )
 
+_RU_MONTHS = {
+    "янв": 1, "январ": 1,
+    "фев": 2, "феврал": 2,
+    "мар": 3, "март": 3,
+    "апр": 4, "апрел": 4,
+    "май": 5, "мая": 5, "мае": 5,
+    "июн": 6, "июня": 6, "июне": 6,
+    "июл": 7, "июля": 7, "июле": 7,
+    "авг": 8, "август": 8,
+    "сен": 9, "сент": 9, "сентябр": 9,
+    "окт": 10, "октябр": 10,
+    "ноя": 11, "ноябр": 11,
+    "дек": 12, "декабр": 12,
+}
+
+# «19 мая», «19 мая 2026», «19-го мая», «на 19 мая»
+_RU_MONTH_RE = re.compile(
+    r"(?:^|\D)(\d{1,2})(?:[\s\-]?(?:го|ое|е))?\s+([а-яё]{3,10})(?:\s+(\d{4}))?\b",
+    re.IGNORECASE,
+)
+
+
 def _parse_date(text: str) -> Optional[str]:
     t = text.strip().lower()
     today = _moscow_now()
@@ -1269,6 +1291,29 @@ def _parse_date(text: str) -> Optional[str]:
         return (today + timedelta(days=1)).strftime("%d.%m.%Y")
     if t in ("послезавтра", "послезавтр"):
         return (today + timedelta(days=2)).strftime("%d.%m.%Y")
+
+    # «19 мая», «19 мая 2026», «на 19го мая»
+    rm = _RU_MONTH_RE.search(" " + t)
+    if rm:
+        try:
+            day = int(rm.group(1))
+            mword = rm.group(2).lower()
+            month = None
+            for prefix, num in _RU_MONTHS.items():
+                if mword.startswith(prefix):
+                    month = num
+                    break
+            if month and 1 <= day <= 31:
+                year = int(rm.group(3)) if rm.group(3) else today.year
+                try:
+                    if not rm.group(3) and datetime(year, month, day).date() < today.date():
+                        year += 1
+                    datetime(year, month, day)  # валидация
+                    return f"{day:02d}.{month:02d}.{year}"
+                except ValueError:
+                    pass
+        except (ValueError, AttributeError):
+            pass
     # Кнопка VK приходит в формате "Сегодня 02.05" / "Пт 03.05" — явный хвост dd.mm
     tail_match = re.search(r"(\d{1,2})[.\-/](\d{1,2})$", t)
     if tail_match and t != tail_match.group(0):
