@@ -243,6 +243,19 @@ T_DONE = (
     "Бронь передал менеджеру. С тобой свяжутся в ближайшее время для подтверждения.\n\n"
     "До встречи в Евгениче! 🥃"
 )
+
+# Варианты финального сообщения после брони. Выбираемся рандомом.
+_DONE_VARIANTS = [
+    "Готово, товарищ! ✅ Передал бронь менеджеру — созвонятся в ближайшее время.\nЖдём в Евгениче! 🥃",
+    "Принял! ✅ Менеджер бара скоро наберёт подтвердить.\nДо встречи! 🥃",
+    "Всё, бронь ушла. ✅ Перезвонят для подтверждения — будь на связи.\nЖдём в гости! 🥃",
+    "Ровно, товарищ! ✅ Бронь передал, перезвонят подтвердить.\nДо встречи у нас! 🥃",
+    "Готово ✅ Менеджер в курсе и скоро свяжется. Отличного вечера!",
+]
+
+
+def _make_done_text() -> str:
+    return random.choice(_DONE_VARIANTS)
 T_CANCELLED = "Отменил. Если захочешь начать заново — просто напиши «бронь» или «столик»."
 T_BAD_DATE   = "Хм, не понял дату. Напиши в формате 25.04 или 25.04.2026 (либо «сегодня», «завтра»)."
 T_BAD_TIME   = "Не разобрал время. Напиши в формате 19:30 (часы:минуты)."
@@ -857,13 +870,14 @@ _AI_SYSTEM = (
     "— Коротко: 1–3 предложения. Максимум один эмодзи на ответ, чаще без них.\n"
     "— Без канцелярита и без рекламных штампов («залетай», «ждём тебя», «будем рады»).\n"
     "— На small-talk («как дела», «привет») отвечай по-человечески, БЕЗ предложения брони и БЕЗ упоминания старшего.\n"
+    "— НИКОГДА не повторяй свои фразы дословно. Если выше уже предлагал бронь/старшего — больше это не повторяй, даже другими словами. Если гость повторил вопрос — ответь иначе, переформулируй.\n"
     "\n"
     "ПРАВИЛА:\n"
     "— Используй информацию из блока «Релевантная информация», если она есть. Не выдумывай цены, депозиты, акции и меню.\n"
     "— Если знаешь точный ответ из базы — отвечай уверенно, без отговорок.\n"
     "— Если в базе ответа нет и вопрос фактический (депозит, цена, наличие) — честно скажи, что точную инфу подскажет старший, и предложи позвать его. Не более одного раза за диалог.\n"
     "— Если спросят, кто ты — честно скажи, что AI-ассистент бара Евгенич, не выдавай себя за конкретного человека.\n"
-    "— Не повторяй из ответа в ответ одну и ту же фразу про бронь или старшего. Если уже предложил — больше не повторяй.\n"
+    "— Если в контексте указано имя гостя — обращайся по имени изредка (1 раз в 2-3 ответа), не в каждом сообщении.\n"
     "\n"
     "СТАРШИЙ:\n"
     "— Старший на связи пн–сб с 11:00 до 22:00 по МСК. Воскресенье — у него выходной.\n"
@@ -1026,7 +1040,8 @@ def _try_send_wall_posts(vk_user_id: int, user_text: str) -> bool:
         return False
 
 
-def _ai_reply(user_text: str, vk_user_id: int = 0) -> Optional[str]:
+def _ai_reply(user_text: str, vk_user_id: int = 0,
+              vk_profile: Optional[dict] = None) -> Optional[str]:
     """Спрашиваем OpenAI с историей диалога и базой знаний.
 
     Возвращает текст ответа или None при любой ошибке.
@@ -1058,6 +1073,44 @@ def _ai_reply(user_text: str, vk_user_id: int = 0) -> Optional[str]:
 
     # Формируем системный промпт (с базой знаний, если нашлась)
     system_content = _AI_SYSTEM
+
+    # Имя гостя — из сохранённого контакта или из VK-профиля
+    guest_name = None
+    try:
+        contact = _get_vk_contact(vk_user_id) if vk_user_id else None
+        if contact and contact.get("name"):
+            guest_name = contact["name"].split()[0]
+        elif vk_profile and vk_profile.get("first_name"):
+            guest_name = vk_profile["first_name"].strip().split()[0]
+    except Exception:
+        pass
+    if guest_name:
+        system_content += (
+            f"\n\nИМЯ ГОСТЯ: {guest_name}. Можешь иногда обращаться по имени, "
+            "но не в каждом сообщении и не дословно — естественно."
+        )
+
+    # Контекст времени и дня недели в МСК — чтобы AI говорил живее
+    try:
+        now_msk = _moscow_now()
+        weekdays_ru = ["понедельник", "вторник", "среду", "четверг", "пятницу", "субботу", "воскресенье"]
+        wd = weekdays_ru[now_msk.weekday()]
+        hour = now_msk.hour
+        if 5 <= hour < 11:
+            tod = "сейчас утро"
+        elif 11 <= hour < 17:
+            tod = "сейчас день"
+        elif 17 <= hour < 23:
+            tod = "сейчас вечер"
+        else:
+            tod = "сейчас ночь"
+        system_content += (
+            f"\n\nКОНТЕКСТ ВРЕМЕНИ: в Москве сейчас {now_msk.strftime('%H:%M')} в {wd}, {tod}. "
+            "Учитывай это в ответе, если уместно (но не упоминай явно время, если гость не спрашивал)."
+        )
+    except Exception:
+        pass
+
     # Текущий статус старшего — чтобы AI говорил правдиво про "сейчас на смене / выходной"
     try:
         status = _manager_status()
@@ -1078,12 +1131,29 @@ def _ai_reply(user_text: str, vk_user_id: int = 0) -> Optional[str]:
             )
     except Exception:
         pass
+
     if knowledge_snippet:
         system_content += f"\n\nРелевантная информация:\n{knowledge_snippet[:_KNOWLEDGE_SNIPPET_MAX_LEN]}"
 
     # Строим сообщения: системный промпт → история → текущий запрос
     messages: list[dict[str, str]] = [{"role": "system", "content": system_content}]
-    history = _get_vk_history(vk_user_id, limit=12) if vk_user_id else []
+    history = _get_vk_history(vk_user_id, limit=20) if vk_user_id else []
+
+    # Анти-повтор: явно подсветим прошлый ответ AI, чтобы не дублировал дословно
+    last_assistant = next(
+        (m.get("content", "") for m in reversed(history) if m.get("role") == "assistant"),
+        None,
+    )
+    if last_assistant:
+        snippet = last_assistant.strip().replace("\n", " ")[:200]
+        messages.append({
+            "role": "system",
+            "content": (
+                "ВАЖНО: твой предыдущий ответ был такой: «" + snippet + "». "
+                "Не повторяй его дословно, выбери другую формулировку."
+            ),
+        })
+
     if history:
         messages.extend(history)
 
@@ -1280,7 +1350,40 @@ def _is_booking_trigger(text: str) -> bool:
     return any(trig in t for trig in _BOOKING_TRIGGERS)
 
 def _is_cancel(text: str) -> bool:
-    return text.strip().lower() in ("отмена", "❌ отмена", "cancel", "/cancel", "стоп", "нет")
+    t = text.strip().lower()
+    if t in ("отмена", "❌ отмена", "cancel", "/cancel", "стоп", "нет", "отменить"):
+        return True
+    # Развёрнутые формы: "передумал", "отмени бронь", "не надо бронь"
+    cancel_phrases = (
+        "передумал", "передумала", "раздумал", "раздумала",
+        "отмени брон", "отменить брон", "отмените брон",
+        "не надо брон", "без брон", "не хочу брон",
+    )
+    return any(p in t for p in cancel_phrases)
+
+
+# Грубые слова — коротко и вежливо отбиваемся, без AI.
+_OFFENSIVE_TOKENS = (
+    "бля", "хуя", "хуе", "хуи", "хуй", "пизд", "еба", "еби", "ебу",
+    "ебла", "мудак", "пидор", "пидар", "сука", "суки",
+    "сволочь", "урод", "кретин", "идиот", "дебил",
+)
+
+
+def _is_offensive(text: str) -> bool:
+    low = (text or "").lower()
+    if not low:
+        return False
+    # Исключаем ложные срабатывания вроде "съебать" → "еба"
+    # Просто ищем по подстроке с буфером в 5 символов
+    return any(tok in low for tok in _OFFENSIVE_TOKENS)
+
+
+_OFFENSIVE_REPLIES = [
+    "Давай без этого, товарищ. По делу я с радостью помогу: бронь, афиша, меню — спрашивай.",
+    "Полегче 😊 По делу отвечу охотно — напиши, чем помочь.",
+    "Не стоит. Лучше спроси про бар — я подробно расскажу.",
+]
 
 def _is_yes(text: str) -> bool:
     t = text.strip().lower()
@@ -1312,21 +1415,72 @@ def _start_flow(vk_user_id: int) -> None:
 
 def _ask_date(vk_user_id: int) -> None:
     _vk_send(vk_user_id, T_ASK_DATE, _kb_dates())
+    _schedule_idle_ping(vk_user_id, "date")
 
 def _ask_time(vk_user_id: int) -> None:
     _vk_send(vk_user_id, T_ASK_TIME, _kb_times())
+    _schedule_idle_ping(vk_user_id, "time")
 
 def _ask_guests(vk_user_id: int) -> None:
     _vk_send(vk_user_id, T_ASK_GUESTS, _kb_guests())
+    _schedule_idle_ping(vk_user_id, "guests")
 
 def _ask_name(vk_user_id: int) -> None:
     _vk_send(vk_user_id, T_ASK_NAME, _kb_cancel())
+    _schedule_idle_ping(vk_user_id, "name")
 
 def _ask_phone(vk_user_id: int) -> None:
     _vk_send(vk_user_id, T_ASK_PHONE, _kb_cancel())
+    _schedule_idle_ping(vk_user_id, "phone")
 
 def _ask_bar(vk_user_id: int) -> None:
     _vk_send(vk_user_id, T_ASK_BAR, _kb_bars())
+    _schedule_idle_ping(vk_user_id, "bar")
+
+
+# ── Проактивный пинг при молчании на шаге сценария ───────────────────────────
+_idle_timers: dict[int, threading.Timer] = {}
+_idle_timers_lock = threading.Lock()
+_IDLE_PING_DELAY = float(os.getenv("VK_IDLE_PING_SECONDS", "120"))
+
+_IDLE_PING_VARIANTS = [
+    "Товарищ, ты тут? 🥃 Если что — могу помочь подобрать дату или ответить на вопрос.",
+    "Эй, не теряйся 🙂 Готов продолжить бронь или ответить на вопросы — пиши.",
+    "На связи 🥃 Если передумал — напиши «отмена», если что-то непонятно — спрашивай.",
+]
+
+
+def _cancel_idle_ping(vk_user_id: int) -> None:
+    with _idle_timers_lock:
+        t = _idle_timers.pop(vk_user_id, None)
+    if t is not None:
+        try:
+            t.cancel()
+        except Exception:
+            pass
+
+
+def _schedule_idle_ping(vk_user_id: int, expected_step: str) -> None:
+    """Через _IDLE_PING_DELAY секунд молчания шлём мягкое напоминание.
+
+    Срабатывает только если сессия гостя всё ещё на ожидаемом шаге.
+    """
+    _cancel_idle_ping(vk_user_id)
+
+    def _fire():
+        try:
+            s = _get_session(vk_user_id)
+            if not s or s.get("step") != expected_step:
+                return
+            _vk_send(vk_user_id, random.choice(_IDLE_PING_VARIANTS), _kb_cancel())
+        except Exception as e:
+            logger.debug("VK idle ping skipped: %s", e)
+
+    timer = threading.Timer(_IDLE_PING_DELAY, _fire)
+    timer.daemon = True
+    timer.start()
+    with _idle_timers_lock:
+        _idle_timers[vk_user_id] = timer
 
 def _ask_confirm(vk_user_id: int, s: dict) -> None:
     bar = _BAR_BY_KEY.get(s.get("bar_key"), {}).get("name", "—")
@@ -1366,8 +1520,9 @@ def _finalize(vk_user_id: int, s: dict, vk_profile: Optional[dict]) -> None:
         _export_vk_to_sheets(s, vk_user_id, vk_profile)
     except Exception as e:
         logger.exception("VK→Sheets вызов упал: %s", e)
-    _vk_send(vk_user_id, T_DONE, _kb_empty())
+    _vk_send(vk_user_id, _make_done_text(), _kb_empty())
     _drop_session(vk_user_id)
+    _cancel_idle_ping(vk_user_id)
     _schedule_loyalty_offer(vk_user_id)
     logger.info("VK booking confirmed: vk_user=%s bar=%s date=%s time=%s",
                 vk_user_id, bar_info.get("code"), s.get("date"), s.get("time"))
@@ -1402,6 +1557,8 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
     text = (text or "").strip()
     lock = _get_user_lock(vk_user_id)
     with lock:
+        # Любое входящее событие отменяет проактивный пинг — гость всё ещё здесь.
+        _cancel_idle_ping(vk_user_id)
         try:
             if text:
                 _log_vk_turn(vk_user_id, "user", text)
@@ -1411,6 +1568,7 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                 if _get_session(vk_user_id):
                     _drop_session(vk_user_id)
                     _clear_vk_history(vk_user_id)
+                    _cancel_idle_ping(vk_user_id)
                     _vk_send(vk_user_id, T_CANCELLED, _kb_empty())
                 else:
                     _vk_send(vk_user_id, T_FALLBACK, _kb_empty())
@@ -1480,7 +1638,7 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                         #    сначала пробуем достать пост со стены сообщества.
                         if _try_send_wall_posts(vk_user_id, text):
                             return
-                        ai_text = _ai_reply(text, vk_user_id)
+                        ai_text = _ai_reply(text, vk_user_id, vk_profile)
                         if ai_text:
                             # AI попросил открыть сценарий бронирования
                             if _BOOKING_MARKER in ai_text:
@@ -1702,13 +1860,14 @@ def process_callback_event(event: dict) -> str:
                 payload = json.loads(payload_raw)
             except (ValueError, TypeError):
                 payload = None
+        attachments = msg.get("attachments") if isinstance(msg.get("attachments"), list) else None
         profiles = obj.get("client_info", {}).get("profiles") if isinstance(obj.get("client_info"), dict) else None
         vk_profile = profiles[0] if profiles else None
 
         # Фоновый поток — не блокируем ответ VK
         threading.Thread(
             target=handle_message,
-            args=(vk_user_id, text, payload, vk_profile),
+            args=(vk_user_id, text, payload, vk_profile, attachments),
             daemon=True,
             name=f"vk-handler-{vk_user_id}",
         ).start()
