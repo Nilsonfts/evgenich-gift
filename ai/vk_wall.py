@@ -41,6 +41,22 @@ _cache_lock = threading.Lock()
 _posts_cache: dict[str, Any] = {"ts": 0.0, "owner_id": 0, "posts": []}
 _group_id_cache: Optional[int] = None
 
+
+def set_group_id(group_id: int) -> None:
+    """Принудительно устанавливает ID сообщества (например, из VK callback payload).
+
+    VK Callback API в каждом событии шлёт поле `group_id` — это самый надёжный
+    способ узнать ID сообщества для community-токена, надёжнее чем groups.getById.
+    """
+    global _group_id_cache
+    try:
+        gid = abs(int(group_id))
+    except (TypeError, ValueError):
+        return
+    if gid and _group_id_cache != gid:
+        _group_id_cache = gid
+        logger.info("VK wall: group_id установлен из callback: %s", gid)
+
 # Слова-триггеры, по которым гость спрашивает про афишу/посты/события
 EVENT_KEYWORDS = (
     "афиш", "мероприят", "событи", "программ", "что сегодня", "что завтра",

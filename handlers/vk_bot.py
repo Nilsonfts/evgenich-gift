@@ -597,7 +597,7 @@ def _should_attach_smalltalk_kb(vk_user_id: int, ai_text: str) -> bool:
 def _try_send_menu_photos(vk_user_id: int, user_text: str) -> bool:
     """Если гость просит меню — шлём фото из альбомов 'Меню кухни'/'Меню бара'."""
     try:
-        from ai.vk_media import is_menu_query, find_menu_attachments  # noqa: PLC0415
+        from ai.vk_media import is_menu_query, find_menu_attachments, detect_menu_kind  # noqa: PLC0415
     except ImportError:
         return False
 
@@ -608,7 +608,7 @@ def _try_send_menu_photos(vk_user_id: int, user_text: str) -> bool:
         text, attachment = find_menu_attachments(user_text, max_attachments=8)
     except Exception as e:
         logger.warning("VK menu: не удалось получить фото: %s", e)
-        return False
+        text, attachment = "", ""
 
     if attachment:
         try:
@@ -617,9 +617,36 @@ def _try_send_menu_photos(vk_user_id: int, user_text: str) -> bool:
         except Exception as e:
             logger.warning("VK menu: отправка фото упала: %s", e)
 
-    # Альбомы с меню не найдены — отвечаем коротко из базы знаний (через AI/fallback),
-    # не зацикливаем здесь, дальше пойдёт _ai_reply.
-    return False
+    # Альбомов нет (или group_id ещё не определился) — отвечаем сами, чтобы AI
+    # не сочинял ничего лишнего. Даём ссылку на альбомы группы.
+    kind = detect_menu_kind(user_text)
+    group_url = os.getenv("VK_GROUP_URL", "https://vk.com/evgenichmsk")
+    albums_url = group_url.rstrip("/") + "/albums"
+    if kind == "kitchen":
+        body = (
+            "Кухня «как дома»: чебуреки (говядина, баранина, свинина, сыр-зелень), "
+            "жареные пельмени, борщ, уха, селёдка, оливье, драники, манты.\n"
+            f"Полное меню в фотоальбомах группы 👉 {albums_url}"
+        )
+    elif kind == "bar":
+        body = (
+            "В баре 25+ собственных настоек: «Хуба-Буба», «Фисташковый пломбир», "
+            "«Хрен-Имбирь-Лимон», «Клюква», фирменная «Евгенич». "
+            "Плюс пиво «Евгенич Светлое», крафт, водка, джин, ром, коктейль «Шпунт».\n"
+            f"Карта бара в альбомах группы 👉 {albums_url}"
+        )
+    else:
+        body = (
+            "У нас кухня «как дома» (чебуреки, жареные пельмени, борщ, уха, оливье) и "
+            "25+ собственных настоек, пиво, коктейли.\n"
+            f"Полное меню в фотоальбомах 👉 {albums_url}"
+        )
+    try:
+        _vk_send(vk_user_id, body, _kb_smalltalk())
+        return True
+    except Exception as e:
+        logger.warning("VK menu fallback: отправка не прошла: %s", e)
+        return False
 
 
 def _try_send_wall_posts(vk_user_id: int, user_text: str) -> bool:
@@ -1136,6 +1163,17 @@ def process_callback_event(event: dict) -> str:
         return "ok"
 
     etype = event.get("type")
+
+    # Сразу подхватываем group_id из payload — VK шлёт его в каждом событии.
+    # Это надёжнее, чем groups.getById, и работает без env VK_GROUP_ID.
+    cb_group_id = event.get("group_id")
+    if cb_group_id:
+        try:
+            from ai.vk_wall import set_group_id  # noqa: PLC0415
+
+            set_group_id(cb_group_id)
+        except Exception:
+            pass
 
     # 1. Подтверждение сервера при настройке Callback API
     if etype == "confirmation":
