@@ -59,6 +59,14 @@ _db = TinyDB(_DB_PATH)
 _Session = Query()
 _db_lock = threading.RLock()  # TinyDB не потокобезопасен
 
+# Запомненные контакты VK-гостей (имя + телефон последней брони)
+_CONTACTS_DB_PATH = os.path.join(
+    os.path.dirname(_DB_PATH), "vk_contacts.json"
+)
+_contacts_db = TinyDB(_CONTACTS_DB_PATH)
+_ContactQuery = Query()
+_contacts_lock = threading.RLock()
+
 
 # Межпроцессный файловый лок на сессии — на случай, если gunicorn запущен
 # с несколькими worker'ами. TinyDB не безопасен между процессами: при гонке
@@ -175,6 +183,11 @@ T_BAD_TIME   = "Не разобрал время. Напиши в формате
 T_BAD_GUESTS = "Нужно число от 1 до 20. Сколько гостей?"
 T_BAD_PHONE  = "Похоже, телефон не полный. Нужно минимум 10 цифр, например +7 999 123-45-67."
 T_BAD_BAR    = "Выбери одно из заведений кнопкой ниже:"
+T_RETURNING_CONTACT = (
+    "С возвращением, {name}! 🥃\n"
+    "Использую твой прошлый контакт: {phone}.\n"
+    "Если что-то поменялось — жми «✏️ Изменить контакт»."
+)
 T_FALLBACK   = (
     "Здорово, товарищ! 🥃\n"
     "Я Евгенич — за стойкой и всегда на связи. Чем помочь?"
@@ -366,6 +379,7 @@ def _kb_confirm() -> str:
         "inline": False,
         "buttons": [
             [{"action": {"type": "text", "label": "✅ Да, отправляем"}, "color": "positive"}],
+            [{"action": {"type": "text", "label": "✏️ Изменить контакт"}, "color": "secondary"}],
             [{"action": {"type": "text", "label": "❌ Отмена"},          "color": "negative"}],
         ],
     }, ensure_ascii=False)
@@ -957,6 +971,47 @@ def _drop_session(vk_user_id: int) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Запомненные контакты VK-гостей (имя + телефон последней брони)
+# ──────────────────────────────────────────────────────────────────────────────
+def _get_vk_contact(vk_user_id: int) -> Optional[dict]:
+    """Возвращает {"name": ..., "phone": ...} или None, если контакт не сохранён."""
+    try:
+        with _contacts_lock:
+            _contacts_db.clear_cache()
+            rows = _contacts_db.search(_ContactQuery.vk_user_id == vk_user_id)
+        if not rows:
+            return None
+        row = rows[0]
+        name = (row.get("name") or "").strip()
+        phone = (row.get("phone") or "").strip()
+        if not name or not phone:
+            return None
+        return {"name": name, "phone": phone}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("VK: не удалось прочитать контакт %s: %s", vk_user_id, exc)
+        return None
+
+
+def _save_vk_contact(vk_user_id: int, name: str, phone: str) -> None:
+    """Сохраняем имя+телефон гостя для повторных бронирований."""
+    name = (name or "").strip()
+    phone = (phone or "").strip()
+    if not name or not phone:
+        return
+    try:
+        payload = {
+            "vk_user_id": vk_user_id,
+            "name": name,
+            "phone": phone,
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        with _contacts_lock:
+            _contacts_db.upsert(payload, _ContactQuery.vk_user_id == vk_user_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("VK: не удалось сохранить контакт %s: %s", vk_user_id, exc)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Парсеры пользовательского ввода
 # ──────────────────────────────────────────────────────────────────────────────
 _DATE_RE = re.compile(r"^(\d{1,2})[.\-/](\d{1,2})(?:[.\-/](\d{2,4}))?$")
@@ -1095,6 +1150,8 @@ def _finalize(vk_user_id: int, s: dict, vk_profile: Optional[dict]) -> None:
     )
     _tg_notify(msg)
     _persist_vk_booking(vk_user_id, s)
+    # Запоминаем имя+телефон для будущих бронирований этого VK-гостя
+    _save_vk_contact(vk_user_id, s.get("name", ""), s.get("phone", ""))
     # Экспорт в Google Sheets — best-effort, не блокирует ответ гостю
     try:
         _export_vk_to_sheets(s, vk_user_id, vk_profile)
@@ -1287,6 +1344,23 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                     _vk_send(vk_user_id, T_BAD_GUESTS, _kb_cancel())
                     return
                 s["guests"] = n
+                # Если у гостя уже есть запомненный контакт — пропускаем
+                # шаги «имя» и «телефон» и сразу идём к подтверждению.
+                saved_contact = _get_vk_contact(vk_user_id)
+                if saved_contact:
+                    s["name"] = saved_contact["name"]
+                    s["phone"] = saved_contact["phone"]
+                    s["step"] = "confirm"
+                    _save_session(vk_user_id, s)
+                    _vk_send(
+                        vk_user_id,
+                        T_RETURNING_CONTACT.format(
+                            name=saved_contact["name"],
+                            phone=saved_contact["phone"],
+                        ),
+                    )
+                    _ask_confirm(vk_user_id, s)
+                    return
                 s["step"] = "name"
                 _save_session(vk_user_id, s)
                 _ask_name(vk_user_id)
@@ -1318,6 +1392,19 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
 
             # ── ШАГ: confirm ─────────────────────────────
             if step == "confirm":
+                low = text.strip().lower()
+                # Гость хочет поправить имя/телефон → сбрасываем на шаг «имя»
+                if "измен" in low and "контакт" in low:
+                    s["step"] = "name"
+                    s.pop("name", None)
+                    s.pop("phone", None)
+                    _save_session(vk_user_id, s)
+                    _vk_send(
+                        vk_user_id,
+                        "Окей, обновим контакт. Как тебя записать?",
+                        _kb_cancel(),
+                    )
+                    return
                 if _is_yes(text):
                     _finalize(vk_user_id, s, vk_profile)
                 else:
