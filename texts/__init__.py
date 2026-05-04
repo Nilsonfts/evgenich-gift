@@ -612,11 +612,15 @@ def get_booking_report_text(data: dict[str, str], creator_id: int = None) -> str
     from datetime import datetime
     current_datetime = datetime.now().strftime("%d.%m.%Y %H:%M")
     
-    # Формируем красивое сообщение с HTML форматированием
+    # Formed AMO tag (no '#' to keep it copy-paste friendly for AmoCRM)
+    amo_tag_value = (data.get('amo_tag') or (_bar_obj_r.get('code', '') if _bar_obj_r else '') or '').strip()
+
+    # Formируем красивое сообщение с HTML форматированием
     return (
         f"🚨 <b>НОВАЯ БРОНЬ!</b>\n\n"
         f"{bar_tag}\n"
         f"#бронь_соц_сети\n"
+        + (f"🏷 AMO_TAG: <code>{amo_tag_value}</code>\n" if amo_tag_value else "") +
         f"⏰ <b>Создано:</b> {current_datetime}\n\n"
         
         f"📋 <b>Детали бронирования:</b>\n"

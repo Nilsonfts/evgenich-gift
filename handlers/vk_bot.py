@@ -1565,7 +1565,8 @@ def _finalize(vk_user_id: int, s: dict, vk_profile: Optional[dict]) -> None:
 
     msg = (
         "🆕 <b>НОВАЯ БРОНЬ из ВКонтакте</b>\n\n"
-        f"📍 <b>{bar_info.get('name', '—')}</b> ({bar_info.get('code', '')})\n"
+        f"📍 <b>{bar_info.get('name', '—')}</b>\n"
+        f"🏷 AMO_TAG: <code>{bar_info.get('code', '')}</code>\n"
         f"📅 Дата: <b>{s.get('date', '—')}</b>\n"
         f"🕐 Время: <b>{s.get('time', '—')}</b>\n"
         f"👥 Гостей: <b>{s.get('guests', '—')}</b>\n\n"
