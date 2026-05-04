@@ -320,6 +320,73 @@ def vk_health():
 
 
 # ═══════════════════════════════════════════
+#  INSTAGRAM MESSAGING WEBHOOK (Meta Graph API)
+# ═══════════════════════════════════════════
+@app.route('/instagram/webhook', methods=['GET'])
+@csrf.exempt
+def instagram_webhook_verify():
+    """Meta verify-handshake. Ожидает ?hub.mode=subscribe&hub.verify_token=...&hub.challenge=..."""
+    import os as _os
+    mode = request.args.get('hub.mode', '')
+    token = request.args.get('hub.verify_token', '')
+    challenge = request.args.get('hub.challenge', '')
+    expected = _os.environ.get('IG_VERIFY_TOKEN', '').strip()
+    if mode == 'subscribe' and expected and token == expected:
+        return Response(challenge, mimetype='text/plain')
+    logging.warning("IG webhook verify failed: mode=%s token_match=%s", mode, token == expected)
+    return Response("forbidden", status=403, mimetype='text/plain')
+
+
+@app.route('/instagram/webhook', methods=['POST'])
+@csrf.exempt
+def instagram_webhook():
+    """Принимает события Instagram Messaging API от Meta."""
+    try:
+        from handlers.instagram_bot import process_webhook_event, verify_signature
+    except Exception as e:
+        logging.exception("IG: не удалось импортировать обработчик: %s", e)
+        return ("ok", 200)
+
+    body = request.get_data() or b""
+    sig = request.headers.get('X-Hub-Signature-256', '')
+    if not verify_signature(body, sig):
+        logging.warning("IG webhook: invalid signature from %s", request.remote_addr)
+        return ("forbidden", 403)
+
+    try:
+        event = json.loads(body.decode('utf-8') or '{}')
+    except Exception:
+        event = {}
+
+    process_webhook_event(event)
+    # Meta ждёт быстрый 200 OK
+    return ("ok", 200)
+
+
+@app.route('/instagram/health', methods=['GET'])
+@csrf.exempt
+def instagram_health():
+    """Диагностика IG-окружения. Токены НЕ раскрываются."""
+    try:
+        import os as _os
+        raw = {
+            "IG_ENABLED": _os.environ.get("IG_ENABLED"),
+            "IG_VERIFY_TOKEN_set": bool(_os.environ.get("IG_VERIFY_TOKEN")),
+            "IG_PAGE_ACCESS_TOKEN_len": len(_os.environ.get("IG_PAGE_ACCESS_TOKEN", "")),
+            "IG_APP_SECRET_set": bool(_os.environ.get("IG_APP_SECRET")),
+            "IG_BUSINESS_ID": _os.environ.get("IG_BUSINESS_ID"),
+            "BOOKING_WEBHOOK_URL_set": bool(_os.environ.get("BOOKING_WEBHOOK_URL")),
+        }
+        body = "IG ENV:\n"
+        for k, v in raw.items():
+            body += f"  {k} = {v!r}\n"
+        return Response(body, mimetype="text/plain")
+    except Exception as e:
+        import traceback
+        return Response(f"ERROR: {e}\n\n{traceback.format_exc()}", mimetype="text/plain", status=500)
+
+
+# ═══════════════════════════════════════════
 #  DASHBOARD
 # ═══════════════════════════════════════════
 @app.route('/')
