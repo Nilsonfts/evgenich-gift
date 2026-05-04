@@ -185,7 +185,7 @@ def register_booking_handlers(bot):
         else:
             # Фоллбэк на старую систему, если бар не найден
             bar_mapping = {
-                'bar_nevsky': 'ЕВГ_СПБ',
+                'bar_nevsky': 'ЕВГ_СПБ_НЕВ',
                 'bar_rubinstein': 'ЕВГ_СПБ_РУБ',
                 'bar_pyatnitskaya': 'ЕВГ_МСК_ПЯТ',
                 'bar_tsvetnoj': 'ЕВГ_МСК_ЦВЕТ'

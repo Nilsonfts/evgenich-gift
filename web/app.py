@@ -199,7 +199,7 @@ def _init_defaults():
         })
     if not os.path.exists(BARS_F):
         _save(BARS_F, [
-            {'name': 'Невский', 'code': 'ЕВГ_СПБ', 'emoji': '🍷', 'callback_id': 'bar_nevsky'},
+            {'name': 'Невский', 'code': 'ЕВГ_СПБ_НЕВ', 'emoji': '🍷', 'callback_id': 'bar_nevsky'},
             {'name': 'Рубинштейна', 'code': 'ЕВГ_СПБ_РУБ', 'emoji': '💎', 'callback_id': 'bar_rubinstein'},
             {'name': 'Пятницкая МСК', 'code': 'ЕВГ_МСК_ПЯТ', 'emoji': '🏙', 'callback_id': 'bar_pyatnitskaya'},
             {'name': 'Цветной МСК', 'code': 'ЕВГ_МСК_ЦВЕТ', 'emoji': '🌸', 'callback_id': 'bar_tsvetnoj'},

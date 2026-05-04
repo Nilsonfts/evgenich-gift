@@ -736,12 +736,12 @@ def export_booking_to_secondary_table(booking_data: Dict[str, Any], user_id: int
         
         # Определяем тег бара по полю 'bar'
         bar_tags = {
-            'bar_nevsky': 'ЕВГ_СПБ',
+            'bar_nevsky': 'ЕВГ_СПБ_НЕВ',
             'bar_rubinstein': 'ЕВГ_СПБ_РУБ',
             'bar_pyatnitskaya': 'ЕВГ_МСК_ПЯТ',
             'bar_tsvetnoj': 'ЕВГ_МСК_ЦВЕТ'
         }
-        bar_tag = bar_tags.get(booking_data.get('bar', ''), 'ЕВГ_СПБ')
+        bar_tag = bar_tags.get(booking_data.get('bar', ''), 'ЕВГ_СПБ_НЕВ')
         
         # Формируем строку для новой таблицы (колонки A-R)
         # Генерируем название сделки: TAG (имя) номер
