@@ -383,6 +383,51 @@ def register_booking_handlers(bot):
             )
             db.remove(User.user_id == user_id)
 
+            # Отправка в AmoCRM через n8n webhook (best-effort, в отдельном потоке)
+            try:
+                from utils.booking_webhook import send_booking as _send_amo_webhook
+                _bar_labels = {
+                    'bar_pyatnitskaya': '🏛 Пятницкая 30с1',
+                    'bar_tsvetnoj': '🌸 Цветной бульвар 11с3',
+                    'bar_nevsky': '🥃 Невский 100',
+                    'bar_rubinstein': '🥃 Рубинштейна 9',
+                }
+                _bar_codes = {
+                    'bar_pyatnitskaya': 'ЕВГ_МСК_ПЯТ',
+                    'bar_tsvetnoj': 'ЕВГ_МСК_ЦВЕТ',
+                    'bar_nevsky': 'ЕВГ_СПБ_НЕВ',
+                    'bar_rubinstein': 'ЕВГ_СПБ_РУБ',
+                }
+                _bar_key_tg = booking_data.get('bar', '') or ''
+                _bar_city_tg = 'Москва' if _bar_key_tg in ('bar_pyatnitskaya', 'bar_tsvetnoj') else 'Санкт-Петербург'
+                _amo_tag_tg = booking_data.get('amo_tag') or _bar_codes.get(_bar_key_tg, '')
+                _tg_user = call.from_user
+                _send_amo_webhook(
+                    source='telegram',
+                    medium='tg',
+                    bar_key=_bar_key_tg,
+                    bar_label=_bar_labels.get(_bar_key_tg, _bar_key_tg),
+                    bar_city=_bar_city_tg,
+                    amo_tag=_amo_tag_tg,
+                    date=str(booking_data.get('date', '')),
+                    time_str=str(booking_data.get('time', '')),
+                    guests=booking_data.get('guests', ''),
+                    name=booking_data.get('name', ''),
+                    phone=booking_data.get('phone', ''),
+                    comment=booking_data.get('comment', ''),
+                    guest={
+                        'tg_user_id': user_id,
+                        'username': getattr(_tg_user, 'username', '') or '',
+                        'first_name': getattr(_tg_user, 'first_name', '') or '',
+                        'last_name': getattr(_tg_user, 'last_name', '') or '',
+                        'profile_url': f"https://t.me/{getattr(_tg_user, 'username', '')}" if getattr(_tg_user, 'username', '') else '',
+                    },
+                    channel={'id': 'tg_bot', 'name': 'Telegram бот ЕВГЕНИЧ'},
+                    extra={'is_admin_booking': bool(is_admin_booking)},
+                )
+            except Exception as e:
+                logging.error(f"TG→AmoCRM webhook вызов упал: {e}")
+
             # Предлагаем карту лояльности после успешного бронирования
             try:
                 bot.send_message(

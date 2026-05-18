@@ -1785,6 +1785,35 @@ def _finalize(vk_user_id: int, s: dict, vk_profile: Optional[dict]) -> None:
         _export_vk_to_sheets(s, vk_user_id, vk_profile)
     except Exception as e:
         logger.exception("VK→Sheets вызов упал: %s", e)
+    # Отправка в AmoCRM через n8n webhook — best-effort, в отдельном потоке
+    try:
+        from utils.booking_webhook import send_booking as _send_amo_webhook
+        _bar_city = "Москва" if (bar_info.get("code", "") or "").startswith("ЕВГ_МСК") else "Санкт-Петербург"
+        _send_amo_webhook(
+            source="vk",
+            medium="vk",
+            bar_key=s.get("bar_key", ""),
+            bar_label=bar_info.get("name", ""),
+            bar_city=_bar_city,
+            amo_tag=bar_info.get("code", ""),
+            date=s.get("date", ""),
+            time_str=s.get("time", ""),
+            guests=s.get("guests", ""),
+            name=s.get("name", ""),
+            phone=s.get("phone", ""),
+            comment="",
+            guest={
+                "vk_user_id": vk_user_id,
+                "vk_link": vk_link,
+                "first_name": (vk_profile or {}).get("first_name", ""),
+                "last_name": (vk_profile or {}).get("last_name", ""),
+                "profile_name": profile_name,
+                "profile_url": vk_link,
+            },
+            channel={"id": "vk_bot", "name": "VK ЕВГЕНИЧ"},
+        )
+    except Exception as e:
+        logger.exception("VK→AmoCRM webhook вызов упал: %s", e)
     _vk_send(vk_user_id, _make_done_text(), _kb_empty())
     _drop_session(vk_user_id)
     _cancel_idle_ping(vk_user_id)
