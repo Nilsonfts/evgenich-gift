@@ -68,6 +68,31 @@ _contacts_db = TinyDB(_CONTACTS_DB_PATH)
 _ContactQuery = Query()
 _contacts_lock = threading.RLock()
 
+# Handoff-режим: бот замолкает, когда позвали старшего, и возвращается по
+# команде/таймауту. Храним отдельно от сессии бронирования.
+_HANDOFF_DB_PATH = os.path.join(
+    os.path.dirname(_DB_PATH), "vk_handoff.json"
+)
+_handoff_db = TinyDB(_HANDOFF_DB_PATH)
+_HandoffQuery = Query()
+_handoff_lock = threading.RLock()
+
+# Сколько живёт handoff без новой активности (гостя или админа), сек.
+_HANDOFF_TTL_SECONDS = int(os.getenv("VK_HANDOFF_TTL_SECONDS", "1800"))  # 30 мин
+# Чтобы дедуплицировать «эхо» исходящих сообщений бота (VK Callback присылает
+# их как message_reply одновременно от админа и от бота): запоминаем время
+# последнего собственного отправления per peer.
+_last_bot_send_ts: dict[int, float] = {}
+_last_bot_send_lock = threading.RLock()
+# Минимальная разница между фактическим временем сообщения и нашим
+# последним отправлением, чтобы считать его ручным ответом админа, сек.
+_BOT_ECHO_WINDOW_SECONDS = 4.0
+# Защита от спама TG-чату «гость снова пишет в режиме handoff»:
+# не чаще одного пинга в N секунд на пользователя.
+_HANDOFF_PING_COOLDOWN = int(os.getenv("VK_HANDOFF_PING_COOLDOWN", "180"))
+_last_handoff_ping_ts: dict[int, float] = {}
+_last_handoff_ping_lock = threading.RLock()
+
 
 # Межпроцессный файловый лок на сессии — на случай, если gunicorn запущен
 # с несколькими worker'ами. TinyDB не безопасен между процессами: при гонке
@@ -277,7 +302,9 @@ T_FALLBACK   = (
 )
 T_MANAGER_CALLED = (
     "Передал твоё сообщение старшему 🙋\n"
-    "С тобой свяжутся в ближайшее время."
+    "С тобой свяжутся в ближайшее время.\n\n"
+    "Пока ждёшь — я тут помолчу, чтобы не путать. "
+    "Если захочешь снова со мной поболтать, напиши <b>#бот</b>."
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -638,6 +665,7 @@ def _vk_send(user_id: int, text: str, keyboard: Optional[str] = None,
         if "error" in data:
             logger.error("VK messages.send error для %s: %s", user_id, data["error"])
             return
+        _mark_bot_send(user_id)
         _log_vk_turn(user_id, "assistant", text)
     except Exception as e:
         logger.exception("VK messages.send упал для %s: %s", user_id, e)
@@ -901,6 +929,13 @@ _AI_SYSTEM = (
     "СТАРШИЙ:\n"
     "— Старший на связи пн–сб с 11:00 до 22:00 МСК. Воскресенье — у него выходной.\n"
     "— Если предлагаешь позвать старшего вне его смены — сразу честно скажи, что прямо сейчас он не на смене, ответит как выйдет, и предложи оформить бронь, чтобы менеджер бара перезвонил.\n"
+    "\n"
+    "ОБЕДЫ И БИЗНЕС-ЛАНЧ:\n"
+    "— У нас ЕСТЬ дневное меню в обоих барах. Никогда не говори «бизнес-ланч не практикуется» / «не делаем обеды» — это неверно.\n"
+    "— Пятницкая 30с1: «Обеды как в школе», ежедневно 12:00–16:00, от 350 ₽ (ностальгический формат школьной столовой).\n"
+    "— Цветной бульвар 11с3: «Обеды от Евгенича», ежедневно 12:00–17:00, блюда от 250 ₽ (комплекты до 350 ₽).\n"
+    "— Если гость не указал бар — уточни, на какой адрес ему интересно.\n"
+    "— Точный состав комплекта на конкретный день — подскажет старший.\n"
     "\n"
     "БРОНЬ:\n"
     "— Только если гость САМ явно хочет забронировать («бронь», «столик», «зарезервировать», «можно стол на …») — ответь одним коротким предложением и добавь маркер [START_BOOKING] в самом конце (без пробела).\n"
@@ -1214,6 +1249,116 @@ def _save_session(vk_user_id: int, data: dict) -> None:
 def _drop_session(vk_user_id: int) -> None:
     with _CrossProcessLock(), _db_lock:
         _db.remove(_Session.vk_user_id == vk_user_id)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Handoff к старшему: бот молчит, пока админ ведёт диалог из ВК
+# ──────────────────────────────────────────────────────────────────────────────
+def _get_handoff(vk_user_id: int) -> Optional[dict]:
+    """Возвращает запись handoff или None. Автоматически очищает протухшие."""
+    with _handoff_lock:
+        _handoff_db.clear_cache()
+        rows = _handoff_db.search(_HandoffQuery.vk_user_id == vk_user_id)
+        if not rows:
+            return None
+        row = rows[0]
+        expires_at = float(row.get("expires_at") or 0)
+        if expires_at and expires_at < time.time():
+            _handoff_db.remove(_HandoffQuery.vk_user_id == vk_user_id)
+            return None
+        return row
+
+
+def _set_handoff(vk_user_id: int, *, reason: str = "guest_request",
+                 ttl: int = _HANDOFF_TTL_SECONDS, admin_active: bool = False) -> None:
+    """Активирует handoff: бот молчит до явной отмены или истечения ttl."""
+    now = time.time()
+    data = {
+        "vk_user_id": vk_user_id,
+        "reason": reason,
+        "started_at": now,
+        "expires_at": now + ttl,
+        "admin_active": admin_active,
+        "last_admin_msg_at": now if admin_active else 0,
+    }
+    with _handoff_lock:
+        _handoff_db.upsert(data, _HandoffQuery.vk_user_id == vk_user_id)
+
+
+def _extend_handoff(vk_user_id: int, *, ttl: int = _HANDOFF_TTL_SECONDS,
+                    mark_admin: bool = False) -> None:
+    """Продлевает handoff на ttl. Если mark_admin=True — фиксирует ответ админа."""
+    now = time.time()
+    with _handoff_lock:
+        rows = _handoff_db.search(_HandoffQuery.vk_user_id == vk_user_id)
+        if not rows:
+            return
+        upd: dict = {"expires_at": now + ttl}
+        if mark_admin:
+            upd["admin_active"] = True
+            upd["last_admin_msg_at"] = now
+        _handoff_db.update(upd, _HandoffQuery.vk_user_id == vk_user_id)
+
+
+def _clear_handoff(vk_user_id: int) -> bool:
+    """Снимает handoff. True, если было что снимать."""
+    with _handoff_lock:
+        rows = _handoff_db.search(_HandoffQuery.vk_user_id == vk_user_id)
+        if not rows:
+            return False
+        _handoff_db.remove(_HandoffQuery.vk_user_id == vk_user_id)
+        return True
+
+
+def _mark_bot_send(vk_user_id: int) -> None:
+    """Фиксирует время последнего исходящего бота — нужно для дедупа эха в message_reply."""
+    with _last_bot_send_lock:
+        _last_bot_send_ts[vk_user_id] = time.time()
+
+
+def _is_likely_bot_echo(vk_user_id: int, msg_ts: Optional[float] = None) -> bool:
+    """True, если входящее outbound-событие выглядит как эхо нашего же messages.send."""
+    with _last_bot_send_lock:
+        last = _last_bot_send_ts.get(vk_user_id, 0)
+    if not last:
+        return False
+    ref = msg_ts if msg_ts else time.time()
+    return abs(ref - last) <= _BOT_ECHO_WINDOW_SECONDS
+
+
+_GUEST_RESUME_BOT_TRIGGERS = (
+    "#бот", "/бот", "верни бота", "вернуть бота", "бот вернись",
+    "включи бота", "позови бота", "хочу бота",
+)
+_ADMIN_END_HANDOFF_TRIGGERS = (
+    "#стоп", "#end", "/end", "#конец", "конец диалога", "закончил",
+    "верни бота", "включи бота",
+)
+
+
+def _guest_wants_bot_back(text: str) -> bool:
+    if not text:
+        return False
+    t = text.lower().strip()
+    return any(trig in t for trig in _GUEST_RESUME_BOT_TRIGGERS)
+
+
+def _admin_ended_handoff(text: str) -> bool:
+    if not text:
+        return False
+    t = text.lower().strip()
+    return any(trig in t for trig in _ADMIN_END_HANDOFF_TRIGGERS)
+
+
+def _handoff_ping_allowed(vk_user_id: int) -> bool:
+    """Rate-limit TG-пингов «гость снова пишет в handoff»."""
+    now = time.time()
+    with _last_handoff_ping_lock:
+        last = _last_handoff_ping_ts.get(vk_user_id, 0)
+        if now - last < _HANDOFF_PING_COOLDOWN:
+            return False
+        _last_handoff_ping_ts[vk_user_id] = now
+    return True
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1625,6 +1770,41 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
     with lock:
         # Любое входящее событие отменяет проактивный пинг — гость всё ещё здесь.
         _cancel_idle_ping(vk_user_id)
+
+        # ── HANDOFF: бот молчит, пока старший ведёт диалог ───────────────
+        handoff = _get_handoff(vk_user_id)
+        if handoff:
+            # Гость явно просит вернуть бота
+            if _guest_wants_bot_back(text):
+                _clear_handoff(vk_user_id)
+                _vk_send(
+                    vk_user_id,
+                    "Я снова на связи, товарищ 🥃 Что подсказать — бронь, меню, афиша?",
+                    _kb_smalltalk(),
+                )
+                _tg_notify(
+                    "🤖 <b>Бот вернулся на линию</b>\n"
+                    f"🆔 VK ID: <code>{vk_user_id}</code>\n"
+                    "Гость сам попросил включить бота — Евгенич отвечает дальше."
+                )
+                return
+            # Иначе — продлеваем handoff и тихо пингуем менеджеров (с rate-limit)
+            _extend_handoff(vk_user_id)
+            _log_vk_turn(vk_user_id, "user", text)
+            if _handoff_ping_allowed(vk_user_id):
+                profile_name = ""
+                if vk_profile:
+                    profile_name = f"{vk_profile.get('first_name','')} {vk_profile.get('last_name','')}".strip()
+                vk_link = f"https://vk.com/id{vk_user_id}"
+                _tg_notify(
+                    "💬 <b>Гость дописал в ВК (бот молчит)</b>\n\n"
+                    f"👤 {profile_name or '—'}\n"
+                    f"🔗 <a href=\"{vk_link}\">{vk_link}</a>\n"
+                    f"🆔 VK ID: <code>{vk_user_id}</code>\n\n"
+                    "Чтобы вернуть бота — напиши гостю <code>#стоп</code> "
+                    "(или жди 30 мин — снимется автоматически)."
+                )
+            return
         try:
             # Медиа без текста: голосовое → вежливый ответ; фото/видео/стикер → тишина.
             if not text and attachments:
@@ -1677,6 +1857,9 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                     vk_link = f"https://vk.com/id{vk_user_id}"
                     status = _manager_status()
 
+                    # Активируем handoff: бот замолкает, пока старший ведёт диалог
+                    _set_handoff(vk_user_id, reason="guest_request")
+
                     # Старшего сейчас нет — честно говорим гостю и предлагаем бронь
                     if not status["available"]:
                         offline_text = _manager_offline_message(status)
@@ -1691,7 +1874,9 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                             f"👤 {profile_name or '—'}\n"
                             f"🔗 <a href=\"{vk_link}\">{vk_link}</a>\n"
                             f"🆔 VK ID: <code>{vk_user_id}</code>\n"
-                            f"⏰ Старший на смене: <b>{when}</b>"
+                            f"⏰ Старший на смене: <b>{when}</b>\n\n"
+                            "🤖 Бот замолчал. Ответь гостю из ВК. Чтобы вернуть бота "
+                            "— напиши гостю <code>#стоп</code> (или бот сам вернётся через 30 мин)."
                         )
                         return
 
@@ -1702,7 +1887,9 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                         "🙋 <b>Гость из ВКонтакте просит старшего</b>\n\n"
                         f"👤 {profile_name or '—'}\n"
                         f"🔗 <a href=\"{vk_link}\">{vk_link}</a>\n"
-                        f"🆔 VK ID: <code>{vk_user_id}</code>"
+                        f"🆔 VK ID: <code>{vk_user_id}</code>\n\n"
+                        "🤖 Бот замолчал — слово за тобой. Чтобы вернуть бота "
+                        "— напиши гостю <code>#стоп</code> (или жди 30 мин)."
                     )
                     _vk_send(vk_user_id, T_MANAGER_CALLED, _kb_empty())
                     return
@@ -1895,6 +2082,50 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Обработка ручного ответа админа (event message_reply от сообщества).
+# Активирует/продлевает handoff и распознаёт команду завершения.
+# ──────────────────────────────────────────────────────────────────────────────
+def handle_admin_reply(vk_user_id: int, admin_text: str) -> None:
+    """Админ написал гостю руками из ВК-чата сообщества.
+
+    Действия:
+    - Если уже был handoff — продлеваем + помечаем admin_active.
+    - Если handoff не было — стартуем его (бот замолкает).
+    - Если в тексте админа есть #стоп/#бот — снимаем handoff и тихо
+      уведомляем менеджеров, что бот снова на линии.
+    """
+    if not vk_user_id or vk_user_id <= 0:
+        return
+    lock = _get_user_lock(vk_user_id)
+    with lock:
+        # Команда завершения — снять handoff
+        if _admin_ended_handoff(admin_text):
+            had = _clear_handoff(vk_user_id)
+            if had:
+                logger.info("VK handoff: админ закрыл диалог с %s", vk_user_id)
+                _tg_notify(
+                    "🤖 <b>Бот вернулся на линию</b>\n"
+                    f"🆔 VK ID: <code>{vk_user_id}</code>\n"
+                    "Старший завершил диалог — Евгенич снова отвечает."
+                )
+            return
+
+        existing = _get_handoff(vk_user_id)
+        if existing:
+            _extend_handoff(vk_user_id, mark_admin=True)
+            return
+
+        # Админ написал первым (без кнопки «позвать старшего» от гостя).
+        # Всё равно включаем handoff, чтобы AI не лез поверх ручного ответа.
+        _set_handoff(vk_user_id, reason="admin_initiated", admin_active=True)
+        # Сбрасываем активный сценарий брони — админ ведёт диалог сам
+        if _get_session(vk_user_id):
+            _drop_session(vk_user_id)
+            _cancel_idle_ping(vk_user_id)
+        logger.info("VK handoff: админ сам начал диалог с %s", vk_user_id)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Точка входа из web/app.py — обработка Callback API event
 # ──────────────────────────────────────────────────────────────────────────────
 def process_callback_event(event: dict) -> str:
@@ -1957,6 +2188,36 @@ def process_callback_event(event: dict) -> str:
             daemon=True,
             name=f"vk-handler-{vk_user_id}",
         ).start()
+        return "ok"
+
+    # 4. Исходящее сообщение от сообщества (бот ИЛИ админ из ВК-чата).
+    # VK Callback присылает один и тот же event и для нашего messages.send,
+    # и для ручных ответов админа. Различаем по таймингу: если за последние
+    # _BOT_ECHO_WINDOW_SECONDS бот уже что-то слал этому peer — считаем эхом.
+    if etype == "message_reply":
+        try:
+            obj = event.get("object", {}) or {}
+            msg = obj.get("message", obj)
+            peer_id = msg.get("peer_id") or msg.get("user_id")
+            if not peer_id or peer_id <= 0 or peer_id >= 2_000_000_000:
+                # peer_id ≥ 2e9 — это чат-беседа, игнорируем; ≤0 — некорректно
+                return "ok"
+            msg_date = msg.get("date")
+            try:
+                msg_ts = float(msg_date) if msg_date else None
+            except (TypeError, ValueError):
+                msg_ts = None
+            if _is_likely_bot_echo(peer_id, msg_ts):
+                return "ok"
+            admin_text = (msg.get("text") or "").strip()
+            threading.Thread(
+                target=handle_admin_reply,
+                args=(int(peer_id), admin_text),
+                daemon=True,
+                name=f"vk-admin-{peer_id}",
+            ).start()
+        except Exception as e:
+            logger.exception("VK message_reply обработка упала: %s", e)
         return "ok"
 
     # Любые другие события игнорируем
