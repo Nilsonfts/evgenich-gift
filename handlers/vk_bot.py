@@ -671,22 +671,77 @@ def _vk_send(user_id: int, text: str, keyboard: Optional[str] = None,
         logger.exception("VK messages.send упал для %s: %s", user_id, e)
 
 
-def _tg_notify(text: str) -> None:
-    """Шлёт уведомление в Telegram-чат менеджеров (МСК-чат броней)."""
+def _tg_notify(text: str, reply_markup: Optional[dict] = None) -> None:
+    """Шлёт уведомление в Telegram-чат менеджеров (МСК-чат броней).
+
+    `reply_markup` — опциональный inline-keyboard dict
+    (например {"inline_keyboard":[[{"text":"...","url":"..."}]]}).
+    """
     chat_id = BOOKING_NOTIFICATIONS_CHAT_ID_MSK or REPORT_CHAT_ID
     if not BOT_TOKEN or not chat_id:
         logger.warning("BOT_TOKEN/чат уведомлений не настроены — Telegram-уведомление пропущено")
         return
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
+            json=payload,
             timeout=10,
         )
         if not r.ok:
             logger.error("Telegram sendMessage не ок: %s %s", r.status_code, r.text[:200])
     except Exception as e:
         logger.exception("Telegram уведомление упало: %s", e)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# HMAC-подписанная ссылка для inline-кнопки «Завершить диалог»
+# ──────────────────────────────────────────────────────────────────────────────
+# Базовый URL веб-сервиса (где висит /vk/handoff/end). На Railway это публичный
+# домен web-сервиса. Если не задан — кнопка не генерируется (просто текст).
+WEB_PUBLIC_URL = (os.getenv("WEB_PUBLIC_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "").strip()
+if WEB_PUBLIC_URL and not WEB_PUBLIC_URL.startswith("http"):
+    WEB_PUBLIC_URL = f"https://{WEB_PUBLIC_URL}"
+# Секрет для подписи токенов (любая случайная строка). Дефолт привязан к
+# VK_SECRET_KEY чтобы не плодить ENV.
+HANDOFF_LINK_SECRET = os.getenv("VK_HANDOFF_LINK_SECRET") or os.getenv("VK_SECRET_KEY") or "evg-handoff-default-secret"
+
+
+def _sign_handoff_token(vk_user_id: int) -> str:
+    import hashlib
+    import hmac
+    msg = f"end:{vk_user_id}".encode()
+    sig = hmac.new(HANDOFF_LINK_SECRET.encode(), msg, hashlib.sha256).hexdigest()
+    return sig[:32]  # 128 бит хватит
+
+
+def verify_handoff_token(vk_user_id: int, token: str) -> bool:
+    import hmac as _hmac
+    expected = _sign_handoff_token(vk_user_id)
+    return _hmac.compare_digest(expected, (token or "").strip())
+
+
+def _handoff_end_url(vk_user_id: int) -> Optional[str]:
+    if not WEB_PUBLIC_URL:
+        return None
+    token = _sign_handoff_token(vk_user_id)
+    base = WEB_PUBLIC_URL.rstrip("/")
+    return f"{base}/vk/handoff/end?u={vk_user_id}&t={token}"
+
+
+def _handoff_end_keyboard(vk_user_id: int) -> Optional[dict]:
+    """Inline-клавиатура для TG с одной кнопкой «✅ Завершить диалог»."""
+    url = _handoff_end_url(vk_user_id)
+    if not url:
+        return None
+    return {"inline_keyboard": [[{"text": "✅ Завершить диалог (вернуть бота)", "url": url}]]}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1788,22 +1843,10 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                     "Гость сам попросил включить бота — Евгенич отвечает дальше."
                 )
                 return
-            # Иначе — продлеваем handoff и тихо пингуем менеджеров (с rate-limit)
+            # Иначе — продлеваем handoff и тихо логируем (БЕЗ повторных пингов
+            # в TG — менеджер уже видит первое уведомление с кнопкой).
             _extend_handoff(vk_user_id)
             _log_vk_turn(vk_user_id, "user", text)
-            if _handoff_ping_allowed(vk_user_id):
-                profile_name = ""
-                if vk_profile:
-                    profile_name = f"{vk_profile.get('first_name','')} {vk_profile.get('last_name','')}".strip()
-                vk_link = f"https://vk.com/id{vk_user_id}"
-                _tg_notify(
-                    "💬 <b>Гость дописал в ВК (бот молчит)</b>\n\n"
-                    f"👤 {profile_name or '—'}\n"
-                    f"🔗 <a href=\"{vk_link}\">{vk_link}</a>\n"
-                    f"🆔 VK ID: <code>{vk_user_id}</code>\n\n"
-                    "Чтобы вернуть бота — напиши гостю <code>#стоп</code> "
-                    "(или жди 30 мин — снимется автоматически)."
-                )
             return
         try:
             # Медиа без текста: голосовое → вежливый ответ; фото/видео/стикер → тишина.
@@ -1875,12 +1918,13 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                             f"🔗 <a href=\"{vk_link}\">{vk_link}</a>\n"
                             f"🆔 VK ID: <code>{vk_user_id}</code>\n"
                             f"⏰ Старший на смене: <b>{when}</b>\n\n"
-                            "🤖 Бот замолчал. Ответь гостю из ВК. Чтобы вернуть бота "
-                            "— напиши гостю <code>#стоп</code> (или бот сам вернётся через 30 мин)."
+                            "🤖 Бот молчит. Ответь гостю из ВК. Когда закончишь — "
+                            "жми кнопку ниже, и бот вернётся на линию (или через 30 мин сам).",
+                            reply_markup=_handoff_end_keyboard(vk_user_id),
                         )
                         return
 
-                    # Старший на смене — обычное уведомление
+                    # Старший на смене — обычное уведомление с кнопкой завершения
                     ping = _ping_manager_line(on_shift=True)
                     _tg_notify(
                         f"{ping}\n\n"
@@ -1888,8 +1932,9 @@ def handle_message(vk_user_id: int, text: str, payload: Optional[dict] = None,
                         f"👤 {profile_name or '—'}\n"
                         f"🔗 <a href=\"{vk_link}\">{vk_link}</a>\n"
                         f"🆔 VK ID: <code>{vk_user_id}</code>\n\n"
-                        "🤖 Бот замолчал — слово за тобой. Чтобы вернуть бота "
-                        "— напиши гостю <code>#стоп</code> (или жди 30 мин)."
+                        "🤖 Бот молчит, слово за тобой. Когда закончишь диалог — "
+                        "жми кнопку ниже, и бот вернётся на линию (или через 30 мин сам).",
+                        reply_markup=_handoff_end_keyboard(vk_user_id),
                     )
                     _vk_send(vk_user_id, T_MANAGER_CALLED, _kb_empty())
                     return

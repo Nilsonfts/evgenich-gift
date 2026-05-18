@@ -320,6 +320,69 @@ def vk_health():
 
 
 # ═══════════════════════════════════════════
+#  VK HANDOFF — кнопка «Завершить диалог» из TG
+# ═══════════════════════════════════════════
+@app.route('/vk/handoff/end', methods=['GET', 'POST'])
+@csrf.exempt
+def vk_handoff_end():
+    """Снимает handoff по подписанной ссылке. Дёргается из TG-кнопки админа."""
+    try:
+        from handlers.vk_bot import (
+            verify_handoff_token,
+            _clear_handoff,
+            _tg_notify,
+            _vk_send,
+            _kb_smalltalk,
+        )
+    except Exception as e:
+        return Response(f"Модуль VK недоступен: {e}", status=500, mimetype="text/plain")
+
+    raw_u = (request.args.get("u") or request.form.get("u") or "").strip()
+    token = (request.args.get("t") or request.form.get("t") or "").strip()
+    if not raw_u.isdigit() or not token:
+        return Response("Bad request", status=400, mimetype="text/plain")
+    vk_user_id = int(raw_u)
+    if not verify_handoff_token(vk_user_id, token):
+        return Response("Invalid token", status=403, mimetype="text/plain")
+
+    had = _clear_handoff(vk_user_id)
+    if had:
+        try:
+            _tg_notify(
+                "🤖 <b>Бот вернулся на линию</b>\n"
+                f"🆔 VK ID: <code>{vk_user_id}</code>\n"
+                "Старший закрыл диалог через кнопку — Евгенич снова отвечает."
+            )
+        except Exception:
+            pass
+        try:
+            # Лёгкий «знак возвращения» гостю, чтобы не молчать в пустоту
+            _vk_send(
+                vk_user_id,
+                "Я снова на связи, товарищ 🥃 Что подсказать — бронь, меню, афиша?",
+                _kb_smalltalk(),
+            )
+        except Exception:
+            pass
+
+    html = (
+        "<!doctype html><meta charset='utf-8'>"
+        "<title>Бот возвращён</title>"
+        "<style>body{font-family:-apple-system,system-ui,Roboto,sans-serif;"
+        "padding:48px 24px;text-align:center;color:#222}"
+        ".box{max-width:420px;margin:0 auto;background:#f5f7fa;border-radius:16px;padding:32px}"
+        "h1{margin:0 0 8px;font-size:22px}p{margin:0;color:#555}</style>"
+        "<div class='box'>"
+        f"<div style='font-size:48px'>{'✅' if had else 'ℹ️'}</div>"
+        f"<h1>{'Бот вернулся на линию' if had else 'Handoff уже снят'}</h1>"
+        f"<p>VK ID: <code>{vk_user_id}</code></p>"
+        f"<p style='margin-top:12px'>Можно закрыть это окно.</p>"
+        "</div>"
+    )
+    return Response(html, mimetype="text/html")
+
+
+# ═══════════════════════════════════════════
 #  INSTAGRAM MESSAGING WEBHOOK (Meta Graph API)
 # ═══════════════════════════════════════════
 @app.route('/instagram/webhook', methods=['GET'])
